@@ -425,6 +425,8 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
         .route("/auth/verify", post(verify_auth))
         .route("/auth/revoke-session", post(revoke_session))
         .route("/auth/status/{episode_id}", get(get_status))
+        .route("/comments/submit", post(crate::api::http::handlers::comment::submit_comment))
+        .route("/comments/get", post(crate::api::http::handlers::comment::get_comments))
         .route("/internal/episode-authenticated", post(episode_authenticated))
         .route("/internal/session-revoked", post(session_revoked))
         .fallback_service(ServeDir::new("public"))

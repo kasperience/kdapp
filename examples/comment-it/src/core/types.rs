@@ -17,6 +17,9 @@ pub enum AuthRollback {
         previous_token: String,
         was_authenticated: bool,
     },
+    CommentSubmitted {
+        previous_comments_count: usize,
+    },
 }
 
 /// Authentication state information

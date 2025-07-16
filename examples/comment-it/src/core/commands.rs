@@ -16,6 +16,10 @@ pub enum AuthCommand {
         session_token: String,
         signature: String,
     },
+    /// Submit a new comment
+    SubmitComment {
+        content: String,
+    },
 }
 
 impl AuthCommand {
@@ -25,6 +29,7 @@ impl AuthCommand {
             AuthCommand::RequestChallenge => "RequestChallenge",
             AuthCommand::SubmitResponse { .. } => "SubmitResponse",
             AuthCommand::RevokeSession { .. } => "RevokeSession",
+            AuthCommand::SubmitComment { .. } => "SubmitComment",
         }
     }
     
@@ -34,6 +39,7 @@ impl AuthCommand {
             AuthCommand::RequestChallenge => false,
             AuthCommand::SubmitResponse { .. } => true,
             AuthCommand::RevokeSession { .. } => true,
+            AuthCommand::SubmitComment { .. } => true,
         }
     }
 }

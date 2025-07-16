@@ -58,16 +58,41 @@ pub async fn submit_comment(
         return Err(StatusCode::UNAUTHORIZED);
     }
     
-    // TODO: Create comment transaction and submit to blockchain
-    // For now, return success response
+    // Create comment command
+    let comment_command = AuthCommand::SubmitComment {
+        content: request.text.clone(),
+    };
+
+    // Get participant wallet
+    let participant_wallet = match state.get_participant_wallet().await {
+        Ok(wallet) => wallet,
+        Err(e) => {
+            error!("Failed to get participant wallet: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Build and submit transaction
+    let tx_id = match state.submit_command_transaction(
+        &participant_wallet,
+        request.episode_id,
+        comment_command,
+    ).await {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Failed to submit comment transaction: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
     let response = SubmitCommentResponse {
         episode_id: request.episode_id,
-        comment_id: 1, // TODO: Generate proper comment ID
-        transaction_id: Some("pending_comment_tx".to_string()),
+        comment_id: 0, // Comment ID will be determined by blockchain order
+        transaction_id: Some(tx_id.to_string()),
         status: "comment_submitted".to_string(),
     };
     
-    info!("✅ COMMENT SUBMITTED: episode_id={}", request.episode_id);
+    info!("✅ COMMENT SUBMITTED: episode_id={}, tx_id={}", request.episode_id, tx_id);
     Ok(ResponseJson(response))
 }
 
@@ -88,11 +113,21 @@ pub async fn get_comments(
         return Err(StatusCode::NOT_FOUND);
     }
     
-    // TODO: Retrieve comments from blockchain/episode state
-    // For now, return empty comments array
+    // Retrieve comments from blockchain/episode state
+    let comments = {
+        let episodes = state.blockchain_episodes.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        match episodes.get(&request.episode_id) {
+            Some(episode) => episode.comments.clone(),
+            None => {
+                error!("Episode {} not found", request.episode_id);
+                return Err(StatusCode::NOT_FOUND);
+            }
+        }
+    };
+    
     let response = GetCommentsResponse {
         episode_id: request.episode_id,
-        comments: vec![], // TODO: Load actual comments
+        comments: comments,
         status: "comments_retrieved".to_string(),
     };
     
