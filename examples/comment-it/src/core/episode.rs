@@ -224,12 +224,7 @@ impl SimpleAuth {
         let mut rng = ChaCha8Rng::seed_from_u64(self.challenge_timestamp);
         format!("sess_{}", rng.gen::<u64>())
     }
-
 }
-
-
-
-
 
 #[cfg(test)]
 mod tests {
