@@ -275,7 +275,7 @@ async fn wallet_debug() -> Json<serde_json::Value> {
         ("authenticate", "participant-peer-wallet.key"),
         ("participant-peer", "participant-peer-wallet.key"),
         ("organizer-peer", "organizer-peer-wallet.key"),
-        ("http-peer", "organizer-peer-wallet.key"),
+        ("http-peer", "participant-peer-wallet.key"),
     ];
     
     for (command, expected_file) in wallet_types {
@@ -385,10 +385,11 @@ async fn session_revoked(
 }
 
 pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    let wallet = get_wallet_for_command("http-peer", provided_private_key)?;
+    let wallet = get_wallet_for_command("participant-peer", provided_private_key)?;
     let keypair = wallet.keypair;
     
-    println!("🚀 Starting HTTP coordination peer with REAL kdapp blockchain integration");
+    println!("🚀 Starting HTTP coordination peer using PARTICIPANT WALLET (P2P kdapp)");
+    println!("🔑 HTTP peer will use participant-peer wallet for blockchain operations");
     
     let (websocket_tx, _) = broadcast::channel::<WebSocketMessage>(100);
     
