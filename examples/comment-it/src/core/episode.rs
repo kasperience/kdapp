@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use crate::core::{AuthCommand, AuthError, AuthRollback};
 use crate::crypto::challenges::ChallengeGenerator;
 use crate::crypto::signatures::SignatureVerifier;
-use crate::Comment;
 
 /// Simple authentication episode for Kaspa
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize, PartialEq)]
@@ -28,8 +27,6 @@ pub struct SimpleAuth {
     pub rate_limits: HashMap<String, u32>,
     /// Authorized participants (who can request challenges)
     pub authorized_participants: Vec<PubKey>,
-    /// List of comments submitted to this episode
-    pub comments: Vec<Comment>,
 }
 
 
@@ -50,7 +47,6 @@ impl Episode for SimpleAuth {
             challenge_timestamp: metadata.accepting_time,
             rate_limits: HashMap::new(),
             authorized_participants: participants,
-            comments: Vec::new(),
         }
     }
 
@@ -180,31 +176,7 @@ impl Episode for SimpleAuth {
                     was_authenticated,
                 })
             }
-            AuthCommand::SubmitComment { content } => {
-                info!("[SimpleAuth] SubmitComment from: {:?} with content: {}", participant, content);
-
-                // Check if authenticated
-                if !self.is_authenticated {
-                    return Err(EpisodeError::InvalidCommand(AuthError::SessionNotFound));
-                }
-
-                // Store previous state for rollback
-                let previous_comments_count = self.comments.len();
-
-                // Create and add new comment
-                let new_comment = Comment {
-                    author: format!("{}", participant),
-                    content: content.clone(),
-                    timestamp: metadata.accepting_time,
-                };
-                self.comments.push(new_comment);
-
-                info!("[SimpleAuth] Comment submitted successfully by: {:?}", participant);
-
-                Ok(AuthRollback::CommentSubmitted {
-                    previous_comments_count,
-                })
-            }
+            
         }
     }
 
@@ -226,14 +198,11 @@ impl Episode for SimpleAuth {
                 self.session_token = Some(previous_token);
                 true
             }
-            AuthRollback::CommentSubmitted { previous_comments_count } => {
-                self.comments.truncate(previous_comments_count);
-                true
-            }
         }
     }
+}
 
-    impl SimpleAuth {
+impl SimpleAuth {
 
     /// Check if a participant is rate limited
     fn is_rate_limited(&self, pubkey: &PubKey) -> bool {

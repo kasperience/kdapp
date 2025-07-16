@@ -77,6 +77,7 @@ pub struct SubmitCommentRequest {
 #[derive(Serialize)]
 pub struct SubmitCommentResponse {
     pub episode_id: u64,
+    pub comment_id: u64,
     pub transaction_id: Option<String>,
     pub status: String,
 }
@@ -89,9 +90,11 @@ pub struct GetCommentsRequest {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct CommentData {
+    pub id: u64,
+    pub text: String,
     pub author: String,
-    pub content: String,
     pub timestamp: u64,
+    pub author_type: String, // "authenticated" only for now (anonymous requires profile episode)
 }
 
 #[derive(Serialize)]

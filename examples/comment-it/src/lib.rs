@@ -25,4 +25,3 @@ pub mod auth;
 pub use core::commands::AuthCommand;
 pub use episode_runner::{AuthEventHandler, AuthServerConfig, run_auth_server, create_auth_generator};
 pub use auth::{run_http_coordinated_authentication, run_session_revocation, AuthenticationResult};
-pub use comment::Comment;
