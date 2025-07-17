@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::broadcast;
 use secp256k1::Keypair;
 use kdapp::generator::TransactionGenerator;
-use crate::core::episode::SimpleAuth;
+use crate::core::SimpleAuth;
 use kaspa_wrpc_client::KaspaRpcClient;
 
 // Real blockchain-based episode state (not the old fake HashMap approach)

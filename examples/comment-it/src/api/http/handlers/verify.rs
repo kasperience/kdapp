@@ -12,7 +12,7 @@ use crate::api::http::{
     types::{VerifyRequest, VerifyResponse},
     state::PeerState,
 };
-use crate::core::{episode::SimpleAuth, commands::AuthCommand};
+use crate::core::{SimpleAuth, AuthCommand};
 use std::sync::Arc;
 use std::collections::HashSet;
 

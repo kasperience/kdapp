@@ -11,8 +11,7 @@ use kdapp::{
 };
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
 
-use crate::core::episode::SimpleAuth;
-use crate::core::commands::AuthCommand;
+use crate::core::{SimpleAuth, AuthCommand};
 use crate::api::http::state::{PeerState, WebSocketMessage, SharedEpisodeState};
 use crate::episode_runner::{AUTH_PREFIX, AUTH_PATTERN};
 use kaspa_wrpc_client::prelude::{RpcApi, KaspaRpcClient};
@@ -155,7 +154,7 @@ impl AuthHttpPeer {
     /// Submit an EpisodeMessage transaction to the blockchain
     pub async fn submit_episode_message_transaction(
         &self,
-        episode_message: kdapp::engine::EpisodeMessage<crate::core::episode::SimpleAuth>,
+        episode_message: kdapp::engine::EpisodeMessage<crate::core::SimpleAuth>,
         signer_keypair: secp256k1::Keypair,
         funding_address: kaspa_addresses::Address,
         utxo: (kaspa_consensus_core::tx::TransactionOutpoint, kaspa_consensus_core::tx::UtxoEntry),

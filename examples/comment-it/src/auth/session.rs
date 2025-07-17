@@ -1,6 +1,6 @@
 use std::error::Error;
 use secp256k1::Keypair;
-use crate::core::{commands::AuthCommand, episode::SimpleAuth};
+use crate::core::{AuthCommand, SimpleAuth};
 use hex;
 
 /// 🔄 Session revocation - revoke an active session on blockchain

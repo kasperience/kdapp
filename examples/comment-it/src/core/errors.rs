@@ -1,8 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-/// Authentication-specific errors
+/// Authentication and comment-specific errors
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
 pub enum AuthError {
+    // Auth errors
     ChallengeNotFound,
     InvalidChallenge,
     SignatureVerificationFailed,
@@ -14,6 +15,11 @@ pub enum AuthError {
     SessionNotFound,
     InvalidSessionToken,
     SessionAlreadyRevoked,
+    
+    // Comment errors
+    CommentTooLong,
+    CommentEmpty,
+    NotAuthenticated,
 }
 
 impl std::fmt::Display for AuthError {
@@ -30,6 +36,9 @@ impl std::fmt::Display for AuthError {
             AuthError::SessionNotFound => write!(f, "Session not found or not authenticated."),
             AuthError::InvalidSessionToken => write!(f, "Invalid or malformed session token."),
             AuthError::SessionAlreadyRevoked => write!(f, "Session has already been revoked."),
+            AuthError::CommentTooLong => write!(f, "Comment is too long (max 2000 characters)."),
+            AuthError::CommentEmpty => write!(f, "Comment cannot be empty."),
+            AuthError::NotAuthenticated => write!(f, "User is not authenticated."),
         }
     }
 }

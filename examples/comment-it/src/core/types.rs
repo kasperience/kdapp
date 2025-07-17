@@ -19,6 +19,26 @@ pub enum AuthRollback {
     },
 }
 
+/// Unified rollback information for authentication and comment operations
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+pub enum UnifiedRollback {
+    Challenge { 
+        previous_challenge: Option<String>,
+        previous_timestamp: u64,
+    },
+    Authentication {
+        previous_auth_status: bool,
+        previous_session_token: Option<String>,
+    },
+    SessionRevoked {
+        previous_token: String,
+        was_authenticated: bool,
+    },
+    CommentAdded {
+        comment_id: u64,
+    },
+}
+
 /// Authentication state information
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub struct AuthState {

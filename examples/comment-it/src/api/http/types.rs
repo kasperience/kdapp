@@ -66,21 +66,8 @@ pub struct RevokeSessionResponse {
     pub status: String,
 }
 
-// Comment-related types
-#[derive(Deserialize)]
-pub struct SubmitCommentRequest {
-    pub episode_id: u64,
-    pub text: String,
-    pub session_token: String,
-}
-
-#[derive(Serialize)]
-pub struct SubmitCommentResponse {
-    pub episode_id: u64,
-    pub comment_id: u64,
-    pub transaction_id: Option<String>,
-    pub status: String,
-}
+// Comment-related types (read-only - participants submit transactions themselves)
+// REMOVED: SubmitCommentRequest, SubmitCommentResponse - violates P2P architecture
 
 #[derive(Deserialize)]
 pub struct GetCommentsRequest {
@@ -94,7 +81,7 @@ pub struct CommentData {
     pub text: String,
     pub author: String,
     pub timestamp: u64,
-    pub author_type: String, // "authenticated" only for now (anonymous requires profile episode)
+    // Removed author_type field - simplified structure
 }
 
 #[derive(Serialize)]

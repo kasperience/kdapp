@@ -1,63 +1,6 @@
-# 📋 NEXT SESSION ROADMAP - UPDATE AFTER EACH SESSION
+# 📋 NEXT SESSION ROADMAP - COMMENT EPISODE BLOCKCHAIN INTEGRATION
+Please follow: examples\comment-it\OVERTHINKING.md
 
-## 🏆 **BREAKTHROUGH: FIRST KDAPP FRAMEWORK BUG FIX**
-
-### 🎯 **READY FOR PR: Critical Proxy.rs WebSocket Crash Fix**
-- **Achievement**: Fixed first critical bug in kdapp framework core
-- **File**: `kdapp/src/proxy.rs` (lines 74, 86, 100, 125, 137, 201, 202, 222, 238)
-- **Issue**: Backend crashes on WebSocket disconnections with panic: "RpcSubsystem(WebSocket disconnected)"
-- **Root Cause**: Multiple `unwrap()` calls failing on network interruptions
-- **Fix**: Replaced all 8 `unwrap()` calls with proper error handling and logging
-- **Impact**: Backend now survives Kaspa network interruptions gracefully
-- **Status**: ✅ FIXED and committed (commit ca64ee6)
-
-### 🎖️ **PR SUBMISSION PLAN:**
-1. **Test the fix** - Verify backend stability under network stress
-2. **Create GitHub fork** - Fork michaelsutton/kdapp repository
-3. **Create feature branch** - `fix/proxy-websocket-crash-handling`
-4. **Submit PR** - Include comprehensive description and testing results
-5. **Follow up** - Respond to any review feedback
-
-### 🚀 **CONFIDENCE BOOSTER:**
-- This is a **production-critical fix** that affects all kdapp users
-- The fix is **well-documented** with clear commit message
-- It's **low-risk** - only improves stability, no behavioral changes
-- Perfect **first PR** - demonstrates real problem-solving skills
-
----
-
-## 🚀 **NEXT SESSION ROADMAP - UPDATED WITH PROGRESS**
-
-### **✅ COMPLETED THIS SESSION:**
-- ✅ **KDAPP FRAMEWORK BUG FIX**: Fixed critical proxy.rs WebSocket crash (READY FOR PR!)
-- ✅ **Authentication Flow**: Working login/logout cycle with blockchain integration
-- ✅ **UI State Management**: Temporary browser restart solution for clean state
-- ✅ **Address Truncation**: Better UI display for long Kaspa addresses
-- ✅ **WebSocket Stability**: No more backend crashes on network interruptions
-
-### **🎯 NEXT SESSION PRIORITIES:**
-
-### **Phase 1: Submit kdapp Framework PR (30 mins)**
-- 🚀 **SUBMIT PR**: proxy.rs WebSocket crash fix to michaelsutton/kdapp
-- 🚀 **Community Engagement**: Twitter/X announcement of framework contribution
-- 🚀 **Funding Campaign**: "Even 1 KAS can change the world" post-PR campaign
-
-### **Phase 2: Complete Comment System MVP (2-3 hours)**
-- 🎯 **Comment Episode Creation**: New episode type for comments
-- 🎯 **Blockchain Comment Display**: Read comments from Kaspa transactions
-- 🎯 **Matrix UI Integration**: Comment cards with cyberpunk styling
-- 🎯 **Anonymous vs Authenticated**: Different features for each mode
-
-### **Phase 3: State Management Decision (1 hour)**
-- 🎯 **Evaluate Options**: Zustand, Dioxus RSX, or custom Kaspa state library
-- 🎯 **Remove Browser Restart**: Replace with proper state management
-- 🎯 **Performance Testing**: Ensure smooth real-time updates
-
-### **🏆 SUCCESS METRICS:**
-- [ ] kdapp framework PR submitted and acknowledged
-- [ ] Community funding campaign launched
-- [ ] Working comment system with blockchain persistence
-- [ ] Clean state management without browser restarts
 
 ## 🤖 **AUTO-COMMIT PROTOCOL**
 Claude will automatically commit progress:
@@ -77,281 +20,6 @@ Claude will automatically commit progress:
 
 ---
 
-# 🎯 KDAPP-COMPATIBLE USER IDENTITY SYSTEM
-
-  ✅ ARCHITECTURALLY SOUND APPROACHES
-
-  Option 1: Episode-Based Profile System (RECOMMENDED)
-
-  // New episode type for user profiles
-  #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
-  pub struct UserProfileEpisode {
-      pub owner_pubkey: PubKey,
-      pub display_name: Option<String>,
-      pub avatar_hash: Option<String>, // IPFS hash or similar
-      pub bio: Option<String>,
-      pub created_at: u64,
-      pub updated_at: u64,
-      pub signature: String, // Self-signed profile
-  }
-
-  #[derive(Debug, Clone, Serialize, Deserialize)]
-  pub enum ProfileCommand {
-      CreateProfile { display_name: String, avatar_hash: Option<String> },
-      UpdateProfile { display_name: Option<String>, avatar_hash: Option<String> },
-      DeleteProfile, // Marks as deleted, but blockchain remembers
-  }
-
-  Option 2: Extended Auth Episode with Profile Data
-
-  // Extend SimpleAuth to include profile information
-  #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
-  pub struct EnhancedAuthEpisode {
-      // Original auth fields
-      pub owner_public_key: PubKey,
-      pub challenge: Option<String>,
-      pub is_authenticated: bool,
-      pub session_token: Option<String>,
-
-      // NEW: Profile fields
-      pub profile: Option<UserProfile>,
-  }
-
-  #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
-  pub struct UserProfile {
-      pub display_name: String,
-      pub avatar_data: ProfileAvatarData,
-      pub preferences: UserPreferences,
-  }
-
-  🎨 AVATAR STORAGE STRATEGIES
-
-  Strategy A: On-Chain Compact Avatars (kdapp Philosophy)
-
-  #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
-  pub enum ProfileAvatarData {
-      None,
-      Initials { text: String, bg_color: u32, text_color: u32 },
-      GeneratedIcon { seed: u64, style: AvatarStyle }, // Deterministic generation
-      SmallImage { data: Vec<u8> }, // Max 2KB, compressed
-  }
-
-  #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
-  pub enum AvatarStyle {
-      MatrixRain,
-      GeometricShapes,
-      KaspaThemed,
-      Cyberpunk,
-  }
-
-  Strategy B: Hybrid On-Chain + IPFS
-
-  #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
-  pub struct ProfileAvatar {
-      pub avatar_type: AvatarType,
-      pub hash: String, // IPFS hash for external images
-      pub fallback: GeneratedAvatar, // Always have on-chain fallback
-  }
-
-  🚀 IMPLEMENTATION ROADMAP
-
-  Phase 1: Anonymous + Named Commenting
-
-  #[derive(Debug, Clone, Serialize, Deserialize)]
-  pub struct CommentMetadata {
-      pub author_type: AuthorType,
-      pub timestamp: u64,
-      pub episode_id: u64,
-  }
-
-  #[derive(Debug, Clone, Serialize, Deserialize)]
-  pub enum AuthorType {
-      Anonymous { prefix: String }, // "COMMENT_IT_USER_" + random
-      Authenticated {
-          public_key: String,
-          display_name: Option<String>,
-          avatar: Option<AvatarData>,
-      },
-  }
-
-  Phase 2: Profile Episodes
-
-  // Users can create profile episodes
-  // These sync across devices automatically
-  impl ProfileEpisode {
-      pub fn create_profile_transaction(&self, wallet: &Wallet) -> Transaction {
-          // Create blockchain transaction for profile
-          // Other devices detect this and sync automatically
-      }
-
-      pub fn get_profile_for_pubkey(pubkey: &PubKey) -> Option<UserProfile> {
-          // Query blockchain for latest profile episode by this pubkey
-          // Always returns most recent valid profile
-      }
-  }
-
-  💡 USER INCENTIVES & BENEFITS
-
-  For Authenticated Users:
-
-  // Matrix UI shows enhanced features
-  const authenticatedFeatures = {
-      profile: {
-          displayName: "CyberKaspa_2025",
-          avatar: "matrix_rain_generated",
-          reputation: "Episode Contributor",
-      },
-      privileges: {
-          customStyling: true,        // Matrix themes, colors
-          longerComments: 2000,       // vs 1000 for anonymous
-          replyToComments: true,      // Threading
-          editWindow: 300,            // 5 min edit window
-          verifiedBadge: true,        // Blockchain-verified identity
-      },
-      persistence: {
-          commentHistory: true,       // See your past comments
-          crossDevice: true,          // Profile syncs everywhere
-          exportData: true,           // Download your episode data
-      }
-  };
-
-  For Anonymous Users:
-
-  const anonymousFeatures = {
-      privacy: {
-          noTracking: true,           // No persistent identity
-          temporarySession: true,     // Episode expires
-          randomPrefix: "ANON_47291", // Different each time
-      },
-      limitations: {
-          maxLength: 1000,            // Shorter comments
-          noReplies: true,            // Linear commenting only
-          noEditing: true,            // Immutable once posted
-          basicStyling: true,         // Standard matrix theme only
-      }
-  };
-
-  🌐 P2P SYNCHRONIZATION
-
-  Cross-Device Profile Sync (Pure kdapp)
-
-  // When user logs in on new device
-  pub async fn sync_user_profile(pubkey: &PubKey) -> Option<UserProfile> {
-      // 1. Query blockchain for latest profile episode by this pubkey
-      let profile_episodes = query_episodes_by_author(pubkey).await;
-
-      // 2. Find most recent valid profile
-      let latest_profile = profile_episodes
-          .into_iter()
-          .filter(|ep| ep.is_valid_signature())
-          .max_by_key(|ep| ep.updated_at);
-
-      // 3. Return profile data - automatically synced!
-      latest_profile.map(|ep| ep.profile_data)
-  }
-
-  🎭 THE MATRIX AESTHETIC INTEGRATION
-
-  Enhanced Matrix UI for Authenticated Users:
-
-  /* Authenticated user styling */
-  .comment-authenticated {
-      border-left: 4px solid var(--bright-cyan);
-      background: rgba(20, 184, 166, 0.1);
-  }
-
-  .comment-authenticated .author-badge {
-      background: linear-gradient(45deg, var(--primary-teal), var(--bright-cyan));
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-size: 0.7rem;
-      text-transform: uppercase;
-  }
-
-  .comment-anonymous {
-      border-left: 4px solid rgba(255, 255, 255, 0.3);
-      opacity: 0.8;
-  }
-
-  🔐 SECURITY & PRIVACY CONSIDERATIONS
-
-  Privacy-First Design:
-
-  pub struct PrivacySettings {
-      pub public_profile: bool,      // Can others see your profile?
-      pub show_comment_history: bool, // Link comments to profile?
-      pub cross_episode_tracking: bool, // Connect different episodes?
-  }
-
-  // Default: Maximum privacy
-  impl Default for PrivacySettings {
-      fn default() -> Self {
-          Self {
-              public_profile: false,    // Private by default
-              show_comment_history: false,
-              cross_episode_tracking: false,
-          }
-      }
-  }
-
-  🎯 IMMEDIATE IMPLEMENTATION PLAN
-
-  Week 1: Basic Anonymous vs Authenticated
-
-  1. Add AuthorType to comments
-  2. Show different UI for auth vs anon users
-  3. Basic incentives (longer comments, etc.)
-
-  Week 2: Simple Profiles
-
-  1. Add display name to auth episodes
-  2. Generated avatars based on pubkey
-  3. Cross-device name sync
-
-  Week 3: Advanced Features
-
-  1. Profile episodes
-  2. Avatar upload/generation
-  3. Reputation system
-
-  💭 PHILOSOPHICAL ALIGNMENT
-
-  This approach is perfectly aligned with kdapp philosophy:
-
-  ✅ P2P: No central profile server - all on blockchain
-  ✅ Episode-based: Profiles are just another episode type
-  ✅ Cryptographic: Identity tied to keypairs, not usernames
-  ✅ Synchronization: Natural via blockchain state
-  ✅ Privacy: Users control what they share
-  ✅ Incentives: Blockchain-native benefits for participation
-
-  The beauty: Users get real benefits for authentication while anonymous users can still participate. The blockchain naturally handles sync, identity, and persistence!
-
-  Should we start implementing the basic anonymous vs authenticated distinction in the comment system?
-
-   🎯 NEXT STEPS PRIORITIZED
-
-  Based on the Opus 4 feedback and our vision, here's what I recommend we tackle:
-
-  IMMEDIATE (This Session)
-
-  1. Connect Matrix UI to Real Backend - Make the beautiful UI actually work
-  2. Multi-Organizer Support - First step toward resilience
-  3. Anonymous vs Authenticated Distinction - Different features for each
-
-  SHORT TERM (Next Sessions)
-
-  1. Service Registry Episode - On-chain peer discovery
-  2. Basic Profile System - Display names and generated avatars
-  3. Cross-Device Sync - Blockchain-based profile sync
-
-  LONG TERM (Future)
-
-  1. Tor/IPFS Support - Multiple transport layers
-  2. Full Censorship Resistance - No single points of failure
-  3. Advanced Features - Rich profiles, reputation, threading
-
-  The vision is captured, the architecture is sound, and we have a clear path forward. This won't be a walk in the park, but with kdapp's foundation, we're building something truly revolutionary! 🚀
 
 # 🌐 FUNDAMENTAL: kdapp is Peer-to-Peer, NOT Client-Server
 
@@ -376,6 +44,119 @@ Claude will automatically commit progress:
 - **"Peer Address"** (not "server address" or "client address")
 
 **Why This Matters**: When we use "server/client" language, we unconsciously default to hierarchical thinking patterns that are fundamentally wrong for kdapp architecture. This causes implementation bugs, security issues, and architectural confusion.
+
+## 💰 CRITICAL: P2P ECONOMIC MODEL - PARTICIPANT PAYS FOR EVERYTHING
+
+### 🎯 **ABSOLUTE RULE: Participant Is Self-Sovereign**
+- **Participant pays** for ALL their own transactions
+- **Participant signs** all their own episode messages
+- **Participant funds** their own authentication, comments, and actions
+- **Organizer NEVER pays** for participant actions
+- **Organizer is a blind facilitator** - only listens and coordinates
+
+### 🔒 **ZERO CORRUPTION ARCHITECTURE**
+```rust
+// ✅ CORRECT: Participant pays for their own actions
+let participant_wallet = get_wallet_for_command("web-participant", None)?;
+let participant_pubkey = PubKey(participant_wallet.keypair.x_only_public_key().0.into());
+
+let msg = EpisodeMessage::<SimpleAuth>::new_signed_command(
+    episode_id, 
+    command, 
+    participant_wallet.keypair.secret_key(), // Participant signs
+    participant_pubkey // Participant authorizes
+);
+
+// Use participant's UTXOs to fund transaction
+let participant_addr = Address::new(Prefix::Testnet, Version::PubKey, 
+    &participant_wallet.keypair.x_only_public_key().0.serialize());
+```
+
+### ❌ **FORBIDDEN CORRUPTION PATTERNS**
+```rust
+// ❌ WRONG: Organizer paying for participant actions
+let organizer_wallet = state.peer_keypair; // NO!
+let organizer_utxos = get_organizer_utxos(); // NO!
+
+// ❌ WRONG: Centralized control
+if user_is_authorized_by_server() { // NO!
+    allow_action();
+}
+
+// ❌ WRONG: Server-side validation
+fn validate_user_action(user_data) -> bool { // NO!
+    // Server deciding what participant can do
+}
+```
+
+### 🏗️ **ARCHITECTURAL GUARANTEES**
+1. **Economic Incentives**: Participant pays = participant controls
+2. **No Central Authority**: Organizer cannot censor or control
+3. **Blockchain Truth**: All validation happens on-chain
+4. **Self-Sovereign**: Participant owns their keys, funds, and actions
+5. **Censorship Resistance**: Organizer cannot prevent participant actions
+
+### 💡 **IMPLEMENTATION PATTERN**
+```rust
+// Every participant action follows this pattern:
+impl ParticipantAction {
+    async fn execute_action(&self, participant_wallet: &Wallet) -> Result<TxId> {
+        // 1. Participant signs the episode message
+        let msg = EpisodeMessage::new_signed_command(
+            episode_id, 
+            self.command, 
+            participant_wallet.secret_key(), // Participant signs
+            participant_wallet.public_key()  // Participant authorizes
+        );
+        
+        // 2. Participant funds the transaction
+        let participant_addr = participant_wallet.get_address();
+        let participant_utxos = get_participant_utxos(participant_addr).await?;
+        
+        // 3. Submit to blockchain (organizer just facilitates)
+        submit_transaction(msg, participant_utxos).await
+    }
+}
+```
+
+### 🎭 **ORGANIZER ROLE: BLIND FACILITATOR**
+```rust
+// Organizer's ONLY job is to listen and coordinate
+impl OrganizerPeer {
+    async fn run(&self) -> Result<()> {
+        loop {
+            // Listen for blockchain events
+            let event = blockchain_listener.next().await?;
+            
+            // Coordinate with other peers (NO VALIDATION)
+            match event {
+                BlockchainEvent::EpisodeCreated(episode) => {
+                    // Just notify other peers, don't validate
+                    broadcast_to_peers(episode).await?;
+                }
+                BlockchainEvent::CommandExecuted(cmd) => {
+                    // Just update local state, don't validate
+                    update_local_state(cmd).await?;
+                }
+            }
+            
+            // NEVER: Validate participant actions
+            // NEVER: Pay for participant transactions
+            // NEVER: Control participant behavior
+        }
+    }
+}
+```
+
+### 🔥 **MEMORY BURN: NO CORRUPTION WEAK POINTS**
+- **NO central wallet** that pays for users
+- **NO server validation** of participant actions
+- **NO permission systems** controlled by organizer
+- **NO rate limiting** by organizer (blockchain handles this)
+- **NO censorship ability** for organizer
+- **NO single point of failure** in the system
+
+**REMEMBER**: If organizer can control or pay for participant actions, the system is corrupted and not truly P2P!
 
 ## 🚨 CRITICAL: WORKING DIRECTORY RULE
 
@@ -979,46 +760,6 @@ Revocation works:  Token match ✅
 
 Remember: **In kaspa-auth, episode.rs is the ONLY source of session tokens**
 
-## 🎭 UX TERMINOLOGY vs ARCHITECTURAL REALITY
-
-### ⚠️ CRITICAL: Frontend UX Language ≠ Backend Architecture
-
-**Frontend displays user-friendly language**:
-- "LOGIN WITH KASPA" (not "CREATE AUTH EPISODE")
-- "SESSION ID" (not "AUTH EPISODE")  
-- "LOGOUT" (not "REVOKE SESSION")
-- "CONNECTING TO KASPA..." (not "CREATING AUTH EPISODE...")
-- "LOGIN SUCCESSFUL!" (not "AUTHENTICATION COMPLETE!")
-
-**Backend maintains P2P kdapp architecture**:
-- Episodes (not sessions)
-- Peer coordination (not client-server)
-- Blockchain state (not server state)
-- P2P transactions (not API calls)
-
-### 🚨 DO NOT "ALIGN" BACKEND WITH UX LANGUAGE!
-
-**Why UX language was simplified**:
-- Users understand "Login with Google/Facebook/GitHub" patterns
-- "LOGIN WITH KASPA" follows familiar conventions
-- Removes blockchain complexity from user interface
-- Improves adoption and accessibility
-
-**Why backend must stay kdapp-native**:
-- Episodes are the fundamental kdapp abstraction
-- P2P architecture requires episode thinking
-- Client-server patterns break kdapp design
-- Blockchain state management needs episode lifecycle
-
-### 📋 Translation Guide: UX ↔ Architecture
-
-| **UX Display** | **Backend Reality** | **Reason** |
-|---|---|---|
-| "Login with Kaspa" | Create auth episode | Familiar login pattern |
-| "Session ID: 12345" | Episode ID: 12345 | Session = user concept |
-| "Logout" | Revoke session command | Simple user action |
-| "Connected" | Episode initialized | Network connection metaphor |
-
 ### 🔒 IMMUTABLE RULE
 
 **NEVER change backend to match UX language**. The architecture is P2P kdapp episodes. The UX is familiar login patterns. These are separate concerns serving different stakeholders:
@@ -1102,3 +843,39 @@ cargo run --bin comment-it http-peer --port 8080
 - ✅ Analyze code structure and logic
 - ✅ Suggest build commands for user to run
 - ✅ Help debug compilation errors if user shares them
+
+## 🚰 DEVELOPMENT CONVENIENCE FEATURES PROTECTION
+
+**CRITICAL RULE**: Never remove development convenience features without explicit user permission.
+
+**Protected Features Include:**
+- ❌ **Faucet URLs and funding information** (`https://faucet.kaspanet.io/`)
+- ❌ **Explorer links** (`https://explorer-tn10.kaspa.org/`)
+- ❌ **Wallet address displays** for funding
+- ❌ **Console funding messages** and instructions
+- ❌ **Development helper functions** and debugging aids
+- ❌ **Error messages with funding guidance**
+
+**Why This Rule Exists:**
+- These features are essential for development workflow
+- Users rely on them for testing and debugging
+- Removing them breaks the development experience
+- They represent valuable collaborative work
+
+**Required Protocol:**
+```
+❌ WRONG: Silently remove faucet URLs during refactoring
+✅ CORRECT: "Should I remove the faucet URLs to clean up the code?"
+```
+
+**Examples of Protected Code:**
+```rust
+// ❌ NEVER remove without asking
+println!("🚰 Get testnet funds: https://faucet.kaspanet.io/");
+println!("📍 Fund organizer peer: {}", addr);
+
+// ❌ NEVER remove without asking  
+<a href="https://faucet.kaspanet.io/" target="_blank">Faucet</a>
+```
+
+**Exception**: Only remove these features if user explicitly requests it or if they're clearly outdated/broken.

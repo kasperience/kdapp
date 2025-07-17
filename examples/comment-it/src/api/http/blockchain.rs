@@ -3,7 +3,7 @@ use kaspa_consensus_core::{network::{NetworkId, NetworkType}, tx::{TransactionOu
 use kaspa_addresses::{Address, Prefix, Version};
 use kaspa_rpc_core::api::rpc::RpcApi;
 use kdapp::engine::EpisodeMessage;
-use crate::core::{episode::SimpleAuth, commands::AuthCommand};
+use crate::core::{SimpleAuth, AuthCommand};
 
 pub struct TxSubmitter<'a> {
     pub server_keypair: &'a secp256k1::Keypair,

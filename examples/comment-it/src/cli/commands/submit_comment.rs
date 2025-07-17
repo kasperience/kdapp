@@ -11,8 +11,8 @@ use kdapp::pki::PubKey;
 use log::info;
 
 use crate::wallet::get_wallet_for_command;
-use crate::comment::{CommentCommand, CommentEpisode};
-use crate::episode_runner::{COMMENT_PATTERN, COMMENT_PREFIX};
+use crate::core::{UnifiedCommand, AuthWithCommentsEpisode};
+use crate::episode_runner::{AUTH_PATTERN, AUTH_PREFIX};
 
 pub async fn submit_comment_to_episode(
     episode_id: u64,
@@ -38,7 +38,7 @@ pub async fn submit_comment_to_episode(
     // Connect to Kaspa network
     let network = NetworkId::with_suffix(NetworkType::Testnet, 10);
     let kaspad = proxy::connect_client(network, None).await?;
-    let generator = TransactionGenerator::new(wallet.keypair, COMMENT_PATTERN, COMMENT_PREFIX);
+    let generator = TransactionGenerator::new(wallet.keypair, AUTH_PATTERN, AUTH_PREFIX);
     
     // Get UTXO for transaction
     let entries = kaspad.get_utxos_by_addresses(vec![addr.clone()]).await?;
@@ -51,16 +51,14 @@ pub async fn submit_comment_to_episode(
         UtxoEntry::from(entries[0].utxo_entry.clone())
     );
     
-    // Create comment command
-    let comment_cmd = CommentCommand::SubmitComment {
+    // Create unified comment command
+    let comment_cmd = UnifiedCommand::SubmitComment {
         text: comment_text.clone(),
-        author: format!("{}", wallet.keypair.public_key()),
         session_token: session_token.clone(),
-        signature: "TODO_SIGN_COMMENT".to_string(), // TODO: Implement proper signature
     };
     
-    // Create episode message (like other authentication commands)
-    let step = EpisodeMessage::<CommentEpisode>::new_signed_command(
+    // Create episode message using unified episode
+    let step = EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(
         episode_id as u32,
         comment_cmd,
         wallet.keypair.secret_key(),

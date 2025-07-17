@@ -17,7 +17,7 @@ use crate::comment::{Comment, CommentEpisode};
 
 // Import auth components from our unified comment-it project
 use crate::{
-    core::episode::SimpleAuth,
+    core::SimpleAuth,
     api::http::types::{AuthRequest, AuthResponse, ChallengeResponse, VerifyRequest, VerifyResponse},
     wallet::get_wallet_for_command,
 };
@@ -43,21 +43,8 @@ pub struct CommentUpdate {
     pub update_type: String, // "new_comment"
 }
 
-/// Request to submit a comment
-#[derive(Debug, Deserialize)]
-pub struct SubmitCommentRequest {
-    pub text: String,
-    pub session_token: String,
-    pub author: String,
-}
-
-/// Response after submitting a comment
-#[derive(Debug, Serialize)]
-pub struct SubmitCommentResponse {
-    pub success: bool,
-    pub comment_id: Option<u64>,
-    pub message: String,
-}
+// REMOVED: SubmitCommentRequest, SubmitCommentResponse
+// These violate P2P architecture - participants submit their own transactions
 
 /// Response for getting comments
 #[derive(Debug, Serialize)]
@@ -110,8 +97,7 @@ impl CommentOrganizer {
             .route("/auth/revoke-session", post(revoke_session))
             .route("/auth/status/{episode_id}", get(get_auth_status))
             
-            // Comment endpoints
-            .route("/api/comments", post(submit_comment))
+            // Comment endpoints (read-only)
             .route("/api/comments", get(get_comments))
             .route("/api/comments/latest", get(get_latest_comments))
             
@@ -150,10 +136,10 @@ impl CommentOrganizer {
         println!("   • GET  /auth/challenge/:id - Get challenge");
         println!("   • POST /auth/verify      - Verify signature");
         println!("   • POST /auth/revoke-session - Revoke session");
-        println!("💬 Comment endpoints:");
-        println!("   • POST /api/comments     - Submit new comment");
+        println!("💬 Comment endpoints (read-only):");
         println!("   • GET  /api/comments     - Get all comments");
         println!("   • GET  /api/comments/latest - Get latest comments");
+        println!("   • Comments submitted via participant wallets (P2P)");
         println!("🔗 Real-time WebSocket: ws://{}:{}/ws", self.host, self.port);
         println!();
         println!("✅ NO DEPENDENCIES: Everything in one organizer peer!");
@@ -282,49 +268,9 @@ async fn get_auth_status(
     })))
 }
 
-/// Submit a new comment to the blockchain
-async fn submit_comment(
-    State(state): State<OrganizerState>,
-    Json(request): Json<SubmitCommentRequest>,
-) -> Result<Json<SubmitCommentResponse>, StatusCode> {
-    info!("📝 Comment submission request: {}", request.text);
-
-    // TODO: Verify session token with kaspa-auth organizer peer
-    // TODO: Submit comment transaction to blockchain
-    // TODO: Wait for blockchain confirmation
-
-    // For now, simulate comment creation
-    let comment = Comment {
-        id: 1, // TODO: Get from episode
-        text: request.text.clone(),
-        author: request.author.clone(),
-        timestamp: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
-        session_token: request.session_token.clone(),
-    };
-
-    // Broadcast to WebSocket clients
-    let update = CommentUpdate {
-        episode_id: 1, // TODO: Use real episode ID
-        comment: comment.clone(),
-        update_type: "new_comment".to_string(),
-    };
-
-    if let Err(e) = state.websocket_tx.send(update) {
-        error!("Failed to broadcast comment update: {}", e);
-    }
-
-    // Store in memory (TODO: Store in blockchain episode)
-    // For now, just return success
-
-    Ok(Json(SubmitCommentResponse {
-        success: true,
-        comment_id: Some(comment.id),
-        message: "Comment submitted successfully".to_string(),
-    }))
-}
+// REMOVED: submit_comment function
+// Violates P2P architecture - participants must submit their own transactions
+// Use CLI: `cargo run --bin comment-it -- submit-comment --episode-id 123 --text "Hello"`
 
 /// Get all comments
 async fn get_comments(

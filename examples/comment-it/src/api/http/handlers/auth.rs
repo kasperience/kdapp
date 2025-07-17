@@ -14,7 +14,7 @@ use crate::api::http::{
     types::{AuthRequest, AuthResponse},
     state::PeerState,
 };
-use crate::core::episode::SimpleAuth;
+use crate::core::SimpleAuth;
 
 pub async fn start_auth(
     State(state): State<PeerState>,

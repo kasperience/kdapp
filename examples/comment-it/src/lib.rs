@@ -22,6 +22,6 @@ pub mod auth;
 // pub mod examples;        // → individual example projects
 
 // Public API exports (only working functionality)
-pub use core::commands::AuthCommand;
+pub use core::AuthCommand;
 pub use episode_runner::{AuthEventHandler, AuthServerConfig, run_auth_server, create_auth_generator};
 pub use auth::{run_http_coordinated_authentication, run_session_revocation, AuthenticationResult};

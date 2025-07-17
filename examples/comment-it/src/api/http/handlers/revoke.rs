@@ -12,7 +12,7 @@ use crate::api::http::{
     types::{RevokeSessionRequest, RevokeSessionResponse},
     state::PeerState,
 };
-use crate::core::{episode::SimpleAuth, commands::AuthCommand};
+use crate::core::{SimpleAuth, AuthCommand};
 
 pub async fn revoke_session(
     State(state): State<PeerState>,
