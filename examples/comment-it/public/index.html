@@ -1731,7 +1731,7 @@
             const originalText = button.textContent;
             button.disabled = true;
             
-            const commentText = document.getElementById('commentText').value.trim();
+            const commentText = document.getElementById('commentInput').value.trim();
             if (!commentText) {
                 alert('Please enter a comment!');
                 button.disabled = false;
