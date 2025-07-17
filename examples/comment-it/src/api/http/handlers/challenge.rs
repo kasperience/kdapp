@@ -1,7 +1,5 @@
 // src/api/http/handlers/challenge.rs
 use axum::{extract::State, response::Json, http::StatusCode};
-use kaspa_addresses::{Address, Prefix, Version};
-use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
 use kaspa_wrpc_client::prelude::RpcApi;
 use kdapp::{
     engine::EpisodeMessage,
@@ -11,7 +9,7 @@ use crate::api::http::{
     types::{ChallengeRequest, ChallengeResponse},
     state::PeerState,
 };
-use crate::core::{AuthWithCommentsEpisode, UnifiedCommand};
+use crate::core::AuthWithCommentsEpisode;
 use std::sync::Arc;
 use std::collections::HashSet;
 
@@ -73,6 +71,7 @@ pub async fn request_challenge(
         &participant_wallet.keypair.x_only_public_key().0.serialize()
     );
     
+    
     // Create RequestChallenge command signed by PARTICIPANT (exactly like CLI)
     let auth_command = crate::core::UnifiedCommand::RequestChallenge;
     let step = EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(
@@ -88,12 +87,12 @@ pub async fn request_challenge(
         step,
     ).await {
         Ok(tx_id) => {
-            println!("✅ RequestChallenge transaction {} submitted successfully to blockchain via AuthHttpPeer!", tx_id);
+            println!("✅ MATRIX UI SUCCESS: Challenge request submitted - Transaction {}", tx_id);
             println!("⏳ Organizer peer will generate challenge and update episode on blockchain");
             (tx_id, "request_challenge_submitted".to_string())
         }
         Err(e) => {
-            println!("❌ RequestChallenge submission failed via AuthHttpPeer: {}", e);
+            println!("❌ MATRIX UI ERROR: Challenge request failed - {}", e);
             ("error".to_string(), "request_challenge_failed".to_string())
         }
     };

@@ -70,7 +70,7 @@ pub async fn start_auth(
         participants: vec![participant_pubkey] 
     };
     
-    // Quick UTXO check (detailed check happens in blockchain engine)
+    // Quick UTXO check (detailed UTXO handling happens in blockchain engine)
     if let Some(ref kaspad) = state.kaspad_client {
         println!("🔍 Quick check for participant wallet funding...");
         let entries = match kaspad.get_utxos_by_addresses(vec![participant_funding_addr.clone()]).await {
@@ -103,12 +103,12 @@ pub async fn start_auth(
         new_episode,
     ).await {
         Ok(tx_id) => {
-            println!("✅ Transaction {} submitted successfully to blockchain via AuthHttpPeer!", tx_id);
+            println!("✅ MATRIX UI SUCCESS: Auth episode created - Transaction {}", tx_id);
             println!("🎬 Episode {} initialized on blockchain", episode_id);
             (tx_id, "submitted_to_blockchain".to_string())
         }
         Err(e) => {
-            println!("❌ Transaction submission failed via AuthHttpPeer: {}", e);
+            println!("❌ MATRIX UI ERROR: Auth episode creation failed - {}", e);
             println!("💡 Make sure participant wallet is funded: {}", participant_funding_addr);
             ("error".to_string(), "transaction_submission_failed".to_string())
         }

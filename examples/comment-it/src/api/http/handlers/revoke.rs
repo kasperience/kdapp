@@ -11,7 +11,7 @@ use crate::api::http::{
     types::{RevokeSessionRequest, RevokeSessionResponse},
     state::PeerState,
 };
-use crate::core::{AuthWithCommentsEpisode, UnifiedCommand};
+use crate::core::AuthWithCommentsEpisode;
 
 pub async fn revoke_session(
     State(state): State<PeerState>,
@@ -28,6 +28,11 @@ pub async fn revoke_session(
     // Find the participant public key from the episode
     let episode = match state.blockchain_episodes.lock() {
         Ok(episodes) => {
+            println!("🔍 DEBUG: Looking for episode {} in {} total episodes", episode_id, episodes.len());
+            for (id, ep) in episodes.iter() {
+                println!("🔍 DEBUG: Found episode {} with owner: {:?}, session_token: {:?}", 
+                    id, ep.owner, ep.session_token);
+            }
             episodes.get(&episode_id).cloned()
         }
         Err(e) => {
@@ -62,12 +67,23 @@ pub async fn revoke_session(
         return Err(StatusCode::BAD_REQUEST);
     }
     
-    // 🎯 TRUE P2P: Participant funds their own transactions (like CLI)
+    // 🎯 TRUE P2P: Participant funds their own session revocation transaction
     let participant_wallet = crate::wallet::get_wallet_for_command("web-participant", None)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            println!("❌ Failed to load web-participant wallet: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let participant_secret_key = participant_wallet.keypair.secret_key();
     
-    // Create RevokeSession command (exactly like CLI)
+    // Create participant's Kaspa address for transaction funding (True P2P!)
+    let participant_addr = Address::new(
+        Prefix::Testnet, 
+        Version::PubKey, 
+        &participant_wallet.keypair.x_only_public_key().0.serialize()
+    );
+    
+    
+    // Create RevokeSession command
     let auth_command = crate::core::UnifiedCommand::RevokeSession {
         session_token: req.session_token.clone(),
         signature: req.signature.clone(),
@@ -95,19 +111,21 @@ pub async fn revoke_session(
         step,
     ).await {
         Ok(tx_id) => {
-            println!("✅ RevokeSession transaction {} submitted successfully to blockchain via AuthHttpPeer!", tx_id);
-            println!("📊 Session revocation processed by auth organizer peer's kdapp engine");
-            tx_id
+            println!("✅ MATRIX UI SUCCESS: Session revocation submitted - Transaction {}", tx_id);
+            println!("📊 Transaction submitted to Kaspa blockchain - organizer peer will detect and respond");
+            (tx_id, "session_revocation_submitted".to_string())
         }
         Err(e) => {
-            println!("❌ RevokeSession submission failed via AuthHttpPeer: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            println!("❌ MATRIX UI ERROR: Session revocation failed - {}", e);
+            ("error".to_string(), "session_revocation_failed".to_string())
         }
     };
     
+    let (transaction_id, status) = submission_result;
+    
     Ok(Json(RevokeSessionResponse {
         episode_id,
-        transaction_id: submission_result,
-        status: "session_revocation_submitted".to_string(),
+        transaction_id,
+        status,
     }))
 }

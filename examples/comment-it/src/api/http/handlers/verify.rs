@@ -1,7 +1,5 @@
 // src/api/http/handlers/verify.rs
 use axum::{extract::State, response::Json, http::StatusCode};
-use kaspa_addresses::{Address, Prefix, Version};
-use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
 use kaspa_wrpc_client::prelude::RpcApi;
 use kdapp::{
     engine::EpisodeMessage,
@@ -11,7 +9,7 @@ use crate::api::http::{
     types::{VerifyRequest, VerifyResponse},
     state::PeerState,
 };
-use crate::core::{AuthWithCommentsEpisode, UnifiedCommand};
+use crate::core::AuthWithCommentsEpisode;
 use std::sync::Arc;
 use std::collections::HashSet;
 
@@ -97,6 +95,7 @@ pub async fn verify_auth(
         &participant_wallet.keypair.x_only_public_key().0.serialize()
     );
     
+    
     // Create SubmitResponse command (exactly like CLI)
     let auth_command = crate::core::UnifiedCommand::SubmitResponse {
         signature: req.signature.clone(),
@@ -125,12 +124,12 @@ pub async fn verify_auth(
         step,
     ).await {
         Ok(tx_id) => {
-            println!("✅ SubmitResponse transaction {} submitted successfully to blockchain via AuthHttpPeer!", tx_id);
-            println!("📊 Transactions are now being processed by auth organizer peer's kdapp engine");
+            println!("✅ MATRIX UI SUCCESS: Authentication signature submitted - Transaction {}", tx_id);
+            println!("📊 Transaction submitted to Kaspa blockchain - organizer peer will detect and respond");
             (tx_id, "submit_response_submitted".to_string())
         }
         Err(e) => {
-            println!("❌ SubmitResponse submission failed via AuthHttpPeer: {}", e);
+            println!("❌ MATRIX UI ERROR: Authentication signature submission failed - {}", e);
             ("error".to_string(), "submit_response_failed".to_string())
         }
     };

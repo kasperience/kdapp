@@ -14,7 +14,7 @@ pub async fn handle_authenticate(sub_matches: &ArgMatches) -> Result<(), Box<dyn
         .map_err(|_| "Invalid timeout value")?;
     
     // Get private key using unified wallet system
-    let auth_keypair = if let Some(keyfile_path) = sub_matches.get_one::<String>("keyfile") {
+    let _auth_keypair = if let Some(keyfile_path) = sub_matches.get_one::<String>("keyfile") {
         load_private_key_from_file(keyfile_path)?
     } else {
         let provided_private_key = sub_matches.get_one::<String>("key").map(|s| s.as_str());
@@ -31,7 +31,7 @@ pub async fn handle_authenticate(sub_matches: &ArgMatches) -> Result<(), Box<dyn
     if use_pure_kdapp {
         println!("🚀 Starting pure kdapp authentication (experimental)");
         println!("⚡ No HTTP coordination - pure peer-to-peer via Kaspa blockchain");
-        run_authentication_with_timeout(auth_keypair, peer_url.clone(), timeout_seconds).await?;
+        run_authentication_with_timeout(_auth_keypair, peer_url.clone(), timeout_seconds).await?;
     } else {
         println!("🚀 Starting hybrid authentication (kdapp + HTTP coordination)");
         println!("🎯 Organizer peer: {}", peer_url);
@@ -50,7 +50,7 @@ pub async fn handle_authenticate_full_flow(sub_matches: &ArgMatches) -> Result<(
         .map_err(|_| "Invalid auth timeout value")?;
     
     // Get private key using unified wallet system
-    let auth_keypair = if let Some(keyfile_path) = sub_matches.get_one::<String>("keyfile") {
+    let _auth_keypair = if let Some(keyfile_path) = sub_matches.get_one::<String>("keyfile") {
         load_private_key_from_file(keyfile_path)?
     } else {
         let provided_private_key = sub_matches.get_one::<String>("key").map(|s| s.as_str());
@@ -89,7 +89,7 @@ pub async fn handle_logout(sub_matches: &ArgMatches) -> Result<(), Box<dyn Error
         .map_err(|_| "Invalid timeout value")?;
     
     // Get private key using unified wallet system
-    let auth_keypair = if let Some(provided_private_key) = sub_matches.get_one::<String>("key") {
+    let _auth_keypair = if let Some(provided_private_key) = sub_matches.get_one::<String>("key") {
         parse_private_key(provided_private_key)?
     } else {
         let wallet = get_wallet_for_command("participant-peer", None)?;
@@ -99,7 +99,7 @@ pub async fn handle_logout(sub_matches: &ArgMatches) -> Result<(), Box<dyn Error
     println!("🚪 Running focused logout test ({}s timeout)", timeout_seconds);
     println!("📋 Episode: {}, Session: {}", episode_id, session_token);
     
-    run_logout_with_timeout(auth_keypair, episode_id, session_token, peer_url, timeout_seconds).await?;
+    run_logout_with_timeout(_auth_keypair, episode_id, session_token, peer_url, timeout_seconds).await?;
     
     Ok(())
 }
@@ -120,7 +120,7 @@ pub async fn handle_revoke_session(sub_matches: &ArgMatches) -> Result<(), Box<d
     let peer_url = sub_matches.get_one::<String>("peer").unwrap().clone();
     
     // Get private key using unified wallet system
-    let auth_keypair = if let Some(provided_private_key) = sub_matches.get_one::<String>("key") {
+    let _auth_keypair = if let Some(provided_private_key) = sub_matches.get_one::<String>("key") {
         parse_private_key(provided_private_key)?
     } else {
         let wallet = get_wallet_for_command("participant-peer", None)?;
@@ -128,7 +128,7 @@ pub async fn handle_revoke_session(sub_matches: &ArgMatches) -> Result<(), Box<d
     };
     
     println!("🔄 Running session revocation (blockchain transaction)");
-    run_session_revocation(auth_keypair, episode_id, session_token, peer_url).await?;
+    run_session_revocation(_auth_keypair, episode_id, session_token, peer_url).await?;
     
     Ok(())
 }
