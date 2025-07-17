@@ -62,53 +62,13 @@ pub async fn revoke_session(
         return Err(StatusCode::BAD_REQUEST);
     }
     
-    // 🎯 TRUE P2P: Participant funds their own session revocation transaction
+    // 🎯 TRUE P2P: Participant funds their own transactions (like CLI)
     let participant_wallet = crate::wallet::get_wallet_for_command("web-participant", None)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let participant_secret_key = participant_wallet.keypair.secret_key();
     
-    // Create participant's Kaspa address for transaction funding (True P2P!)
-    let participant_addr = Address::new(
-        Prefix::Testnet, 
-        Version::PubKey, 
-        &participant_wallet.keypair.x_only_public_key().0.serialize()
-    );
-    
-    // Get REAL UTXOs from blockchain (exactly like CLI)
-    let _utxo = if let Some(ref kaspad) = state.kaspad_client {
-        println!("🔍 Fetching UTXOs for RevokeSession transaction...");
-        
-        // Wait a bit for any previous transactions to confirm
-        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
-        
-        let entries = match kaspad.get_utxos_by_addresses(vec![participant_addr.clone()]).await {
-            Ok(entries) => entries,
-            Err(e) => {
-                println!("❌ Failed to fetch UTXOs: {}", e);
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        };
-        
-        if entries.is_empty() {
-            println!("❌ MATRIX UI ERROR: Participant wallet needs funding for session revocation");
-            println!("💰 Fund this address: {}", participant_addr);
-            println!("🚰 Get testnet funds: https://faucet.kaspanet.io/");
-            return Err(StatusCode::SERVICE_UNAVAILABLE);
-        }
-        
-        let utxo = entries.first().map(|entry| {
-            (TransactionOutpoint::from(entry.outpoint.clone()), UtxoEntry::from(entry.utxo_entry.clone()))
-        }).unwrap();
-        
-        println!("✅ Using UTXO: {}", utxo.0);
-        utxo
-    } else {
-        println!("❌ No kaspad client available");
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    };
-    
-    // Create RevokeSession command
-    let auth_command = UnifiedCommand::RevokeSession {
+    // Create RevokeSession command (exactly like CLI)
+    let auth_command = crate::core::UnifiedCommand::RevokeSession {
         session_token: req.session_token.clone(),
         signature: req.signature.clone(),
     };
@@ -135,21 +95,19 @@ pub async fn revoke_session(
         step,
     ).await {
         Ok(tx_id) => {
-            println!("✅ MATRIX UI SUCCESS: Session revocation submitted - Transaction {}", tx_id);
-            println!("📊 Transaction submitted to Kaspa blockchain - organizer peer will detect and respond");
-            (tx_id, "session_revocation_submitted".to_string())
+            println!("✅ RevokeSession transaction {} submitted successfully to blockchain via AuthHttpPeer!", tx_id);
+            println!("📊 Session revocation processed by auth organizer peer's kdapp engine");
+            tx_id
         }
         Err(e) => {
-            println!("❌ MATRIX UI ERROR: Session revocation failed - {}", e);
-            ("error".to_string(), "session_revocation_failed".to_string())
+            println!("❌ RevokeSession submission failed via AuthHttpPeer: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
     
-    let (transaction_id, status) = submission_result;
-    
     Ok(Json(RevokeSessionResponse {
         episode_id,
-        transaction_id,
-        status,
+        transaction_id: submission_result,
+        status: "session_revocation_submitted".to_string(),
     }))
 }

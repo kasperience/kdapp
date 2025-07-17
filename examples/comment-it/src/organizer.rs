@@ -320,7 +320,7 @@ async fn get_comments(
     let mut all_comments = Vec::new();
     
     // Collect comments from all unified episodes
-    for (episode_id, episode) in auth_episodes.iter() {
+    for (_episode_id, episode) in auth_episodes.iter() {
         for comment in &episode.comments {
             all_comments.push(Comment {
                 id: comment.id,
@@ -335,9 +335,10 @@ async fn get_comments(
     // Sort by timestamp (newest first)
     all_comments.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     
+    let total = all_comments.len();
     Ok(Json(GetCommentsResponse {
         comments: all_comments,
-        total: all_comments.len(),
+        total,
     }))
 }
 
@@ -351,7 +352,7 @@ async fn get_latest_comments(
     let mut all_comments = Vec::new();
     
     // Collect comments from all unified episodes
-    for (episode_id, episode) in auth_episodes.iter() {
+    for (_episode_id, episode) in auth_episodes.iter() {
         for comment in &episode.comments {
             all_comments.push(Comment {
                 id: comment.id,
@@ -367,9 +368,10 @@ async fn get_latest_comments(
     all_comments.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     all_comments.truncate(10);
     
+    let total = all_comments.len();
     Ok(Json(GetCommentsResponse {
         comments: all_comments,
-        total: all_comments.len(),
+        total,
     }))
 }
 

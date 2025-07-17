@@ -3,12 +3,11 @@ use axum::{extract::State, response::Json, http::StatusCode};
 use kaspa_addresses::{Address, Prefix, Version};
 use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
 use kaspa_wrpc_client::prelude::RpcApi;
-use rand::Rng;
 use kdapp::{
     engine::EpisodeMessage,
     pki::PubKey,
 };
-
+use rand::Rng;
 
 use crate::api::http::{
     types::{AuthRequest, AuthResponse},
@@ -20,7 +19,6 @@ pub async fn start_auth(
     State(state): State<PeerState>,
     Json(req): Json<AuthRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
-    println!("🎭 MATRIX UI ACTION: User started authentication episode");
     println!("🚀 Submitting REAL NewEpisode transaction to Kaspa blockchain...");
     
     // Parse the participant's public key
@@ -40,13 +38,13 @@ pub async fn start_auth(
             }
         },
         Err(e) => {
-            println!("❌ MATRIX UI ERROR: Invalid public key format - {}", e);
+            println!("❌ Hex decode failed: {}", e);
             return Err(StatusCode::BAD_REQUEST);
         },
     };
     
     // Generate episode ID
-    let episode_id = rand::thread_rng().gen();
+    let episode_id: u64 = rand::thread_rng().gen();
     
     // Create participant Kaspa address for transaction funding (like CLI does)
     let participant_addr = Address::new(
@@ -68,13 +66,13 @@ pub async fn start_auth(
     
     // Create NewEpisode message for blockchain
     let new_episode = EpisodeMessage::<AuthWithCommentsEpisode>::NewEpisode { 
-        episode_id, 
+        episode_id: episode_id as u32, 
         participants: vec![participant_pubkey] 
     };
     
-    // Get REAL UTXOs from blockchain (like CLI does)
-    let _utxo = if let Some(ref kaspad) = state.kaspad_client {
-        println!("🔍 Fetching UTXOs for participant address...");
+    // Quick UTXO check (detailed check happens in blockchain engine)
+    if let Some(ref kaspad) = state.kaspad_client {
+        println!("🔍 Quick check for participant wallet funding...");
         let entries = match kaspad.get_utxos_by_addresses(vec![participant_funding_addr.clone()]).await {
             Ok(entries) => entries,
             Err(e) => {
@@ -84,22 +82,17 @@ pub async fn start_auth(
         };
         
         if entries.is_empty() {
-            println!("❌ MATRIX UI ERROR: Participant wallet needs funding");
+            println!("❌ No UTXOs found! Participant wallet needs funding.");
             println!("💰 Fund this address: {}", participant_funding_addr);
             println!("🚰 Get testnet funds: https://faucet.kaspanet.io/");
             return Err(StatusCode::SERVICE_UNAVAILABLE);
         }
         
-        let utxo = entries.first().map(|entry| {
-            (TransactionOutpoint::from(entry.outpoint.clone()), UtxoEntry::from(entry.utxo_entry.clone()))
-        }).unwrap();
-        
-        println!("✅ UTXO found: {}", utxo.0);
-        utxo
+        println!("✅ Participant wallet has UTXOs - ready for transaction");
     } else {
         println!("❌ No kaspad client available");
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    };
+    }
     
     println!("🎯 Episode ID: {}", episode_id);
     println!("👤 Participant PubKey: {}", participant_pubkey);
@@ -110,12 +103,12 @@ pub async fn start_auth(
         new_episode,
     ).await {
         Ok(tx_id) => {
-            println!("✅ MATRIX UI SUCCESS: Auth episode created - Transaction {}", tx_id);
+            println!("✅ Transaction {} submitted successfully to blockchain via AuthHttpPeer!", tx_id);
             println!("🎬 Episode {} initialized on blockchain", episode_id);
             (tx_id, "submitted_to_blockchain".to_string())
         }
         Err(e) => {
-            println!("❌ MATRIX UI ERROR: Auth episode creation failed - {}", e);
+            println!("❌ Transaction submission failed via AuthHttpPeer: {}", e);
             println!("💡 Make sure participant wallet is funded: {}", participant_funding_addr);
             ("error".to_string(), "transaction_submission_failed".to_string())
         }
@@ -124,8 +117,8 @@ pub async fn start_auth(
     let (transaction_id, status) = submission_result;
     
     Ok(Json(AuthResponse {
-        episode_id: episode_id.into(),
-        organizer_public_key: hex::encode(state.peer_keypair.public_key().serialize()),
+        episode_id: episode_id,
+        organizer_public_key: hex::encode(state.peer_keypair.x_only_public_key().0.serialize()),
         participant_kaspa_address: participant_addr.to_string(),
         transaction_id: Some(transaction_id),
         status: status,

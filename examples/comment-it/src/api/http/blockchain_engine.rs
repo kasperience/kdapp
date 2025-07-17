@@ -157,43 +157,41 @@ impl AuthHttpPeer {
         episode_message: kdapp::engine::EpisodeMessage<crate::core::AuthWithCommentsEpisode>,
     ) -> Result<String, Box<dyn std::error::Error>> {
         if let Some(kaspad) = self.peer_state.kaspad_client.as_ref() {
-            // Get organizer's wallet for funding the transaction
-            let organizer_wallet = crate::wallet::get_wallet_for_command("organizer-peer", None)?;
-            let organizer_keypair = organizer_wallet.keypair;
-            let organizer_addr = kaspa_addresses::Address::new(
-                kaspa_addresses::Prefix::Testnet,
-                kaspa_addresses::Version::PubKey,
-                &organizer_keypair.x_only_public_key().0.serialize(),
+            // Use the transaction generator to create and submit the transaction
+            let participant_wallet = crate::wallet::get_wallet_for_command("web-participant", None)?;
+            
+            // Create participant's Kaspa address
+            let participant_addr = kaspa_addresses::Address::new(
+                kaspa_addresses::Prefix::Testnet, 
+                kaspa_addresses::Version::PubKey, 
+                &participant_wallet.keypair.x_only_public_key().0.serialize()
             );
-
-            // Fetch UTXOs for the organizer's wallet
-            let entries = kaspad.get_utxos_by_addresses(vec![organizer_addr.clone()]).await?;
+            
+            // Get UTXOs for participant
+            let entries = kaspad.get_utxos_by_addresses(vec![participant_addr.clone()]).await?;
             if entries.is_empty() {
-                return Err("Organizer wallet needs funding to submit transactions.".into());
+                return Err("No UTXOs found for participant wallet. Please fund the wallet.".into());
             }
+            
             let utxo = entries.first().map(|entry| {
-                (kaspa_consensus_core::tx::TransactionOutpoint::from(entry.outpoint.clone()), kaspa_consensus_core::tx::UtxoEntry::from(entry.utxo_entry.clone()))
+                (kaspa_consensus_core::tx::TransactionOutpoint::from(entry.outpoint.clone()), 
+                 kaspa_consensus_core::tx::UtxoEntry::from(entry.utxo_entry.clone()))
             }).unwrap();
-
-            // Build the transaction using the TransactionGenerator
-            let generator = TransactionGenerator::new(
-                organizer_keypair,
-                AUTH_PATTERN,
-                AUTH_PREFIX,
+            
+            // Build and submit transaction using the transaction generator
+            let tx = self.peer_state.transaction_generator.build_command_transaction(
+                utxo, 
+                &participant_addr, 
+                &episode_message, 
+                5000 // fee
             );
-            let tx = generator.build_command_transaction(utxo, &organizer_addr, &episode_message, 5000);
+            
+            // Submit to blockchain
+            kaspad.submit_transaction(tx.as_ref().into(), false).await?;
+            
             let tx_id = tx.id().to_string();
-
-            match kaspad.submit_transaction(tx.as_ref().into(), false).await {
-                Ok(_) => {
-                    println!("✅ Transaction {} submitted to blockchain via AuthHttpPeer", tx_id);
-                    Ok(tx_id)
-                }
-                Err(e) => {
-                    println!("❌ Transaction {} submission failed: {}", tx_id, e);
-                    Err(e.into())
-                }
-            }
+            println!("✅ Transaction {} submitted to blockchain successfully!", tx_id);
+            Ok(tx_id)
         } else {
             Err("Kaspad client not available for transaction submission.".into())
         }

@@ -18,6 +18,7 @@ pub struct Comment {
     pub text: String,
     pub author: String, // PubKey as string to support serialization
     pub timestamp: u64,
+    pub session_token: String,
 }
 
 /// Unified authentication and comment episode for Kaspa
@@ -223,6 +224,7 @@ impl Episode for AuthWithCommentsEpisode {
                     text: text.clone(),
                     author: format!("{}", participant),
                     timestamp: metadata.accepting_time,
+                    session_token: session_token.clone(),
                 };
                 
                 // Store comment
@@ -439,6 +441,7 @@ mod tests {
         assert_eq!(auth.comments[0].text, "Hello blockchain!");
         assert_eq!(auth.comments[0].author, format!("{}", p1));
         assert_eq!(auth.comments[0].id, 1);
+        assert_eq!(auth.comments[0].session_token, "sess_123");
         assert_eq!(auth.next_comment_id, 2);
         
         // Test rollback
