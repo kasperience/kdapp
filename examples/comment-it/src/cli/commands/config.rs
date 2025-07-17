@@ -232,7 +232,7 @@ async fn test_peers() -> Result<(), Box<dyn std::error::Error>> {
     use crate::cli::resilient_peer_connection::{ResilientPeerConnection, ApiRequest, HttpMethod};
     
     let config = CommentItConfig::load_or_create()?;
-    let mut peer_connection = ResilientPeerConnection::new(config.clone());
+    let _peer_connection = ResilientPeerConnection::new(config.clone());
     
     println!("🧪 TESTING ORGANIZER PEER CONNECTIVITY");
     println!("======================================");

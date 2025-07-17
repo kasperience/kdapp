@@ -21,8 +21,8 @@ pub async fn submit_comment_to_episode(
     _kaspa_address: Option<&str>,
     private_key: Option<&str>,
 ) -> Result<(), Box<dyn Error>> {
-    // Load participant wallet
-    let wallet = get_wallet_for_command("submit-comment", private_key)?;
+    // Load participant wallet (same as used in web authentication)
+    let wallet = get_wallet_for_command("participant-peer", private_key)?;
     let addr = wallet.get_kaspa_address();
     info!("🔑 Using wallet address: {}", addr);
     

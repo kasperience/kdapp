@@ -6,13 +6,12 @@ use kaspa_wrpc_client::prelude::RpcApi;
 use kdapp::{
     engine::EpisodeMessage,
     pki::PubKey,
-    generator::TransactionGenerator,
 };
 use crate::api::http::{
     types::{ChallengeRequest, ChallengeResponse},
     state::PeerState,
 };
-use crate::core::{SimpleAuth, AuthCommand};
+use crate::core::{AuthWithCommentsEpisode, UnifiedCommand};
 use std::sync::Arc;
 use std::collections::HashSet;
 
@@ -76,7 +75,7 @@ pub async fn request_challenge(
     
     // Get REAL UTXOs from blockchain (exactly like CLI)
     // Wait for previous transaction to confirm before fetching new UTXOs
-    let utxo = if let Some(ref kaspad) = state.kaspad_client {
+    let _utxo = if let Some(ref kaspad) = state.kaspad_client {
         println!("🔍 Fetching UTXOs for RequestChallenge transaction...");
         
         // Wait a bit for the previous transaction to confirm
@@ -110,8 +109,8 @@ pub async fn request_challenge(
     };
     
     // Create RequestChallenge command signed by PARTICIPANT (exactly like CLI)
-    let auth_command = AuthCommand::RequestChallenge;
-    let step = EpisodeMessage::<SimpleAuth>::new_signed_command(
+    let auth_command = UnifiedCommand::RequestChallenge;
+    let step = EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(
         req.episode_id.try_into().unwrap(), 
         auth_command, 
         participant_secret_key, // 🚨 CRITICAL: Participant signs their own commands!
@@ -122,9 +121,6 @@ pub async fn request_challenge(
     println!("📤 Submitting RequestChallenge transaction to Kaspa blockchain via AuthHttpPeer...");
     let submission_result = match state.auth_http_peer.as_ref().unwrap().submit_episode_message_transaction(
         step,
-        participant_wallet.keypair,
-        participant_addr.clone(),
-        utxo,
     ).await {
         Ok(tx_id) => {
             println!("✅ MATRIX UI SUCCESS: Challenge request submitted - Transaction {}", tx_id);

@@ -1,5 +1,5 @@
 use clap::Args;
-use secp256k1::Keypair;
+
 use std::error::Error;
 use crate::api::http::organizer_peer::run_http_peer;
 

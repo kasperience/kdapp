@@ -1,5 +1,60 @@
 # Kaspa Auth - Episode-First Implementation
 
+## 🚨 **CRITICAL: MAIN.RS SIZE RULES - NEVER IGNORE!**
+
+### ❌ **ABSOLUTE FORBIDDEN: Large main.rs Files**
+- **HARD LIMIT**: main.rs must NEVER exceed 40KB
+- **LINE LIMIT**: main.rs must NEVER exceed 800 lines
+- **RESPONSIBILITY**: main.rs is ONLY for CLI entry point and command routing
+
+### ✅ **REQUIRED MODULAR ARCHITECTURE**
+```
+src/
+├── main.rs              # CLI entry point ONLY (50-100 lines max)
+├── cli/
+│   ├── parser.rs        # Command definitions
+│   ├── auth_commands.rs # Auth command handlers
+│   └── server_commands.rs # Server command handlers
+├── auth/
+│   ├── flow.rs         # Authentication logic
+│   └── session.rs      # Session management
+├── utils/
+│   ├── crypto.rs       # Crypto utilities
+│   └── validation.rs   # Input validation
+└── coordination/
+    └── http_fallback.rs # HTTP coordination
+```
+
+### 🔥 **ENFORCEMENT RULES FOR CLAUDE & GEMINI**
+1. **Before adding ANY code to main.rs**: Check file size with `du -h main.rs`
+2. **If main.rs > 40KB**: MUST extract to appropriate module first
+3. **If main.rs > 800 lines**: MUST extract to appropriate module first
+4. **NEVER add functions to main.rs**: Create dedicated modules
+5. **NEVER add large match blocks to main.rs**: Use command handlers
+
+### 💡 **WHERE TO PUT CODE INSTEAD OF MAIN.RS**
+- **Authentication logic** → `src/auth/flow.rs`
+- **Session management** → `src/auth/session.rs`
+- **Command handlers** → `src/cli/*_commands.rs`
+- **Crypto utilities** → `src/utils/crypto.rs`
+- **HTTP coordination** → `src/coordination/http_fallback.rs`
+- **Validation logic** → `src/utils/validation.rs`
+
+### 🎯 **MAIN.RS SHOULD ONLY CONTAIN**
+```rust
+// GOOD main.rs (50-100 lines max)
+use kaspa_auth::cli::{build_cli, handle_command};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt::init();
+    let matches = build_cli().get_matches();
+    handle_command(matches).await
+}
+```
+
+**NEVER FORGET**: Large main.rs files cause "going in circles" and dramatically reduce development efficiency!
+
 ## 🚀 PRIORITY: FIRST KDAPP FRAMEWORK PR - CRITICAL BUG FIX
 
 ### 🎯 **READY TO SUBMIT: Proxy.rs WebSocket Crash Fix**

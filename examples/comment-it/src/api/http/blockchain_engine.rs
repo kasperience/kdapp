@@ -11,10 +11,10 @@ use kdapp::{
 };
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
 
-use crate::core::{SimpleAuth, AuthCommand};
+use crate::core::{AuthWithCommentsEpisode, UnifiedCommand};
 use crate::api::http::state::{PeerState, WebSocketMessage, SharedEpisodeState};
 use crate::episode_runner::{AUTH_PREFIX, AUTH_PATTERN};
-use kaspa_wrpc_client::prelude::{RpcApi, KaspaRpcClient};
+use kaspa_wrpc_client::prelude::RpcApi;
 
 /// The main HTTP coordination peer that runs a real kdapp engine
 #[derive(Clone)]
@@ -92,7 +92,7 @@ impl AuthHttpPeer {
         let engine_task = {
             let rx = rx;
             tokio::task::spawn_blocking(move || {
-                let mut engine = Engine::<SimpleAuth, HttpAuthHandler>::new(rx);
+                let mut engine = Engine::<AuthWithCommentsEpisode, HttpAuthHandler>::new(rx);
                 engine.start(vec![auth_handler]);
             })
         };
@@ -131,7 +131,7 @@ impl AuthHttpPeer {
     }
     
     /// Get episode state from the kdapp engine (not memory!)
-    pub fn get_episode_state(&self, episode_id: EpisodeId) -> Option<SimpleAuth> {
+    pub fn get_episode_state(&self, episode_id: EpisodeId) -> Option<AuthWithCommentsEpisode> {
         println!("🔍 Querying blockchain episode state for episode {}", episode_id);
         
         match self.peer_state.blockchain_episodes.lock() {
@@ -154,34 +154,43 @@ impl AuthHttpPeer {
     /// Submit an EpisodeMessage transaction to the blockchain
     pub async fn submit_episode_message_transaction(
         &self,
-        episode_message: kdapp::engine::EpisodeMessage<crate::core::SimpleAuth>,
-        signer_keypair: secp256k1::Keypair,
-        funding_address: kaspa_addresses::Address,
-        utxo: (kaspa_consensus_core::tx::TransactionOutpoint, kaspa_consensus_core::tx::UtxoEntry),
+        episode_message: kdapp::engine::EpisodeMessage<crate::core::AuthWithCommentsEpisode>,
     ) -> Result<String, Box<dyn std::error::Error>> {
-        let generator = kdapp::generator::TransactionGenerator::new(
-            signer_keypair,
-            crate::episode_runner::AUTH_PATTERN,
-            crate::episode_runner::AUTH_PREFIX,
-        );
-
-        let tx = generator.build_command_transaction(
-            utxo,
-            &funding_address,
-            &episode_message,
-            5000,
-        );
-
-        let transaction_id = tx.id().to_string();
-
         if let Some(kaspad) = self.peer_state.kaspad_client.as_ref() {
+            // Get organizer's wallet for funding the transaction
+            let organizer_wallet = crate::wallet::get_wallet_for_command("organizer-peer", None)?;
+            let organizer_keypair = organizer_wallet.keypair;
+            let organizer_addr = kaspa_addresses::Address::new(
+                kaspa_addresses::Prefix::Testnet,
+                kaspa_addresses::Version::PubKey,
+                &organizer_keypair.x_only_public_key().0.serialize(),
+            );
+
+            // Fetch UTXOs for the organizer's wallet
+            let entries = kaspad.get_utxos_by_addresses(vec![organizer_addr.clone()]).await?;
+            if entries.is_empty() {
+                return Err("Organizer wallet needs funding to submit transactions.".into());
+            }
+            let utxo = entries.first().map(|entry| {
+                (kaspa_consensus_core::tx::TransactionOutpoint::from(entry.outpoint.clone()), kaspa_consensus_core::tx::UtxoEntry::from(entry.utxo_entry.clone()))
+            }).unwrap();
+
+            // Build the transaction using the TransactionGenerator
+            let generator = TransactionGenerator::new(
+                organizer_keypair,
+                AUTH_PATTERN,
+                AUTH_PREFIX,
+            );
+            let tx = generator.build_command_transaction(utxo, &organizer_addr, &episode_message, 5000);
+            let tx_id = tx.id().to_string();
+
             match kaspad.submit_transaction(tx.as_ref().into(), false).await {
                 Ok(_) => {
-                    println!("✅ Transaction {} submitted to blockchain via AuthHttpPeer", transaction_id);
-                    Ok(transaction_id)
+                    println!("✅ Transaction {} submitted to blockchain via AuthHttpPeer", tx_id);
+                    Ok(tx_id)
                 }
                 Err(e) => {
-                    println!("❌ Transaction {} submission failed: {}", transaction_id, e);
+                    println!("❌ Transaction {} submission failed: {}", tx_id, e);
                     Err(e.into())
                 }
             }
@@ -197,8 +206,8 @@ pub struct HttpAuthHandler {
     pub blockchain_episodes: SharedEpisodeState,
 }
 
-impl EpisodeEventHandler<SimpleAuth> for HttpAuthHandler {
-    fn on_initialize(&self, episode_id: EpisodeId, episode: &SimpleAuth) {
+impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
+    fn on_initialize(&self, episode_id: EpisodeId, episode: &AuthWithCommentsEpisode) {
         println!("🎭 MATRIX UI SUCCESS: Auth episode {} initialized on blockchain", episode_id);
         println!("🎬 Episode {} initialized on blockchain", episode_id);
         
@@ -226,8 +235,8 @@ impl EpisodeEventHandler<SimpleAuth> for HttpAuthHandler {
     fn on_command(
         &self,
         episode_id: EpisodeId,
-        episode: &SimpleAuth,
-        _cmd: &AuthCommand,
+        episode: &AuthWithCommentsEpisode,
+        _cmd: &UnifiedCommand,
         _authorization: Option<kdapp::pki::PubKey>,
         _metadata: &kdapp::episode::PayloadMetadata,
     ) {
@@ -299,7 +308,7 @@ impl EpisodeEventHandler<SimpleAuth> for HttpAuthHandler {
         }
     }
     
-    fn on_rollback(&self, episode_id: EpisodeId, _episode: &SimpleAuth) {
+    fn on_rollback(&self, episode_id: EpisodeId, _episode: &AuthWithCommentsEpisode) {
         println!("🎭 MATRIX UI ERROR: Authentication episode {} rolled back on blockchain", episode_id);
         println!("🔄 Episode {} rolled back on blockchain", episode_id);
     }

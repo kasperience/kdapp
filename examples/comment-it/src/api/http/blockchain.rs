@@ -3,7 +3,7 @@ use kaspa_consensus_core::{network::{NetworkId, NetworkType}, tx::{TransactionOu
 use kaspa_addresses::{Address, Prefix, Version};
 use kaspa_rpc_core::api::rpc::RpcApi;
 use kdapp::engine::EpisodeMessage;
-use crate::core::{SimpleAuth, AuthCommand};
+use crate::core::{AuthWithCommentsEpisode, UnifiedCommand};
 
 pub struct TxSubmitter<'a> {
     pub server_keypair: &'a secp256k1::Keypair,
@@ -19,8 +19,8 @@ impl<'a> TxSubmitter<'a> {
         client_pubkey: kdapp::pki::PubKey,
     ) -> Result<String, String> {
         // Create command
-        let cmd = AuthCommand::SubmitResponse { signature, nonce };
-        let msg = EpisodeMessage::<SimpleAuth>::new_signed_command(
+        let cmd = UnifiedCommand::SubmitResponse { signature, nonce };
+        let msg = EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(
             episode_id as u32, cmd, self.server_keypair.secret_key(), client_pubkey
         );
         

@@ -6,13 +6,12 @@ use kaspa_wrpc_client::prelude::RpcApi;
 use kdapp::{
     engine::EpisodeMessage,
     pki::PubKey,
-    generator::TransactionGenerator,
 };
 use crate::api::http::{
     types::{RevokeSessionRequest, RevokeSessionResponse},
     state::PeerState,
 };
-use crate::core::{SimpleAuth, AuthCommand};
+use crate::core::{AuthWithCommentsEpisode, UnifiedCommand};
 
 pub async fn revoke_session(
     State(state): State<PeerState>,
@@ -76,7 +75,7 @@ pub async fn revoke_session(
     );
     
     // Get REAL UTXOs from blockchain (exactly like CLI)
-    let utxo = if let Some(ref kaspad) = state.kaspad_client {
+    let _utxo = if let Some(ref kaspad) = state.kaspad_client {
         println!("🔍 Fetching UTXOs for RevokeSession transaction...");
         
         // Wait a bit for any previous transactions to confirm
@@ -109,7 +108,7 @@ pub async fn revoke_session(
     };
     
     // Create RevokeSession command
-    let auth_command = AuthCommand::RevokeSession {
+    let auth_command = UnifiedCommand::RevokeSession {
         session_token: req.session_token.clone(),
         signature: req.signature.clone(),
     };
@@ -123,7 +122,7 @@ pub async fn revoke_session(
         }
     };
     
-    let step = EpisodeMessage::<SimpleAuth>::new_signed_command(
+    let step = EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(
         episode_id_u32, 
         auth_command, 
         participant_secret_key, // 🚨 CRITICAL: Participant signs for episode authorization!
@@ -134,9 +133,6 @@ pub async fn revoke_session(
     println!("📤 Submitting RevokeSession transaction to Kaspa blockchain via AuthHttpPeer...");
     let submission_result = match state.auth_http_peer.as_ref().unwrap().submit_episode_message_transaction(
         step,
-        participant_wallet.keypair,
-        participant_addr.clone(),
-        utxo,
     ).await {
         Ok(tx_id) => {
             println!("✅ MATRIX UI SUCCESS: Session revocation submitted - Transaction {}", tx_id);

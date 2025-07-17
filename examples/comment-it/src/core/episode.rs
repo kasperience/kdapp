@@ -361,7 +361,7 @@ mod tests {
             tx_id: 1u64.into() 
         };
         
-        let mut auth = SimpleAuth::initialize(vec![p1], &metadata);
+        let mut auth = AuthWithCommentsEpisode::initialize(vec![p1], &metadata);
         
         // Request challenge
         let rollback = auth.execute(
@@ -390,7 +390,7 @@ mod tests {
             tx_id: 1u64.into() 
         };
         
-        let mut auth = SimpleAuth::initialize(vec![p1], &metadata);
+        let mut auth = AuthWithCommentsEpisode::initialize(vec![p1], &metadata);
         
         // Should not be rate limited initially
         assert!(!auth.is_rate_limited(&p1));

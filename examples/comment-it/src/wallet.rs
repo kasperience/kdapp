@@ -1,10 +1,9 @@
 // src/wallet.rs - Unified Wallet Management System (from kaspa-auth)
-use secp256k1::Keypair;
+use secp256k1::{Keypair, Secp256k1, SecretKey};
 use std::path::{Path, PathBuf};
 use std::fs;
 use kaspa_addresses::{Address, Prefix, Version};
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
-use log::{info, warn};
 
 #[derive(Debug, Clone)]
 pub struct WalletConfig {
@@ -75,7 +74,7 @@ impl KaspaAuthWallet {
         println!("🔑 Generating secure keypair...");
         
         // Generate new keypair
-        use secp256k1::{Secp256k1, SecretKey};
+        
         use rand::rngs::OsRng;
         let secp = Secp256k1::new();
         let (secret_key, _) = secp.generate_keypair(&mut OsRng);
@@ -113,7 +112,7 @@ impl KaspaAuthWallet {
             return Err("Invalid wallet file format".into());
         }
         
-        use secp256k1::{Secp256k1, SecretKey};
+        
         let secp = Secp256k1::new();
         let secret_key = SecretKey::from_slice(&key_data)?;
         let keypair = Keypair::from_secret_key(&secp, &secret_key);
@@ -212,7 +211,7 @@ impl KaspaAuthWallet {
     
     /// Create wallet from provided private key (for --key option)
     pub fn from_private_key(private_key_hex: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        use secp256k1::{Secp256k1, SecretKey};
+        
         
         let secp = Secp256k1::new();
         let secret_bytes = hex::decode(private_key_hex)?;
@@ -231,7 +230,7 @@ impl KaspaAuthWallet {
     
     /// Create wallet from private key and save to specific file
     pub fn from_private_key_and_save(private_key_hex: &str, wallet_file: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        use secp256k1::{Secp256k1, SecretKey};
+        
         
         println!("🔍 DEBUG: Importing private key: {}...", &private_key_hex[0..8]);
         

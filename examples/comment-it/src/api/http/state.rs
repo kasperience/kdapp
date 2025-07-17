@@ -4,11 +4,11 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::broadcast;
 use secp256k1::Keypair;
 use kdapp::generator::TransactionGenerator;
-use crate::core::SimpleAuth;
+use crate::core::AuthWithCommentsEpisode;
 use kaspa_wrpc_client::KaspaRpcClient;
 
 // Real blockchain-based episode state (not the old fake HashMap approach)
-pub type SharedEpisodeState = Arc<Mutex<HashMap<u64, SimpleAuth>>>;
+pub type SharedEpisodeState = Arc<Mutex<HashMap<u64, AuthWithCommentsEpisode>>>;
 
 #[derive(Clone)]
 pub struct EpisodeState {

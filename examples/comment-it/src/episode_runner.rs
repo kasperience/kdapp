@@ -9,9 +9,7 @@ use reqwest::Client;
 use serde_json::json;
 
 use crate::core::{AuthWithCommentsEpisode, UnifiedCommand};
-// Legacy imports for backward compatibility
-use crate::core::AuthWithCommentsEpisode as SimpleAuth;
-use crate::core::UnifiedCommand as AuthCommand;
+
 
 // Define unique pattern and prefix for auth transactions
 // Pattern: specific byte positions that must match to reduce node overhead
@@ -37,14 +35,14 @@ impl AuthEventHandler {
     }
 }
 
-impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
-    fn on_initialize(&self, episode_id: EpisodeId, episode: &SimpleAuth) {
+impl EpisodeEventHandler<AuthWithCommentsEpisode> for AuthEventHandler {
+    fn on_initialize(&self, episode_id: EpisodeId, episode: &AuthWithCommentsEpisode) {
         info!("[{}] Episode {} initialized with owner: {:?}", 
               self.name, episode_id, episode.owner);
     }
 
-    fn on_command(&self, episode_id: EpisodeId, episode: &SimpleAuth, 
-                  cmd: &AuthCommand, authorization: Option<PubKey>, 
+    fn on_command(&self, episode_id: EpisodeId, episode: &AuthWithCommentsEpisode, 
+                  cmd: &UnifiedCommand, authorization: Option<PubKey>, 
                   _metadata: &PayloadMetadata) {
         match cmd {
             UnifiedCommand::RequestChallenge => {
@@ -184,7 +182,7 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
         }
     }
 
-    fn on_rollback(&self, episode_id: EpisodeId, _episode: &SimpleAuth) {
+    fn on_rollback(&self, episode_id: EpisodeId, _episode: &AuthWithCommentsEpisode) {
         warn!("[{}] Episode {} rolled back due to DAG reorg", self.name, episode_id);
     }
 }
@@ -256,7 +254,7 @@ pub async fn run_auth_server(config: AuthServerConfig) -> Result<(), Box<dyn std
     let (sender, receiver) = channel();
 
     // 3. Create and start engine
-    let mut engine = engine::Engine::<SimpleAuth, AuthEventHandler>::new(receiver);
+    let mut engine = engine::Engine::<AuthWithCommentsEpisode, AuthEventHandler>::new(receiver);
     let event_handler = AuthEventHandler::new(config.name.clone());
     
     let engine_task = tokio::task::spawn_blocking(move || {

@@ -6,13 +6,12 @@ use kaspa_wrpc_client::prelude::RpcApi;
 use kdapp::{
     engine::EpisodeMessage,
     pki::PubKey,
-    generator::TransactionGenerator,
 };
 use crate::api::http::{
     types::{VerifyRequest, VerifyResponse},
     state::PeerState,
 };
-use crate::core::{SimpleAuth, AuthCommand};
+use crate::core::{AuthWithCommentsEpisode, UnifiedCommand};
 use std::sync::Arc;
 use std::collections::HashSet;
 
@@ -110,7 +109,7 @@ pub async fn verify_auth(
     );
     
     // Get REAL UTXOs from blockchain (exactly like CLI)
-    let utxo = if let Some(ref kaspad) = state.kaspad_client {
+    let _utxo = if let Some(ref kaspad) = state.kaspad_client {
         println!("🔍 Fetching UTXOs for SubmitResponse transaction...");
         
         // Wait a bit for the previous transaction to confirm
@@ -143,7 +142,7 @@ pub async fn verify_auth(
     };
     
     // Create SubmitResponse command (exactly like CLI)
-    let auth_command = AuthCommand::SubmitResponse {
+    let auth_command = UnifiedCommand::SubmitResponse {
         signature: req.signature.clone(),
         nonce: req.nonce.clone(),
     };
@@ -157,7 +156,7 @@ pub async fn verify_auth(
         }
     };
     
-    let step = EpisodeMessage::<SimpleAuth>::new_signed_command(
+    let step = EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(
         episode_id_u32, 
         auth_command, 
         participant_secret_key, // 🚨 CRITICAL: Participant signs for episode authorization!
@@ -168,9 +167,6 @@ pub async fn verify_auth(
     println!("📤 Submitting SubmitResponse transaction to Kaspa blockchain via AuthHttpPeer...");
     let submission_result = match state.auth_http_peer.as_ref().unwrap().submit_episode_message_transaction(
         step,
-        participant_wallet.keypair,
-        participant_addr.clone(),
-        utxo,
     ).await {
         Ok(tx_id) => {
             println!("✅ MATRIX UI SUCCESS: Authentication signature submitted - Transaction {}", tx_id);

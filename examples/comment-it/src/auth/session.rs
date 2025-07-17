@@ -1,19 +1,18 @@
 use std::error::Error;
 use secp256k1::Keypair;
-use crate::core::{AuthCommand, SimpleAuth};
+use crate::core::{UnifiedCommand, AuthWithCommentsEpisode};
 use hex;
 
 /// 🔄 Session revocation - revoke an active session on blockchain
 pub async fn run_session_revocation(auth_signer: Keypair, episode_id: u64, session_token: String, _peer_url: String) -> Result<(), Box<dyn Error>> {
     use kdapp::{
         engine::EpisodeMessage,
-        generator::{self, TransactionGenerator},
+        generator::TransactionGenerator,
         proxy::connect_client,
     };
     use kaspa_addresses::{Address, Prefix, Version};
     use kaspa_consensus_core::{network::NetworkId, tx::{TransactionOutpoint, UtxoEntry}};
-    use kaspa_wrpc_client::prelude::*;
-    use kaspa_rpc_core::api::rpc::RpcApi;
+    use kaspa_wrpc_client::prelude::RpcApi;
     use crate::episode_runner::{AUTH_PATTERN, AUTH_PREFIX};
     
     let client_pubkey = kdapp::pki::PubKey(auth_signer.public_key());
@@ -54,14 +53,14 @@ pub async fn run_session_revocation(auth_signer: Keypair, episode_id: u64, sessi
     
     // Step 4: Create RevokeSession command
     println!("📤 Creating RevokeSession command...");
-    let auth_command = AuthCommand::RevokeSession {
+    let auth_command = UnifiedCommand::RevokeSession {
         session_token: session_token.clone(),
         signature: signature_hex,
     };
     
     // Step 5: Build transaction and submit to blockchain
     let episode_id_u32 = episode_id as u32; // Convert for kdapp framework
-    let step = EpisodeMessage::<SimpleAuth>::new_signed_command(
+    let step = EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(
         episode_id_u32, 
         auth_command, 
         auth_signer.secret_key(), 
@@ -83,4 +82,37 @@ pub async fn run_session_revocation(auth_signer: Keypair, episode_id: u64, sessi
     println!("📊 Transaction submitted to Kaspa blockchain - organizer peer will detect and respond");
     
     Ok(())
+}
+
+pub async fn run_logout_with_timeout(
+    auth_keypair: Keypair,
+    episode_id: u64,
+    session_token: String,
+    peer_url: String,
+    timeout_seconds: u64
+) -> Result<(), Box<dyn Error>> {
+    println!("🚪 Starting focused logout test ({}s timeout)", timeout_seconds);
+    println!("📋 Episode: {}, Session: {}", episode_id, session_token);
+    
+    let timeout_duration = tokio::time::Duration::from_secs(timeout_seconds);
+    let logout_future = run_session_revocation(auth_keypair, episode_id, session_token, peer_url);
+    
+    match tokio::time::timeout(timeout_duration, logout_future).await {
+        Ok(result) => {
+            match result {
+                Ok(_) => {
+                    println!("✅ Logout completed within {}s timeout", timeout_seconds);
+                    Ok(())
+                }
+                Err(e) => {
+                    println!("❌ Logout failed: {}", e);
+                    Err(e)
+                }
+            }
+        }
+        Err(_) => {
+            println!("⏰ Logout timed out after {}s", timeout_seconds);
+            Err("Logout timeout".into())
+        }
+    }
 }

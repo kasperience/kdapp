@@ -1,6 +1,6 @@
 use std::error::Error;
 use secp256k1::Keypair;
-use crate::core::{AuthCommand, SimpleAuth};
+use crate::core::{UnifiedCommand, AuthWithCommentsEpisode};
 use hex;
 
 #[derive(Debug, Clone)]
@@ -8,6 +8,38 @@ pub struct AuthenticationResult {
     pub episode_id: u64,
     pub session_token: String,
     pub authenticated: bool,
+}
+
+/// 🚀 Authentication with timeout - wrapper for single authentication attempt
+pub async fn run_authentication_with_timeout(auth_keypair: Keypair, peer_url: String, timeout_seconds: u64) -> Result<AuthenticationResult, Box<dyn Error>> {
+    let kaspa_signer = auth_keypair.clone(); // Use same keypair for funding
+    let timeout_duration = tokio::time::Duration::from_secs(timeout_seconds);
+    
+    match tokio::time::timeout(timeout_duration, run_http_coordinated_authentication(kaspa_signer, auth_keypair, peer_url)).await {
+        Ok(result) => result,
+        Err(_) => Err(format!("Authentication timeout after {} seconds", timeout_seconds).into())
+    }
+}
+
+/// 🚀 Full authentication cycle - complete login/logout flow
+pub async fn run_full_authentication_cycle(auth_keypair: Keypair, peer_url: String) -> Result<AuthenticationResult, Box<dyn Error>> {
+    println!("🔄 Starting full authentication cycle...");
+    
+    // Step 1: Authenticate
+    let auth_result = run_authentication_with_timeout(auth_keypair.clone(), peer_url.clone(), 30).await?;
+    println!("✅ Authentication completed - Episode: {}, Session: {}", auth_result.episode_id, auth_result.session_token);
+    
+    // Step 2: Verify authentication worked
+    if !auth_result.authenticated {
+        return Err("Authentication failed".into());
+    }
+    
+    // Step 3: Revoke session (logout)
+    use crate::auth::session::run_session_revocation;
+    run_session_revocation(auth_keypair, auth_result.episode_id, auth_result.session_token.clone(), peer_url).await?;
+    println!("✅ Session revocation completed");
+    
+    Ok(auth_result)
 }
 
 /// 🚀 HTTP Coordinated authentication - hybrid kdapp + HTTP coordination  
@@ -21,10 +53,9 @@ pub async fn run_http_coordinated_authentication(kaspa_signer: Keypair, auth_sig
     };
     use kaspa_addresses::{Address, Prefix, Version};
     use kaspa_consensus_core::{network::NetworkId, tx::{TransactionOutpoint, UtxoEntry}};
-    use kaspa_wrpc_client::prelude::*;
-    use kaspa_rpc_core::api::rpc::RpcApi;
+    use kaspa_wrpc_client::prelude::RpcApi;
     use crate::episode_runner::{AUTH_PATTERN, AUTH_PREFIX};
-    use rand::Rng;
+    
     
     let client_pubkey = kdapp::pki::PubKey(auth_signer.public_key());
     println!("🔑 Auth public key: {}", client_pubkey);
@@ -83,8 +114,8 @@ pub async fn run_http_coordinated_authentication(kaspa_signer: Keypair, auth_sig
     // Step 2: Send RequestChallenge command to blockchain
     println!("📨 Sending RequestChallenge command to blockchain...");
     
-    let auth_command = AuthCommand::RequestChallenge;
-    let step = EpisodeMessage::<SimpleAuth>::new_signed_command(
+    let auth_command = UnifiedCommand::RequestChallenge;
+    let step = EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(
         episode_id as u32, 
         auth_command, 
         auth_signer.secret_key(), 
@@ -151,12 +182,12 @@ pub async fn run_http_coordinated_authentication(kaspa_signer: Keypair, auth_sig
     let signature_hex = hex::encode(signature.0.serialize_der());
     
     println!("📤 Sending SubmitResponse command to blockchain...");
-    let auth_command = AuthCommand::SubmitResponse {
+    let auth_command = UnifiedCommand::SubmitResponse {
         signature: signature_hex,
         nonce: challenge,
     };
     
-    let step = EpisodeMessage::<SimpleAuth>::new_signed_command(
+    let step = EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(
         episode_id as u32, 
         auth_command, 
         auth_signer.secret_key(), 

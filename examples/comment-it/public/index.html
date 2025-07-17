@@ -1681,6 +1681,46 @@
             document.querySelector('.auth-panel').appendChild(fundingDiv);
         }
         
+        // Real blockchain comment submission using participant's wallet via HTTP
+        async function submitCommentToBlockchain(commentText) {
+            try {
+                console.log('🚀 Submitting comment to blockchain via HTTP...');
+                console.log('Episode ID:', currentEpisodeId);
+                console.log('Session Token:', currentSessionToken);
+                console.log('Comment:', commentText);
+                
+                const response = await fetch('/api/comments', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        episode_id: currentEpisodeId,
+                        text: commentText,
+                        session_token: currentSessionToken,
+                    }),
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                console.log('✅ Comment submitted successfully:', result);
+                
+                // Show success message with transaction details
+                if (result.transaction_id) {
+                    console.log(`🔗 Transaction ID: ${result.transaction_id}`);
+                    console.log(`🔗 Explorer: https://explorer-tn10.kaspa.org/txs/${result.transaction_id}`);
+                }
+                
+                return result;
+            } catch (error) {
+                console.error('❌ Comment submission error:', error);
+                throw error;
+            }
+        }
+        
         function submitComment() {
             if (!isAuthenticated) {
                 alert('Please authenticate first!');
@@ -1691,34 +1731,35 @@
             const originalText = button.textContent;
             button.disabled = true;
             
-            // For now, this is a placeholder for the commenting system
-            const messages = [
-                '[ CREATING COMMENT EPISODE... ]',
-                '[ SIGNING WITH AUTH SESSION... ]',
-                '[ SUBMITTING TO KDAPP ENGINE... ]',
-                '[ BROADCASTING TO KASPA NODES... ]',
-                '[ AWAITING DAA CONFIRMATION... ]',
-                '[ EPISODE CONFIRMED ON CHAIN ]'
-            ];
+            const commentText = document.getElementById('commentText').value.trim();
+            if (!commentText) {
+                alert('Please enter a comment!');
+                button.disabled = false;
+                return;
+            }
             
-            let index = 0;
-            const interval = setInterval(() => {
-                if (index < messages.length) {
-                    button.textContent = messages[index];
-                    index++;
-                } else {
-                    clearInterval(interval);
-                    button.textContent = originalText;
-                    button.disabled = false;
-                    
-                    // Add new comment (mock for now)
-                    addNewComment();
-                    
+            // Real blockchain comment submission
+            button.textContent = '[ SUBMITTING TO BLOCKCHAIN... ]';
+            
+            // Use CLI command to submit comment (participant-funded)
+            submitCommentToBlockchain(commentText)
+                .then(() => {
+                    button.textContent = '[ COMMENT SUBMITTED TO BLOCKCHAIN ]';
                     // Clear input
-                    commentInput.value = '';
-                    charCount.textContent = '1000';
-                }
-            }, 800);
+                    document.getElementById('commentText').value = '';
+                    setTimeout(() => {
+                        button.textContent = originalText;
+                        button.disabled = false;
+                    }, 2000);
+                })
+                .catch(error => {
+                    console.error('Comment submission failed:', error);
+                    button.textContent = '[ ERROR - TRY AGAIN ]';
+                    setTimeout(() => {
+                        button.textContent = originalText;
+                        button.disabled = false;
+                    }, 2000);
+                });
         }
         
         function addNewComment() {

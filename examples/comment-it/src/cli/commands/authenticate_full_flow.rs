@@ -4,7 +4,8 @@ use secp256k1::Keypair;
 use crate::wallet::get_wallet_for_command;
 
 // Import the auth functions from the auth module
-use crate::auth::{run_http_coordinated_authentication, run_session_revocation, AuthenticationResult};
+use crate::auth::{run_http_coordinated_authentication, AuthenticationResult};
+use crate::auth::session::run_session_revocation;
 
 #[derive(Args)]
 pub struct AuthenticateFullFlowCommand {

@@ -7,8 +7,7 @@ pub mod commitment_reveal;
 pub use episode::{AuthWithCommentsEpisode, Comment};
 pub use commands::{UnifiedCommand};
 // Backward compatibility aliases
-pub use episode::AuthWithCommentsEpisode as SimpleAuth;
-pub use commands::UnifiedCommand as AuthCommand;
+
 pub use errors::AuthError;
 pub use types::{AuthRollback, UnifiedRollback, AuthState, AuthRole};
 pub use commitment_reveal::CommitRevealChallenge;

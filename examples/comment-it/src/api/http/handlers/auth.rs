@@ -3,18 +3,18 @@ use axum::{extract::State, response::Json, http::StatusCode};
 use kaspa_addresses::{Address, Prefix, Version};
 use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
 use kaspa_wrpc_client::prelude::RpcApi;
+use rand::Rng;
 use kdapp::{
     engine::EpisodeMessage,
     pki::PubKey,
-    generator::TransactionGenerator,
 };
-use rand::Rng;
+
 
 use crate::api::http::{
     types::{AuthRequest, AuthResponse},
     state::PeerState,
 };
-use crate::core::SimpleAuth;
+use crate::core::AuthWithCommentsEpisode;
 
 pub async fn start_auth(
     State(state): State<PeerState>,
@@ -67,13 +67,13 @@ pub async fn start_auth(
     );
     
     // Create NewEpisode message for blockchain
-    let new_episode = EpisodeMessage::<SimpleAuth>::NewEpisode { 
+    let new_episode = EpisodeMessage::<AuthWithCommentsEpisode>::NewEpisode { 
         episode_id, 
         participants: vec![participant_pubkey] 
     };
     
     // Get REAL UTXOs from blockchain (like CLI does)
-    let utxo = if let Some(ref kaspad) = state.kaspad_client {
+    let _utxo = if let Some(ref kaspad) = state.kaspad_client {
         println!("🔍 Fetching UTXOs for participant address...");
         let entries = match kaspad.get_utxos_by_addresses(vec![participant_funding_addr.clone()]).await {
             Ok(entries) => entries,
@@ -108,9 +108,6 @@ pub async fn start_auth(
     println!("📤 Submitting transaction to Kaspa blockchain via AuthHttpPeer...");
     let submission_result = match state.auth_http_peer.as_ref().unwrap().submit_episode_message_transaction(
         new_episode,
-        participant_wallet.keypair,
-        participant_funding_addr.clone(),
-        utxo,
     ).await {
         Ok(tx_id) => {
             println!("✅ MATRIX UI SUCCESS: Auth episode created - Transaction {}", tx_id);
