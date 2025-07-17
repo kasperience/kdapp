@@ -157,18 +157,17 @@ impl AuthHttpPeer {
         episode_message: kdapp::engine::EpisodeMessage<crate::core::AuthWithCommentsEpisode>,
     ) -> Result<String, Box<dyn std::error::Error>> {
         if let Some(kaspad) = self.peer_state.kaspad_client.as_ref() {
-            // Use the transaction generator to create and submit the transaction
-            let participant_wallet = crate::wallet::get_wallet_for_command("web-participant", None)?;
-            
-            // Create participant's Kaspa address
-            let participant_addr = kaspa_addresses::Address::new(
-                kaspa_addresses::Prefix::Testnet, 
-                kaspa_addresses::Version::PubKey, 
-                &participant_wallet.keypair.x_only_public_key().0.serialize()
+            // Get organizer's wallet for funding the transaction
+            let organizer_wallet = crate::wallet::get_wallet_for_command("organizer-peer", None)?;
+            let organizer_keypair = organizer_wallet.keypair;
+            let organizer_addr = kaspa_addresses::Address::new(
+                kaspa_addresses::Prefix::Testnet,
+                kaspa_addresses::Version::PubKey,
+                &organizer_keypair.x_only_public_key().0.serialize(),
             );
-            
-            // Get UTXOs for participant
-            let entries = kaspad.get_utxos_by_addresses(vec![participant_addr.clone()]).await?;
+
+            // Fetch UTXOs for the organizer's wallet
+            let entries = kaspad.get_utxos_by_addresses(vec![organizer_addr.clone()]).await?;
             if entries.is_empty() {
                 return Err("No UTXOs found for participant wallet. Please fund the wallet.".into());
             }
