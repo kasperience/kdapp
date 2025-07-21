@@ -54,7 +54,7 @@ export function showCommentForm(authenticated) {
 async function submitCommentToBlockchain(commentText) {
     try {
         console.log('🚀 Submitting comment to blockchain via HTTP...');
-        console.log('Episode ID:', currentEpisodeId);
+        console.log('Episode ID:', getCurrentEpisodeId());
         console.log('Session Token:', currentSessionToken);
         console.log('Comment:', commentText);
         
@@ -169,7 +169,7 @@ export function addNewComment() {
         comment.style.background = 'rgba(20, 184, 166, 0.1)';
         
         const walletAddress = document.getElementById('walletAddress').textContent;
-        const episodeId = currentEpisodeId || Math.floor(Math.random() * 900000) + 100000;
+        const episodeId = getCurrentEpisodeId() || Math.floor(Math.random() * 900000) + 100000;
         const blockHeight = parseInt(document.getElementById('blockHeight').textContent.replace(/,/g, ''));
         
         comment.innerHTML = `
