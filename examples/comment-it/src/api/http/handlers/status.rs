@@ -17,18 +17,18 @@ pub async fn get_status(
         Ok(episodes) => {
             if let Some(episode) = episodes.get(&episode_id) {
                 println!("✅ MATRIX UI SUCCESS: Found episode {} in blockchain state", episode_id);
-                println!("   - Authenticated: {}", episode.is_authenticated);
-                println!("   - Challenge: {:?}", episode.challenge);
-                println!("   - Session token: {:?}", episode.session_token);
+                println!("   - Authenticated: {}", episode.is_authenticated());
+                println!("   - Challenge: {:?}", episode.challenge());
+                println!("   - Session token: {:?}", episode.session_token());
                 
                 Ok(Json(json!({
                     "episode_id": episode_id,
-                    "authenticated": episode.is_authenticated,
-                    "status": if episode.is_authenticated { "authenticated" } else { "pending" },
-                    "challenge": episode.challenge,
-                    "session_token": episode.session_token,
+                    "authenticated": episode.is_authenticated(),
+                    "status": if episode.is_authenticated() { "authenticated" } else { "pending" },
+                    "challenge": episode.challenge(),
+                    "session_token": episode.session_token(),
                     "blockchain_confirmed": true,
-                    "public_key": episode.owner.clone().map(|pk| hex::encode(pk.0.serialize())),
+                    "public_key": episode.owner().map(|pk| hex::encode(pk.0.serialize())),
                     "source": "real_blockchain_state"
                 })))
             } else {

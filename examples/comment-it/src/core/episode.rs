@@ -22,7 +22,7 @@ pub struct Comment {
 }
 
 /// An authenticated participant in the comment room
-#[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub struct AuthenticatedParticipant {
     pub pubkey: PubKey,
     pub session_token: String,
@@ -247,7 +247,7 @@ impl Episode for AuthWithCommentsEpisode {
                 }
                 
                 // Validate session token - must be authenticated and token must match
-                if !self.can_comment(&participant, session_token) {
+                if !self.can_comment_legacy(session_token) {
                     info!("[AuthWithCommentsEpisode] Comment rejected: Invalid session token for participant");
                     return Err(EpisodeError::InvalidCommand(AuthError::InvalidSessionToken));
                 }
@@ -406,6 +406,40 @@ impl AuthWithCommentsEpisode {
         } else {
             false
         }
+    }
+    
+    /// Legacy can_comment method for backward compatibility with existing handlers
+    pub fn can_comment_legacy(&self, session_token: &str) -> bool {
+        // For backward compatibility, check if any participant can comment with this token
+        self.authenticated_participants.values()
+            .any(|p| !p.session_token.is_empty() && p.session_token == session_token)
+    }
+    
+    // ============ COMPATIBILITY METHODS FOR OLD API ============
+    // These methods provide backward compatibility for the existing handlers
+    
+    /// Get the first authenticated participant's session token (for compatibility)
+    pub fn session_token(&self) -> Option<String> {
+        self.authenticated_participants.values()
+            .find(|p| !p.session_token.is_empty())
+            .map(|p| p.session_token.clone())
+    }
+    
+    /// Check if any participant is authenticated (for compatibility)
+    pub fn is_authenticated(&self) -> bool {
+        self.authenticated_participants.values()
+            .any(|p| !p.session_token.is_empty())
+    }
+    
+    /// Get the first authenticated participant's challenge (for compatibility)
+    pub fn challenge(&self) -> Option<String> {
+        self.authenticated_participants.values()
+            .find_map(|p| p.challenge.clone())
+    }
+    
+    /// Get the room creator as owner (for compatibility)
+    pub fn owner(&self) -> Option<PubKey> {
+        self.creator
     }
 }
 

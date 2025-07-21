@@ -31,7 +31,7 @@ pub async fn revoke_session(
             println!("🔍 DEBUG: Looking for episode {} in {} total episodes", episode_id, episodes.len());
             for (id, ep) in episodes.iter() {
                 println!("🔍 DEBUG: Found episode {} with owner: {:?}, session_token: {:?}", 
-                    id, ep.owner, ep.session_token);
+                    id, ep.owner(), ep.session_token());
             }
             episodes.get(&episode_id).cloned()
         }
@@ -43,12 +43,12 @@ pub async fn revoke_session(
     
     let (participant_pubkey, current_session_token) = match episode {
         Some(ref ep) => {
-            let pubkey = ep.owner.unwrap_or_else(|| {
+            let pubkey = ep.owner().unwrap_or_else(|| {
                 println!("❌ Episode has no owner public key");
                 // This shouldn't happen, but let's continue anyway
                 PubKey(secp256k1::PublicKey::from_slice(&[2; 33]).unwrap())
             });
-            (pubkey, ep.session_token.clone())
+            (pubkey, ep.session_token())
         },
         None => {
             println!("❌ Episode {} not found in blockchain state", episode_id);

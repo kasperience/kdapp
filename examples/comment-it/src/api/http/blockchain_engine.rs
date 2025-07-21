@@ -1,5 +1,5 @@
 // src/api/http/blockchain_engine.rs
-use std::sync::{Arc, atomic::AtomicBool, mpsc, Mutex};
+use std::sync::{Arc, atomic::AtomicBool, mpsc};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::broadcast;
 use secp256k1::Keypair;
@@ -287,8 +287,8 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
             message_type: "episode_created".to_string(),
             episode_id: Some(episode_id.into()),
             authenticated: Some(false),
-            challenge: episode.challenge.clone(),
-            session_token: episode.session_token.clone(),
+            challenge: episode.challenge(),
+            session_token: episode.session_token(),
             comment: None,
             comments: None,
         };
@@ -334,9 +334,9 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
                 let message = WebSocketMessage {
                     message_type: "new_comment".to_string(),
                     episode_id: Some(episode_id.into()),
-                    authenticated: Some(episode.is_authenticated),
-                    challenge: episode.challenge.clone(),
-                    session_token: episode.session_token.clone(),
+                    authenticated: Some(episode.is_authenticated()),
+                    challenge: episode.challenge(),
+                    session_token: episode.session_token(),
                     comment: Some(crate::api::http::types::CommentData {
                         id: latest_comment.id,
                         text: latest_comment.text.clone(),
@@ -354,30 +354,30 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
         }
         
         // Check what kind of update this is
-        if episode.is_authenticated && episode.session_token.is_some() {
+        if episode.is_authenticated() && episode.session_token().is_some() {
             // Authentication successful
             println!("🎭 MATRIX UI SUCCESS: User authenticated successfully");
             let message = WebSocketMessage {
                 message_type: "authentication_successful".to_string(),
                 episode_id: Some(episode_id.into()),
                 authenticated: Some(true),
-                challenge: episode.challenge.clone(),
-                session_token: episode.session_token.clone(),
+                challenge: episode.challenge(),
+                session_token: episode.session_token(),
                 comment: None,
                 comments: None,
             };
             let _ = self.websocket_tx.send(message);
-        } else if !episode.is_authenticated && episode.session_token.is_none() && episode.challenge.is_some() {
+        } else if !episode.is_authenticated() && episode.session_token().is_none() && episode.challenge().is_some() {
             // Check if this was a session revocation by comparing with previous state
             if let Some(prev_episode) = previous_episode {
-                if prev_episode.is_authenticated && prev_episode.session_token.is_some() {
+                if prev_episode.is_authenticated() && prev_episode.session_token().is_some() {
                     // Previous state was authenticated, now it's not -> session revoked
                     println!("🎭 MATRIX UI SUCCESS: User session revoked (logout completed)");
                     let message = WebSocketMessage {
                         message_type: "session_revoked".to_string(),
                         episode_id: Some(episode_id.into()),
                         authenticated: Some(false),
-                        challenge: episode.challenge.clone(),
+                        challenge: episode.challenge(),
                         session_token: None,
                         comment: None,
                         comments: None,
@@ -395,7 +395,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
                 message_type: "challenge_issued".to_string(),
                 episode_id: Some(episode_id.into()),
                 authenticated: Some(false),
-                challenge: episode.challenge.clone(),
+                challenge: episode.challenge(),
                 session_token: None,
                 comment: None,
                 comments: None,

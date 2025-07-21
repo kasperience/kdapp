@@ -319,7 +319,7 @@ async fn episode_authenticated(
     // Get the real session token from blockchain episode
     let real_session_token = if let Ok(episodes) = state.blockchain_episodes.lock() {
         if let Some(episode) = episodes.get(&episode_id) {
-            episode.session_token.clone()
+            episode.session_token()
         } else {
             None
         }

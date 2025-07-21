@@ -38,7 +38,7 @@ impl AuthEventHandler {
 impl EpisodeEventHandler<AuthWithCommentsEpisode> for AuthEventHandler {
     fn on_initialize(&self, episode_id: EpisodeId, episode: &AuthWithCommentsEpisode) {
         info!("[{}] Episode {} initialized with owner: {:?}", 
-              self.name, episode_id, episode.owner);
+              self.name, episode_id, episode.owner());
     }
 
     fn on_command(&self, episode_id: EpisodeId, episode: &AuthWithCommentsEpisode, 
@@ -48,7 +48,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for AuthEventHandler {
             UnifiedCommand::RequestChallenge => {
                 info!("[{}] Episode {}: Challenge requested by {:?}", 
                       self.name, episode_id, authorization);
-                if let Some(challenge) = &episode.challenge {
+                if let Some(challenge) = &episode.challenge() {
                     info!("[{}] Episode {}: Challenge generated: {}", 
                           self.name, episode_id, challenge);
                     }
@@ -56,14 +56,14 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for AuthEventHandler {
             UnifiedCommand::SubmitResponse { signature: _, nonce } => {
                 info!("[{}] Episode {}: Response submitted with nonce: {}", 
                       self.name, episode_id, nonce);
-                if episode.is_authenticated {
+                if episode.is_authenticated() {
                     info!("[{}] Episode {}: ✅ Authentication successful!", 
                           self.name, episode_id);
                     
                     // Notify HTTP server about successful authentication
                     let client = Client::new();
                     let episode_id_clone = episode_id;
-                    let challenge_clone = episode.challenge.clone().unwrap_or_default();
+                    let challenge_clone = episode.challenge().clone().unwrap_or_default();
                     tokio::spawn(async move {
                         let url = "http://127.0.0.1:8080/internal/episode-authenticated"; // TODO: Make configurable
                         let res = client.post(url)
@@ -94,7 +94,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for AuthEventHandler {
             UnifiedCommand::RevokeSession { session_token, signature: _ } => {
                 info!("[{}] Episode {}: Session revocation requested for token: {}", 
                       self.name, episode_id, session_token);
-                if !episode.is_authenticated {
+                if !episode.is_authenticated() {
                     info!("[{}] Episode {}: ✅ Session successfully revoked!", 
                           self.name, episode_id);
                     

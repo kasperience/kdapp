@@ -59,9 +59,9 @@ function joinEpisode(episodeId) {
     // Set the current episode ID to join the existing episode
     window.currentEpisodeId = episodeId;
     
-    // Import the currentEpisodeId variable from authForm to update it
+    // Use proper setter function from authForm module
     import('./authForm.js').then(module => {
-        module.currentEpisodeId = episodeId;
+        module.setCurrentEpisodeId(episodeId);
     });
     
     // Update UI to reflect joined episode

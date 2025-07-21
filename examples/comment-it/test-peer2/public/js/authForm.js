@@ -2,11 +2,22 @@ import { resilientFetch, typewriterEffect, truncateKaspaAddress } from './utils.
 import { showCommentForm, handleNewComment } from './commentSection.js';
 import { currentWallet, showAuthPanel, showFundingInfo } from './walletManager.js'; // Added comment to force refresh
 
-export let currentEpisodeId = null;
+// Use window.currentEpisodeId as the single source of truth across modules
 export let currentSessionToken = null;
 export let isAuthenticated = false;
+
+// Getter function for currentEpisodeId that always reads from window
+export function getCurrentEpisodeId() {
+    return window.currentEpisodeId;
+}
+
+// Setter function for currentEpisodeId that updates both module and window
+export function setCurrentEpisodeId(episodeId) {
+    window.currentEpisodeId = episodeId;
+}
 let isProcessingChallenge = false; // Prevent duplicate challenge processing
 let isProcessingLogout = false; // Prevent duplicate logout processing
+let isProcessingEpisodeCreation = false; // Prevent duplicate episode creation
 
 export let webSocket = null;
 
@@ -16,10 +27,18 @@ export async function connectWallet() {
         alert('No wallet available. Please create or import a wallet first.');
         return;
     }
+    
+    // Prevent duplicate episode creation
+    if (isProcessingEpisodeCreation) {
+        console.log('🔄 Episode creation already in progress - ignoring duplicate');
+        return;
+    }
+    
     const button = event.target;
     const originalText = button.textContent;
     button.textContent = '[ CONNECTING TO KASPA... ]';
     button.disabled = true;
+    isProcessingEpisodeCreation = true;
     
     // Hide logout button at start of authentication flow
     const logoutBtn = document.getElementById('logoutButton');
@@ -54,27 +73,48 @@ export async function connectWallet() {
             };
         }
         
-        // Step 2: Start authentication episode
+        // Step 2: Start authentication episode or join existing one
+        const authBody = {
+            public_key: walletData.public_key
+        };
+        
+        // If currentEpisodeId is already set (from joining existing episode), include it
+        const currentEpisodeId = getCurrentEpisodeId();
+        if (currentEpisodeId) {
+            authBody.episode_id = currentEpisodeId;
+            console.log(`🎯 Authenticating for existing episode: ${currentEpisodeId}`);
+        } else {
+            console.log(`🆕 Creating new authentication episode`);
+        }
+        
         const authResponse = await resilientFetch('/auth/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                public_key: walletData.public_key
-            })
+            body: JSON.stringify(authBody)
         });
         
         const authData = await authResponse.json();
         
-        if (authData.status === 'submitted_to_blockchain' || authData.status === 'transaction_submission_failed') {
-            currentEpisodeId = authData.episode_id;
+        if (authData.status === 'submitted_to_blockchain' || authData.status === 'transaction_submission_failed' || authData.status === 'joined_existing_episode') {
+            setCurrentEpisodeId(authData.episode_id);
             
             // Update UI
-            document.getElementById('episodeId').textContent = currentEpisodeId;
-            document.getElementById('authEpisodeDisplay').textContent = currentEpisodeId;
+            const episodeId = getCurrentEpisodeId();
+            document.getElementById('episodeId').textContent = episodeId;
+            document.getElementById('authEpisodeDisplay').textContent = episodeId;
             
             if (authData.status === 'submitted_to_blockchain') {
                 button.textContent = '[ WAITING FOR CHALLENGE... ]';
                 typewriterEffect(`CONNECTED TO KASPA NETWORK. AUTHENTICATING...`, button.parentElement);
+            } else if (authData.status === 'joined_existing_episode') {
+                button.textContent = '[ REQUESTING CHALLENGE... ]';
+                typewriterEffect(`JOINED COMMENT ROOM ${getCurrentEpisodeId()}. REQUESTING CHALLENGE...`, button.parentElement);
+                // For existing episodes, connect WebSocket first then request challenge
+                connectWebSocket();
+                // Small delay to ensure WebSocket is connected
+                setTimeout(() => {
+                    requestChallengeAfterEpisodeCreation();
+                }, 500);
             } else {
                 button.textContent = '[ RETRYING CONNECTION... ]';
                 typewriterEffect(`INITIAL SUBMISSION FAILED. RETRYING VIA WEBSOCKET...`, button.parentElement);
@@ -107,6 +147,7 @@ export async function connectWallet() {
         }
         
         button.disabled = false;
+        isProcessingEpisodeCreation = false; // Reset state lock on error
     }
 }
 
@@ -148,12 +189,13 @@ export function handleWebSocketMessage(message) {
     switch (message.type) {
         case 'episode_created':
             // Only ignore if we've already processed this specific episode AND we're not starting fresh
-            if (currentEpisodeId === message.episode_id && isProcessingChallenge) {
+            if (getCurrentEpisodeId() === message.episode_id && isProcessingChallenge) {
                 console.log('🔄 Duplicate episode_created message ignored - already processing');
                 return;
             }
             console.log('🎯 Episode created, requesting challenge...');
-            currentEpisodeId = message.episode_id; // Ensure episode ID is set
+            setCurrentEpisodeId(message.episode_id); // Ensure episode ID is set
+            isProcessingEpisodeCreation = false; // Reset episode creation lock - episode now exists
             // Only request challenge if we're not already authenticated
             if (!isAuthenticated) {
                 requestChallengeAfterEpisodeCreation();
@@ -161,7 +203,7 @@ export function handleWebSocketMessage(message) {
             break;
             
         case 'challenge_issued':
-            if (message.episode_id === currentEpisodeId && !isAuthenticated) {
+            if (message.episode_id === getCurrentEpisodeId() && !isAuthenticated) {
                 // Prevent duplicate challenge handling
                 const button = document.getElementById('authButton');
                 if (button.textContent.includes('SIGNING CHALLENGE')) {
@@ -173,20 +215,20 @@ export function handleWebSocketMessage(message) {
             break;
             
         case 'authentication_successful':
-            if (message.episode_id === currentEpisodeId && !isAuthenticated) {
+            if (message.episode_id === getCurrentEpisodeId() && !isAuthenticated) {
                 handleAuthenticated(message.session_token);
             }
             break;
             
         case 'authentication_failed':
-            if (message.episode_id === currentEpisodeId) {
+            if (message.episode_id === getCurrentEpisodeId()) {
                 handleAuthenticationFailed(message.error);
             }
             break;
             
         case 'session_revoked':
             // Session revoked for current episode - always handle it
-            if (message.episode_id === currentEpisodeId) {
+            if (message.episode_id === getCurrentEpisodeId()) {
                 console.log('🔍 DEBUG: Session revoked for current episode');
                 handleSessionRevoked();
             }
@@ -220,7 +262,7 @@ export async function requestChallengeAfterEpisodeCreation() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                episode_id: currentEpisodeId,
+                episode_id: getCurrentEpisodeId(),
                 public_key: currentWallet.publicKey
             })
         });
@@ -277,7 +319,7 @@ export async function handleChallenge(challenge) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    episode_id: currentEpisodeId,
+                    episode_id: getCurrentEpisodeId(),
                     signature: signature,
                     nonce: nonce
                 })
@@ -315,11 +357,12 @@ export function handleAuthenticated(sessionToken) {
     currentSessionToken = sessionToken;
     isAuthenticated = true;
     isProcessingChallenge = false; // Reset state lock on success
+    isProcessingEpisodeCreation = false; // Reset episode creation lock on success
     
     // Update global window state for cross-module access
     window.currentSessionToken = sessionToken;
     window.isAuthenticated = true;
-    window.currentEpisodeId = currentEpisodeId;
+    window.currentEpisodeId = getCurrentEpisodeId();
     
     const button = document.getElementById('authButton');
     button.textContent = '[ EPISODE AUTHENTICATED ]';
@@ -344,7 +387,7 @@ export function handleAuthenticated(sessionToken) {
 
 // Logout function - revokes session on blockchain
 export async function logout() {
-    if (!currentSessionToken || !currentEpisodeId) {
+    if (!currentSessionToken || !getCurrentEpisodeId()) {
         console.log('No active session to logout');
         return;
     }
@@ -381,7 +424,7 @@ export async function logout() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                episode_id: currentEpisodeId,
+                episode_id: getCurrentEpisodeId(),
                 session_token: currentSessionToken,
                 signature: signData.signature
             })
@@ -426,6 +469,7 @@ export function handleSessionRevoked() {
     currentSessionToken = null;
     isProcessingChallenge = false; // Reset state lock
     isProcessingLogout = false; // Reset logout state lock
+    isProcessingEpisodeCreation = false; // Reset episode creation lock
     
     // Hide comment form and logout button
     document.getElementById('commentForm').style.display = 'none';
@@ -433,7 +477,7 @@ export function handleSessionRevoked() {
     
     // Reset connect button
     const button = document.getElementById('authButton');
-    button.textContent = '[ CREATE AUTH EPISODE ]';
+    button.textContent = '[ OR CREATE NEW COMMENT ROOM ]';
     button.style.background = 'transparent';
     button.style.borderColor = 'var(--primary-teal)';
     button.style.color = 'var(--bright-teal)';
@@ -474,7 +518,7 @@ export function handleAnonymousMode() {
             } else {
                 document.getElementById('walletAddress').textContent = 'kaspa:qrxx...v8wz';
             }
-            document.getElementById('episodeId').textContent = currentEpisodeId || '--';
+            document.getElementById('episodeId').textContent = getCurrentEpisodeId() || '--';
         }
     }
 }
@@ -492,6 +536,6 @@ window.logout = logout;
 window.handleAnonymousMode = handleAnonymousMode;
 window.handleWebSocketMessage = handleWebSocketMessage;
 window.handleAuthenticated = handleAuthenticated;
-window.currentEpisodeId = currentEpisodeId;
+// currentEpisodeId is now managed by window.currentEpisodeId directly
 window.currentSessionToken = currentSessionToken;
 window.isAuthenticated = isAuthenticated;

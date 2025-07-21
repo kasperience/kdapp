@@ -1,3 +1,4 @@
+
 // episodeManager.js
 
 export async function fetchAndDisplayActiveEpisodes() {
@@ -12,17 +13,26 @@ export async function fetchAndDisplayActiveEpisodes() {
         roomsList.innerHTML = ''; // Clear previous list
 
         if (data.episodes && data.episodes.length > 0) {
-            data.episodes.forEach(episode => {
+            // Remove duplicates by episode_id
+            const uniqueEpisodes = data.episodes.reduce((acc, episode) => {
+                if (!acc.find(e => e.episode_id === episode.episode_id)) {
+                    acc.push(episode);
+                }
+                return acc;
+            }, []);
+            
+            uniqueEpisodes.forEach(episode => {
                 const roomElement = document.createElement('div');
                 roomElement.className = 'active-room-item';
                 roomElement.innerHTML = `
-                    <span>Episode ID: ${episode.episode_id}</span>
+                    <span>Room ID: ${episode.episode_id}</span>
                     <span>Creator: ${episode.creator_public_key.substring(0, 10)}...</span>
-                    <button class="join-room-btn" data-episode-id="${episode.episode_id}">Join</button>
+                    <button class="join-room-btn" data-episode-id="${episode.episode_id}">Join Room</button>
                 `;
                 roomsList.appendChild(roomElement);
             });
             roomsPanel.style.display = 'block';
+            console.log(`📋 Displayed ${uniqueEpisodes.length} unique episodes (filtered from ${data.episodes.length} total)`);
         } else {
             roomsList.innerHTML = '<p style="color: var(--primary-teal);">No active rooms found. Be the first to create one!</p>';
             roomsPanel.style.display = 'block';
@@ -45,13 +55,41 @@ export async function fetchAndDisplayActiveEpisodes() {
 
 function joinEpisode(episodeId) {
     console.log(`Joining episode: ${episodeId}`);
-    // Here you would typically set the currentEpisodeId and proceed with authentication
+    
+    // Set the current episode ID to join the existing episode
     window.currentEpisodeId = episodeId;
-    // For now, just log it and update the UI
+    
+    // Use proper setter function from authForm module
+    import('./authForm.js').then(module => {
+        module.setCurrentEpisodeId(episodeId);
+    });
+    
+    // Update UI to reflect joined episode
     document.getElementById('episodeId').textContent = episodeId;
-    alert(`You have joined episode ${episodeId}. You can now submit comments.`);
-    // You might want to hide the auth panel and show the comment form
-    document.getElementById('authPanel').style.display = 'none';
-    document.getElementById('commentForm').style.display = 'block';
     document.getElementById('authEpisodeDisplay').textContent = episodeId;
+    
+    // Connect WebSocket to listen for episode events
+    import('./authForm.js').then(module => {
+        if (!module.webSocket || module.webSocket.readyState !== WebSocket.OPEN) {
+            module.connectWebSocket();
+        }
+    });
+    
+    // Check if user is already authenticated - if so, show comment form immediately
+    if (window.isAuthenticated && window.currentSessionToken) {
+        // Already authenticated - can participate immediately
+        document.getElementById('authPanel').style.display = 'none';
+        document.getElementById('commentForm').style.display = 'block';
+        alert(`✅ Joined comment room ${episodeId}! You're already authenticated and can submit comments.`);
+    } else {
+        // Not authenticated - need to authenticate for this episode
+        // Show auth panel but don't create new episode - join existing one
+        document.getElementById('authPanel').style.display = 'block';
+        document.getElementById('commentForm').style.display = 'none';
+        
+        const authButton = document.getElementById('authButton');
+        authButton.textContent = '[ AUTHENTICATE FOR ROOM ]';
+        
+        alert(`Joined comment room ${episodeId}. Click "AUTHENTICATE FOR ROOM" to participate in authenticated comments.`);
+    }
 }

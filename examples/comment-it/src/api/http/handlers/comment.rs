@@ -116,12 +116,12 @@ pub async fn submit_simple_comment(
     };
     
     // Validate session token
-    if episode.session_token != Some(request.session_token.clone()) {
+    if episode.session_token() != Some(request.session_token.clone()) {
         error!("Invalid session token for episode {}", request.episode_id);
         return Err(StatusCode::UNAUTHORIZED);
     }
     
-    if !episode.is_authenticated {
+    if !episode.is_authenticated() {
         error!("Episode {} not authenticated", request.episode_id);
         return Err(StatusCode::UNAUTHORIZED);
     }

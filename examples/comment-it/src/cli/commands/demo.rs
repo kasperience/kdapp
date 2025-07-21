@@ -48,7 +48,7 @@ pub fn test_episode_logic(participant_count: usize) -> Result<(), Box<dyn Error>
         &metadata,
     )?;
     
-    let challenge = auth_episode.challenge.clone().unwrap();
+    let challenge = auth_episode.challenge().unwrap();
     println!("🎲 Received challenge: {}", challenge);
 
     // Step 2: Sign challenge
@@ -69,9 +69,9 @@ pub fn test_episode_logic(participant_count: usize) -> Result<(), Box<dyn Error>
     )?;
 
     // Check results
-    if auth_episode.is_authenticated {
+    if auth_episode.is_authenticated() {
         println!("✅ Authentication successful!");
-        if let Some(ref token) = auth_episode.session_token {
+        if let Some(ref token) = auth_episode.session_token() {
             println!("🎟️ Session token: {}", token);
         }
     } else {
@@ -130,7 +130,7 @@ pub fn run_interactive_demo() -> Result<(), Box<dyn Error>> {
         &metadata,
     )?;
     
-    let challenge = auth_episode.challenge.clone().unwrap();
+    let challenge = auth_episode.challenge().unwrap();
     println!("📨 Bob sends challenge to Alice: {}", challenge);
     
     // Alice signs the challenge
@@ -152,9 +152,9 @@ pub fn run_interactive_demo() -> Result<(), Box<dyn Error>> {
     // Show final result
     println!("
 🎯 Final Result:");
-    if auth_episode.is_authenticated {
+    if auth_episode.is_authenticated() {
         println!("✅ Alice successfully authenticated!");
-        if let Some(ref token) = auth_episode.session_token {
+        if let Some(ref token) = auth_episode.session_token() {
             println!("🎟️ Session token issued: {}", token);
         }
         println!("🎉 Authentication complete - Alice can now access protected resources");

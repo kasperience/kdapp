@@ -61,7 +61,7 @@ pub async fn verify_auth(
     let participant_pubkey = match episode {
         Some(ep) => {
             // 🚨 CRITICAL: Check episode state BEFORE submitting duplicate transactions
-            if ep.is_authenticated {
+            if ep.is_authenticated() {
                 println!("🔄 Episode {} already authenticated - blocking duplicate transaction submission", episode_id);
                 return Ok(Json(VerifyResponse {
                     episode_id,
@@ -71,7 +71,7 @@ pub async fn verify_auth(
                 }));
             }
             
-            ep.owner.unwrap_or_else(|| {
+            ep.owner().unwrap_or_else(|| {
                 println!("❌ Episode has no owner public key");
                 // This shouldn't happen, but let's continue anyway
                 PubKey(secp256k1::PublicKey::from_slice(&[2; 33]).unwrap())
