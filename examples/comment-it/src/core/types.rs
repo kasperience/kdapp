@@ -19,20 +19,20 @@ pub enum AuthRollback {
     },
 }
 
-/// Unified rollback information for authentication and comment operations
+/// Unified rollback information for authentication and comment operations - Pure P2P
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum UnifiedRollback {
     Challenge { 
         participant_key: String,
-        previous_participant: Option<crate::core::episode::AuthenticatedParticipant>,
+        previous_participant: Option<()>, // Simplified for pure P2P
     },
     Authentication {
         participant_key: String,
-        previous_participant: Option<crate::core::episode::AuthenticatedParticipant>,
+        was_previously_authenticated: bool, // Pure public key tracking
     },
     SessionRevoked {
         participant_key: String,
-        previous_participant: crate::core::episode::AuthenticatedParticipant,
+        was_previously_authenticated: bool, // Pure public key tracking
     },
     CommentAdded {
         comment_id: u64,
