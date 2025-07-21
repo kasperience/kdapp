@@ -116,8 +116,14 @@ pub async fn submit_simple_comment(
     };
     
     // Validate session token
-    if episode.session_token() != Some(request.session_token.clone()) {
-        error!("Invalid session token for episode {}", request.episode_id);
+    let episode_token = episode.session_token();
+    info!("🔍 DEBUG: Episode session token: {:?}", episode_token);
+    info!("🔍 DEBUG: Request session token: {:?}", request.session_token);
+    
+    if episode_token != Some(request.session_token.clone()) {
+        error!("❌ Session token mismatch for episode {}", request.episode_id);
+        error!("   Episode has: {:?}", episode_token);
+        error!("   Request sent: {:?}", request.session_token);
         return Err(StatusCode::UNAUTHORIZED);
     }
     
