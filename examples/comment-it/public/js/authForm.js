@@ -316,6 +316,11 @@ export function handleAuthenticated(sessionToken) {
     isAuthenticated = true;
     isProcessingChallenge = false; // Reset state lock on success
     
+    // Update global window state for cross-module access
+    window.currentSessionToken = sessionToken;
+    window.isAuthenticated = true;
+    window.currentEpisodeId = currentEpisodeId;
+    
     const button = document.getElementById('authButton');
     button.textContent = '[ EPISODE AUTHENTICATED ]';
     button.style.background = 'var(--success)';
@@ -332,7 +337,7 @@ export function handleAuthenticated(sessionToken) {
     }
     
     // Show comment form with authenticated features
-    // showCommentForm(true); // This function is in commentSection.js
+    showCommentForm(true);
     
     typewriterEffect(`LOGIN SUCCESSFUL! WELCOME TO KASPA NETWORK.`, button.parentElement);
 }

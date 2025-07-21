@@ -157,17 +157,35 @@ impl AuthHttpPeer {
         episode_message: kdapp::engine::EpisodeMessage<crate::core::AuthWithCommentsEpisode>,
     ) -> Result<String, Box<dyn std::error::Error>> {
         if let Some(kaspad) = self.peer_state.kaspad_client.as_ref() {
-            // Get organizer's wallet for funding the transaction
-            let organizer_wallet = crate::wallet::get_wallet_for_command("organizer-peer", None)?;
-            let organizer_keypair = organizer_wallet.keypair;
-            let organizer_addr = kaspa_addresses::Address::new(
-                kaspa_addresses::Prefix::Testnet,
-                kaspa_addresses::Version::PubKey,
-                &organizer_keypair.x_only_public_key().0.serialize(),
+            // CRITICAL FIX: Extract participant's public key from episode message
+            let participant_pubkey = match &episode_message {
+                kdapp::engine::EpisodeMessage::SignedCommand { pubkey, .. } => {
+                    *pubkey
+                }
+                kdapp::engine::EpisodeMessage::NewEpisode { participants, .. } => {
+                    // For NewEpisode, use the first participant as the creator
+                    if participants.is_empty() {
+                        return Err("NewEpisode has no participants".into());
+                    }
+                    participants[0]
+                }
+                _ => {
+                    return Err("Episode message variant not supported for transaction submission".into());
+                }
+            };
+            
+            // Create participant's Kaspa address from their actual public key
+            let participant_addr = kaspa_addresses::Address::new(
+                kaspa_addresses::Prefix::Testnet, 
+                kaspa_addresses::Version::PubKey, 
+                &participant_pubkey.0.serialize()[1..] // Remove compression byte for address
             );
-
-            // Fetch UTXOs for the organizer's wallet
-            let entries = kaspad.get_utxos_by_addresses(vec![organizer_addr.clone()]).await?;
+            
+            println!("🎯 Using REAL participant address: {}", participant_addr);
+            println!("🔑 Participant pubkey: {}", hex::encode(participant_pubkey.0.serialize()));
+            
+            // Get UTXOs for participant
+            let entries = kaspad.get_utxos_by_addresses(vec![participant_addr.clone()]).await?;
             if entries.is_empty() {
                 return Err("No UTXOs found for participant wallet. Please fund the wallet.".into());
             }
@@ -270,12 +288,12 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
                     authenticated: Some(episode.is_authenticated),
                     challenge: episode.challenge.clone(),
                     session_token: episode.session_token.clone(),
-                    comment: Some(serde_json::json!({
-                        "id": latest_comment.id,
-                        "text": latest_comment.text,
-                        "author": latest_comment.author,
-                        "timestamp": latest_comment.timestamp
-                    })),
+                    comment: Some(crate::api::http::types::CommentData {
+                        id: latest_comment.id,
+                        text: latest_comment.text.clone(),
+                        author: latest_comment.author.clone(),
+                        timestamp: latest_comment.timestamp
+                    }),
                     comments: None,
                 };
                 
