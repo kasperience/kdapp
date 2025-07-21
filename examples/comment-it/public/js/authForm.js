@@ -1,5 +1,5 @@
 import { resilientFetch, typewriterEffect, truncateKaspaAddress } from './utils.js';
-import { showCommentForm } from './commentSection.js';
+import { showCommentForm, handleNewComment } from './commentSection.js';
 import { currentWallet, showAuthPanel, showFundingInfo } from './walletManager.js'; // Added comment to force refresh
 
 export let currentEpisodeId = null;
@@ -190,6 +190,12 @@ export function handleWebSocketMessage(message) {
                 console.log('🔍 DEBUG: Session revoked for current episode');
                 handleSessionRevoked();
             }
+            break;
+            
+        case 'new_comment':
+            // Real-time P2P comment received from blockchain
+            console.log('💬 NEW COMMENT received from blockchain:', message.comment);
+            handleNewComment(message);
             break;
     }
 }

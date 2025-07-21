@@ -194,3 +194,50 @@ export function addNewComment() {
     const commentCount = parseInt(document.getElementById('commentEpisodes').textContent.replace(/,/g, ''));
     document.getElementById('commentEpisodes').textContent = (commentCount + 1).toLocaleString();
 }
+
+// Handle new comment received from blockchain via WebSocket
+export function handleNewComment(message) {
+    console.log('🎯 P2P COMMENT RECEIVED - Adding to UI...', message.comment);
+    
+    const container = document.getElementById('commentsContainer');
+    if (!container) {
+        console.error('❌ Comments container not found');
+        return;
+    }
+    
+    const comment = document.createElement('div');
+    comment.className = 'comment-card comment-authenticated';
+    comment.style.borderLeft = '4px solid var(--bright-cyan)';
+    comment.style.background = 'rgba(20, 184, 166, 0.1)';
+    comment.style.animation = 'comment-appear 0.5s ease-out';
+    
+    // Create timestamp display
+    const timestamp = new Date(message.comment.timestamp * 1000);
+    const timeString = timestamp.toLocaleTimeString();
+    
+    comment.innerHTML = `
+        <div class="comment-header">
+            <span class="comment-author">${message.comment.author}</span>
+            <div class="comment-meta">
+                <span>EPISODE: ${message.episode_id}</span>
+                <span>TIME: ${timeString}</span>
+                <span class="author-badge" style="background: linear-gradient(45deg, var(--success), var(--bright-cyan)); padding: 2px 8px; border-radius: 12px; font-size: 0.6rem; text-transform: uppercase;">P2P VERIFIED</span>
+            </div>
+        </div>
+        <div class="comment-body">
+            ${message.comment.text}
+        </div>
+        <div style="font-size: 0.7rem; color: var(--success); margin-top: 10px;">
+            💬 REAL-TIME P2P COMMENT FROM BLOCKCHAIN
+        </div>
+    `;
+    
+    // Add to top of comments (newest first)
+    container.insertBefore(comment, container.firstChild);
+    
+    // Update stats
+    const commentCount = parseInt(document.getElementById('commentEpisodes').textContent.replace(/,/g, ''));
+    document.getElementById('commentEpisodes').textContent = (commentCount + 1).toLocaleString();
+    
+    console.log('✅ P2P comment added to UI successfully!');
+}

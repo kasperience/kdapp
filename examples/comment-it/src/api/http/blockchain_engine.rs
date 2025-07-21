@@ -233,13 +233,14 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
         &self,
         episode_id: EpisodeId,
         episode: &AuthWithCommentsEpisode,
-        _cmd: &UnifiedCommand,
+        cmd: &UnifiedCommand,
         _authorization: Option<kdapp::pki::PubKey>,
         _metadata: &kdapp::episode::PayloadMetadata,
     ) {
         println!("⚡ Episode {} updated on blockchain", episode_id);
+        println!("🔍 DEBUG: on_command called for episode {} with command: {:?}", episode_id, cmd);
         
-        // Read previous state BEFORE updating (for session revocation detection)
+        // Read previous state BEFORE updating (for session revocation detection and comment detection)
         let previous_episode = if let Ok(episodes) = self.blockchain_episodes.lock() {
             episodes.get(&(episode_id as u64)).cloned()
         } else {
@@ -252,6 +253,37 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
             println!("✅ Updated episode {} in blockchain state", episode_id);
         } else {
             println!("❌ Failed to update episode {} in blockchain state", episode_id);
+        }
+        
+        // 🚀 CRITICAL: Check for new comments and broadcast them real-time!
+        if let UnifiedCommand::SubmitComment { text, session_token: _ } = cmd {
+            println!("💬 NEW COMMENT detected on blockchain for episode {}", episode_id);
+            println!("📝 Comment text: \"{}\"", text);
+            
+            // Find the latest comment (should be the last one added)
+            if let Some(latest_comment) = episode.comments.last() {
+                println!("🎯 Broadcasting new comment to all connected peers...");
+                
+                let message = WebSocketMessage {
+                    message_type: "new_comment".to_string(),
+                    episode_id: Some(episode_id.into()),
+                    authenticated: Some(episode.is_authenticated),
+                    challenge: episode.challenge.clone(),
+                    session_token: episode.session_token.clone(),
+                    comment: Some(serde_json::json!({
+                        "id": latest_comment.id,
+                        "text": latest_comment.text,
+                        "author": latest_comment.author,
+                        "timestamp": latest_comment.timestamp
+                    })),
+                    comments: None,
+                };
+                
+                let receiver_count = self.websocket_tx.receiver_count();
+                let _ = self.websocket_tx.send(message);
+                println!("📡 NEW COMMENT broadcasted to {} connected peer(s)! 🎉", receiver_count);
+            }
+            return; // Don't process as auth command
         }
         
         // Check what kind of update this is
