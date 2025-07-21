@@ -1,8 +1,8 @@
 // src/api/http/handlers/revoke.rs
 use axum::{extract::State, response::Json, http::StatusCode};
 use kaspa_addresses::{Address, Prefix, Version};
-use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
-use kaspa_wrpc_client::prelude::RpcApi;
+
+
 use kdapp::{
     engine::EpisodeMessage,
     pki::PubKey,
@@ -76,7 +76,7 @@ pub async fn revoke_session(
     let participant_secret_key = participant_wallet.keypair.secret_key();
     
     // Create participant's Kaspa address for transaction funding (True P2P!)
-    let participant_addr = Address::new(
+    let _participant_addr = Address::new(
         Prefix::Testnet, 
         Version::PubKey, 
         &participant_wallet.keypair.x_only_public_key().0.serialize()

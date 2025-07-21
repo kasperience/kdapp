@@ -2,6 +2,7 @@ import { createMatrixRain, initBlockHeightUpdater, initKonamiCode } from './matr
 import { checkExistingWallet, showCreateWallet, showImportWallet, generateNewWallet, copyPrivateKey, validateAndImportWallet, proceedWithWallet, changeWallet } from './walletManager.js';
 import { connectWallet, logout, handleAnonymousMode, handleWebSocketMessage, handleAuthenticated } from './authForm.js';
 import { initCommentForm, submitComment, addNewComment, showCommentForm } from './commentSection.js';
+import { fetchAndDisplayActiveEpisodes } from './episodeManager.js';
 
 // Global state (moved from index.html script)
 window.currentEpisodeId = null;
@@ -34,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initKonamiCode();
     initCommentForm();
     checkExistingWallet();
+    fetchAndDisplayActiveEpisodes();
 
     // Attach event listeners for wallet management
     document.getElementById('createWalletBtn').addEventListener('click', showCreateWallet);

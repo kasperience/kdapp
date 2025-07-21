@@ -21,26 +21,34 @@ pub struct Comment {
     pub session_token: String,
 }
 
-/// Unified authentication and comment episode for Kaspa
+/// An authenticated participant in the comment room
+#[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq)]
+pub struct AuthenticatedParticipant {
+    pub pubkey: PubKey,
+    pub session_token: String,
+    pub authenticated_at: u64,
+    pub challenge: Option<String>,
+    pub challenge_timestamp: u64,
+}
+
+/// Unified authentication and comment episode for Kaspa - SHARED COMMENT ROOM
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize, PartialEq)]
 pub struct AuthWithCommentsEpisode {
-    // Auth state
-    /// Owner public key (the one being authenticated)
-    pub owner: Option<PubKey>,
-    /// Current challenge string for authentication
-    pub challenge: Option<String>,
-    /// Whether the owner is authenticated
-    pub is_authenticated: bool,
-    /// Session token for authenticated users
-    pub session_token: Option<String>,
-    /// Timestamp of last challenge generation
-    pub challenge_timestamp: u64,
+    // Comment Room Identity
+    /// Creator of the comment room (first participant)
+    pub creator: Option<PubKey>,
+    /// Room creation timestamp
+    pub created_at: u64,
+    
+    // Multi-participant authentication
+    /// Map of authenticated participants by pubkey string
+    pub authenticated_participants: HashMap<String, AuthenticatedParticipant>,
     /// In-memory rate limiting: attempts per pubkey (using string representation)
     pub rate_limits: HashMap<String, u32>,
-    /// Authorized participants (who can request challenges)
+    /// All participants who can join this room (initially just creator, others can join)
     pub authorized_participants: Vec<PubKey>,
     
-    // Comment state
+    // Comment state (shared by all authenticated participants)
     /// All comments stored in this episode
     pub comments: Vec<Comment>,
     /// Next comment ID
@@ -56,18 +64,18 @@ impl Episode for AuthWithCommentsEpisode {
     type CommandError = AuthError;
 
     fn initialize(participants: Vec<PubKey>, metadata: &PayloadMetadata) -> Self {
-        info!("[AuthWithCommentsEpisode] initialize: {:?}", participants);
+        info!("[AuthWithCommentsEpisode] initialize comment room: {:?}", participants);
         Self {
-            // Auth state
-            owner: participants.first().copied(),
-            challenge: None,
-            is_authenticated: false,
-            session_token: None,
-            challenge_timestamp: metadata.accepting_time,
-            rate_limits: HashMap::new(),
-            authorized_participants: participants,
+            // Comment Room Identity
+            creator: participants.first().copied(),
+            created_at: metadata.accepting_time,
             
-            // Comment state
+            // Multi-participant authentication (empty initially)
+            authenticated_participants: HashMap::new(),
+            rate_limits: HashMap::new(),
+            authorized_participants: participants, // Anyone can join this room
+            
+            // Comment state (shared by all authenticated participants)
             comments: Vec::new(),
             next_comment_id: 1,
         }
@@ -97,35 +105,56 @@ impl Episode for AuthWithCommentsEpisode {
             UnifiedCommand::RequestChallenge => {
                 info!("[AuthWithCommentsEpisode] RequestChallenge from: {:?}", participant);
                 
-                // Store previous state for rollback
-                let previous_challenge = self.challenge.clone();
-                let previous_timestamp = self.challenge_timestamp;
+                let participant_key = format!("{}", participant);
+                
+                // Check if participant is already authenticated
+                if self.authenticated_participants.contains_key(&participant_key) {
+                    info!("[AuthWithCommentsEpisode] Participant already authenticated: {:?}", participant);
+                    return Err(EpisodeError::InvalidCommand(AuthError::AlreadyAuthenticated));
+                }
+                
+                // Store previous state for rollback (for this specific participant)
+                let previous_participant = self.authenticated_participants.get(&participant_key).cloned();
                 
                 // Generate new challenge with timestamp from metadata
                 let new_challenge = ChallengeGenerator::generate_with_provided_timestamp(metadata.accepting_time);
-                self.challenge = Some(new_challenge);
-                self.challenge_timestamp = metadata.accepting_time;
-                self.owner = Some(participant);
+                
+                // Create or update participant with challenge (but not authenticated yet)
+                let participant_auth = AuthenticatedParticipant {
+                    pubkey: participant,
+                    session_token: String::new(), // Will be set after successful authentication
+                    authenticated_at: 0, // Will be set after successful authentication
+                    challenge: Some(new_challenge),
+                    challenge_timestamp: metadata.accepting_time,
+                };
+                
+                self.authenticated_participants.insert(participant_key.clone(), participant_auth);
                 
                 // Increment rate limit
                 self.increment_rate_limit(&participant);
                 
                 Ok(UnifiedRollback::Challenge { 
-                    previous_challenge, 
-                    previous_timestamp 
+                    participant_key,
+                    previous_participant
                 })
             }
             
             UnifiedCommand::SubmitResponse { signature, nonce } => {
                 info!("[AuthWithCommentsEpisode] SubmitResponse from: {:?}", participant);
                 
+                let participant_key = format!("{}", participant);
+                
+                // Get the participant's current authentication state
+                let participant_auth = self.authenticated_participants.get(&participant_key)
+                    .ok_or(EpisodeError::InvalidCommand(AuthError::ChallengeNotFound))?;
+                
                 // Check if already authenticated
-                if self.is_authenticated {
+                if !participant_auth.session_token.is_empty() {
                     return Err(EpisodeError::InvalidCommand(AuthError::AlreadyAuthenticated));
                 }
                 
                 // Check if challenge exists and matches
-                let Some(ref current_challenge) = self.challenge else {
+                let Some(ref current_challenge) = participant_auth.challenge else {
                     return Err(EpisodeError::InvalidCommand(AuthError::ChallengeNotFound));
                 };
                 
@@ -147,36 +176,43 @@ impl Episode for AuthWithCommentsEpisode {
                 }
                 
                 // Store previous state for rollback
-                let previous_auth_status = self.is_authenticated;
-                let previous_session_token = self.session_token.clone();
+                let previous_participant = self.authenticated_participants.get(&participant_key).cloned();
                 
-                // Authenticate user
-                self.is_authenticated = true;
-                self.session_token = Some(self.generate_session_token());
+                // Authenticate this specific participant
+                let authenticated_participant = AuthenticatedParticipant {
+                    pubkey: participant,
+                    session_token: self.generate_session_token_for_participant(&participant, metadata.accepting_time),
+                    authenticated_at: metadata.accepting_time,
+                    challenge: participant_auth.challenge.clone(), // Keep challenge for reference
+                    challenge_timestamp: participant_auth.challenge_timestamp,
+                };
+                
+                self.authenticated_participants.insert(participant_key.clone(), authenticated_participant);
                 
                 info!("[AuthWithCommentsEpisode] Authentication successful for: {:?}", participant);
                 
                 Ok(UnifiedRollback::Authentication {
-                    previous_auth_status,
-                    previous_session_token,
+                    participant_key,
+                    previous_participant,
                 })
             }
             
             UnifiedCommand::RevokeSession { session_token, signature } => {
                 info!("[AuthWithCommentsEpisode] RevokeSession from: {:?}", participant);
                 
-                // Check if session exists and matches
-                let Some(ref current_token) = self.session_token else {
-                    return Err(EpisodeError::InvalidCommand(AuthError::SessionNotFound));
-                };
+                let participant_key = format!("{}", participant);
                 
-                if *session_token != *current_token {
-                    return Err(EpisodeError::InvalidCommand(AuthError::InvalidSessionToken));
+                // Get the participant's current authentication state
+                let participant_auth = self.authenticated_participants.get(&participant_key)
+                    .ok_or(EpisodeError::InvalidCommand(AuthError::SessionNotFound))?;
+                
+                // Check if session exists and matches
+                if participant_auth.session_token.is_empty() {
+                    return Err(EpisodeError::InvalidCommand(AuthError::SessionAlreadyRevoked));
                 }
                 
-                // Check if already not authenticated (session already revoked)
-                if !self.is_authenticated {
-                    return Err(EpisodeError::InvalidCommand(AuthError::SessionAlreadyRevoked));
+                if *session_token != participant_auth.session_token {
+                    return Err(EpisodeError::InvalidCommand(AuthError::InvalidSessionToken));
                 }
                 
                 // Verify signature - participant must sign their own session token to prove ownership
@@ -185,18 +221,16 @@ impl Episode for AuthWithCommentsEpisode {
                 }
                 
                 // Store previous state for rollback
-                let previous_token = self.session_token.clone().unwrap();
-                let was_authenticated = self.is_authenticated;
+                let previous_participant = participant_auth.clone();
                 
-                // Revoke session
-                self.is_authenticated = false;
-                self.session_token = None;
+                // Revoke session by removing the participant from authenticated list
+                self.authenticated_participants.remove(&participant_key);
                 
                 info!("[AuthWithCommentsEpisode] Session revoked successfully for: {:?}", participant);
                 
                 Ok(UnifiedRollback::SessionRevoked {
-                    previous_token,
-                    was_authenticated,
+                    participant_key,
+                    previous_participant,
                 })
             }
             
@@ -213,8 +247,8 @@ impl Episode for AuthWithCommentsEpisode {
                 }
                 
                 // Validate session token - must be authenticated and token must match
-                if !self.can_comment(session_token) {
-                    info!("[AuthWithCommentsEpisode] Comment rejected: Invalid session token");
+                if !self.can_comment(&participant, session_token) {
+                    info!("[AuthWithCommentsEpisode] Comment rejected: Invalid session token for participant");
                     return Err(EpisodeError::InvalidCommand(AuthError::InvalidSessionToken));
                 }
                 
@@ -232,7 +266,7 @@ impl Episode for AuthWithCommentsEpisode {
                 self.comments.push(comment);
                 self.next_comment_id += 1;
                 
-                info!("[AuthWithCommentsEpisode] ✅ Comment {} added successfully", comment_id);
+                info!("[AuthWithCommentsEpisode] ✅ Comment {} added successfully by participant {:?}", comment_id, participant);
                 
                 Ok(UnifiedRollback::CommentAdded { comment_id })
             }
@@ -242,20 +276,25 @@ impl Episode for AuthWithCommentsEpisode {
 
     fn rollback(&mut self, rollback: Self::CommandRollback) -> bool {
         match rollback {
-            UnifiedRollback::Challenge { previous_challenge, previous_timestamp } => {
-                self.challenge = previous_challenge;
-                self.challenge_timestamp = previous_timestamp;
+            UnifiedRollback::Challenge { participant_key, previous_participant } => {
+                if let Some(prev) = previous_participant {
+                    self.authenticated_participants.insert(participant_key, prev);
+                } else {
+                    self.authenticated_participants.remove(&participant_key);
+                }
                 // Note: We don't rollback rate limits as they should persist
                 true
             }
-            UnifiedRollback::Authentication { previous_auth_status, previous_session_token } => {
-                self.is_authenticated = previous_auth_status;
-                self.session_token = previous_session_token;
+            UnifiedRollback::Authentication { participant_key, previous_participant } => {
+                if let Some(prev) = previous_participant {
+                    self.authenticated_participants.insert(participant_key, prev);
+                } else {
+                    self.authenticated_participants.remove(&participant_key);
+                }
                 true
             }
-            UnifiedRollback::SessionRevoked { previous_token, was_authenticated } => {
-                self.is_authenticated = was_authenticated;
-                self.session_token = Some(previous_token);
+            UnifiedRollback::SessionRevoked { participant_key, previous_participant } => {
+                self.authenticated_participants.insert(participant_key, previous_participant);
                 true
             }
             UnifiedRollback::CommentAdded { comment_id } => {
@@ -286,33 +325,54 @@ impl AuthWithCommentsEpisode {
         *self.rate_limits.entry(pubkey_str).or_insert(0) += 1;
     }
 
-    /// Generate a new session token
-    fn generate_session_token(&self) -> String {
+    /// Generate a new session token for a specific participant
+    fn generate_session_token_for_participant(&self, participant: &PubKey, timestamp: u64) -> String {
         use rand_chacha::ChaCha8Rng;
         use rand::SeedableRng;
         use rand::Rng;
-        let mut rng = ChaCha8Rng::seed_from_u64(self.challenge_timestamp);
-        format!("sess_{}", rng.gen::<u64>())
+        // Use participant pubkey + timestamp for deterministic but unique session tokens
+        let participant_bytes = participant.0.serialize();
+        let mut seed_data = Vec::new();
+        seed_data.extend_from_slice(&participant_bytes);
+        seed_data.extend_from_slice(&timestamp.to_le_bytes());
+        
+        let seed = participant_bytes.iter().fold(timestamp, |acc, &b| acc.wrapping_add(b as u64));
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        format!("sess_{}_{}", timestamp, rng.gen::<u64>())
     }
     
-    /// Get the session token for authenticated users
-    pub fn get_session_token(&self) -> Option<&String> {
-        self.session_token.as_ref()
+    /// Get the session token for a specific participant
+    pub fn get_session_token(&self, participant: &PubKey) -> Option<&String> {
+        let participant_key = format!("{}", participant);
+        self.authenticated_participants.get(&participant_key)
+            .map(|p| &p.session_token)
+            .filter(|token| !token.is_empty())
     }
     
-    /// Check if user is authenticated
-    pub fn is_user_authenticated(&self) -> bool {
-        self.is_authenticated
+    /// Check if a specific participant is authenticated
+    pub fn is_user_authenticated(&self, participant: &PubKey) -> bool {
+        let participant_key = format!("{}", participant);
+        self.authenticated_participants.get(&participant_key)
+            .map_or(false, |p| !p.session_token.is_empty())
     }
     
-    /// Get the current challenge
-    pub fn get_challenge(&self) -> Option<&String> {
-        self.challenge.as_ref()
+    /// Get the current challenge for a specific participant
+    pub fn get_challenge(&self, participant: &PubKey) -> Option<&String> {
+        let participant_key = format!("{}", participant);
+        self.authenticated_participants.get(&participant_key)
+            .and_then(|p| p.challenge.as_ref())
     }
     
-    /// Get the owner's public key
-    pub fn get_owner(&self) -> Option<&PubKey> {
-        self.owner.as_ref()
+    /// Get the room creator's public key
+    pub fn get_creator(&self) -> Option<&PubKey> {
+        self.creator.as_ref()
+    }
+    
+    /// Get all authenticated participants
+    pub fn get_authenticated_participants(&self) -> Vec<&AuthenticatedParticipant> {
+        self.authenticated_participants.values()
+            .filter(|p| !p.session_token.is_empty())
+            .collect()
     }
     
     /// Get rate limit attempts for a user
@@ -338,10 +398,11 @@ impl AuthWithCommentsEpisode {
         comments.into_iter().take(limit).collect()
     }
     
-    /// Check if authenticated user can comment
-    pub fn can_comment(&self, session_token: &str) -> bool {
-        if let Some(stored_token) = &self.session_token {
-            self.is_authenticated && stored_token == session_token
+    /// Check if a specific participant can comment with their session token
+    pub fn can_comment(&self, participant: &PubKey, session_token: &str) -> bool {
+        let participant_key = format!("{}", participant);
+        if let Some(participant_auth) = self.authenticated_participants.get(&participant_key) {
+            !participant_auth.session_token.is_empty() && participant_auth.session_token == session_token
         } else {
             false
         }

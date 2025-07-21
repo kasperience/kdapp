@@ -1,5 +1,5 @@
 // src/api/http/blockchain_engine.rs
-use std::sync::{Arc, atomic::AtomicBool, mpsc};
+use std::sync::{Arc, atomic::AtomicBool, mpsc, Mutex};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::broadcast;
 use secp256k1::Keypair;
@@ -62,6 +62,7 @@ impl AuthHttpPeer {
             kaspad_client,  // NEW - for actual transaction submission
             auth_http_peer: None, // Will be set after AuthHttpPeer is created
             pending_requests: Arc::new(std::sync::Mutex::new(HashSet::new())),  // NEW - request deduplication
+            used_utxos: Arc::new(std::sync::Mutex::new(HashSet::new())),  // NEW - UTXO tracking
         };
         
         let exit_signal = Arc::new(AtomicBool::new(false));
@@ -190,10 +191,32 @@ impl AuthHttpPeer {
                 return Err("No UTXOs found for participant wallet. Please fund the wallet.".into());
             }
             
-            let utxo = entries.first().map(|entry| {
-                (kaspa_consensus_core::tx::TransactionOutpoint::from(entry.outpoint.clone()), 
-                 kaspa_consensus_core::tx::UtxoEntry::from(entry.utxo_entry.clone()))
-            }).unwrap();
+            // 🔧 UTXO FIX: Find first unused UTXO instead of always using first
+            let mut selected_utxo = None;
+            {
+                let used_utxos = self.peer_state.used_utxos.lock().unwrap();
+                for entry in &entries {
+                    let utxo_id = format!("{}:{}", entry.outpoint.transaction_id, entry.outpoint.index);
+                    if !used_utxos.contains(&utxo_id) {
+                        selected_utxo = Some((
+                            kaspa_consensus_core::tx::TransactionOutpoint::from(entry.outpoint.clone()), 
+                            kaspa_consensus_core::tx::UtxoEntry::from(entry.utxo_entry.clone()),
+                            utxo_id
+                        ));
+                        break;
+                    }
+                }
+            }
+            
+            let (outpoint, utxo_entry, utxo_id) = selected_utxo.ok_or("No unused UTXOs available. Please wait for previous transactions to confirm.")?;
+            let utxo = (outpoint, utxo_entry);
+            
+            // Mark this UTXO as used temporarily
+            {
+                let mut used_utxos = self.peer_state.used_utxos.lock().unwrap();
+                used_utxos.insert(utxo_id.clone());
+                println!("🔒 Reserved UTXO: {}", utxo_id);
+            }
             
             // Build and submit transaction using the transaction generator
             let tx = self.peer_state.transaction_generator.build_command_transaction(
@@ -204,11 +227,37 @@ impl AuthHttpPeer {
             );
             
             // Submit to blockchain
-            kaspad.submit_transaction(tx.as_ref().into(), false).await?;
+            let submit_result = kaspad.submit_transaction(tx.as_ref().into(), false).await;
             
-            let tx_id = tx.id().to_string();
-            println!("✅ Transaction {} submitted to blockchain successfully!", tx_id);
-            Ok(tx_id)
+            match submit_result {
+                Ok(_) => {
+                    let tx_id = tx.id().to_string();
+                    println!("✅ Transaction {} submitted to blockchain successfully!", tx_id);
+                    
+                    // 🔧 UTXO FIX: Schedule UTXO cleanup after successful submission
+                    let used_utxos_cleanup = self.peer_state.used_utxos.clone();
+                    let utxo_id_cleanup = utxo_id.clone();
+                    tokio::spawn(async move {
+                        // Wait 10 seconds then remove from used set (transaction should be confirmed by then)
+                        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                        if let Ok(mut used_utxos) = used_utxos_cleanup.lock() {
+                            used_utxos.remove(&utxo_id_cleanup);
+                            println!("🔓 Released UTXO: {}", utxo_id_cleanup);
+                        }
+                    });
+                    
+                    Ok(tx_id)
+                }
+                Err(e) => {
+                    // 🔧 UTXO FIX: Release UTXO immediately if transaction fails
+                    {
+                        let mut used_utxos = self.peer_state.used_utxos.lock().unwrap();
+                        used_utxos.remove(&utxo_id);
+                        println!("🔓 Released UTXO due to error: {}", utxo_id);
+                    }
+                    Err(e.into())
+                }
+            }
         } else {
             Err("Kaspad client not available for transaction submission.".into())
         }

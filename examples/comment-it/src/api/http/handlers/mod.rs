@@ -7,3 +7,4 @@ pub mod status;
 pub mod wallet;
 pub mod revoke;
 pub mod comment;
+pub mod list_episodes;

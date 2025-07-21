@@ -23,16 +23,16 @@ pub enum AuthRollback {
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum UnifiedRollback {
     Challenge { 
-        previous_challenge: Option<String>,
-        previous_timestamp: u64,
+        participant_key: String,
+        previous_participant: Option<crate::core::episode::AuthenticatedParticipant>,
     },
     Authentication {
-        previous_auth_status: bool,
-        previous_session_token: Option<String>,
+        participant_key: String,
+        previous_participant: Option<crate::core::episode::AuthenticatedParticipant>,
     },
     SessionRevoked {
-        previous_token: String,
-        was_authenticated: bool,
+        participant_key: String,
+        previous_participant: crate::core::episode::AuthenticatedParticipant,
     },
     CommentAdded {
         comment_id: u64,

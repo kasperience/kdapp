@@ -136,11 +136,11 @@
 
         <!-- Auth panel (hidden initially) -->
         <div class="auth-panel" id="authPanel" style="display: none;">
-            <h2 class="panel-title">INITIATE AUTHENTICATION EPISODE</h2>
+            <h2 class="panel-title">JOIN COMMENT ROOM</h2>
             <div style="margin-bottom: 20px; padding: 15px; background: var(--bg-black); border: 1px solid rgba(20, 184, 166, 0.3); border-radius: 4px;">
                 <p style="font-size: 0.8rem; color: var(--primary-teal); margin-bottom: 10px;">POWERED BY KDAPP FRAMEWORK</p>
                 <p style="font-size: 0.7rem; color: rgba(255,255,255,0.6); line-height: 1.4;">
-                    True peer-to-peer authentication on Kaspa blockchain. Your session is cryptographically secured by episode-based coordination.
+                    Shared comment rooms on Kaspa blockchain. Multiple participants can authenticate and comment together in the same episode.
                 </p>
             </div>
             
@@ -154,8 +154,17 @@
                 </button>
             </div>
             
+            <!-- Active Rooms Panel -->
+            <div id="activeRoomsPanel" style="margin-bottom: 20px; display: none;">
+                <h3 style="color: var(--bright-teal); font-size: 1rem; margin-bottom: 15px; border-bottom: 1px solid var(--primary-teal); padding-bottom: 5px;">JOIN EXISTING COMMENT ROOM</h3>
+                <div id="activeRoomsList" style="max-height: 150px; overflow-y: auto; padding-right: 10px;">
+                    <!-- JS will populate this -->
+                    <p style="color: var(--primary-teal);">Fetching active rooms...</p>
+                </div>
+            </div>
+
             <button class="connect-button" id="authButton" onclick="connectWallet()">
-                [ CREATE AUTH EPISODE ]
+                [ OR CREATE NEW COMMENT ROOM ]
             </button>
             <button class="connect-button" id="logoutButton" onclick="logout()" style="display: none; margin-top: 10px; background: #f7931a; border-color: #f7931a;">
                 [ LOGOUT ]
@@ -177,7 +186,7 @@
             <h2 class="panel-title">SUBMIT EPISODE MESSAGE</h2>
             <div style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
                 <div style="font-size: 0.8rem; color: var(--primary-teal);">
-                    AUTH EPISODE: <span style="color: var(--bright-cyan);" id="authEpisodeDisplay">--</span>
+                    COMMENT ROOM: <span style="color: var(--bright-cyan);" id="authEpisodeDisplay">--</span>
                 </div>
                 <div style="font-size: 0.8rem; color: var(--primary-teal);">
                     SESSION: <span style="color: var(--success);">ACTIVE</span>

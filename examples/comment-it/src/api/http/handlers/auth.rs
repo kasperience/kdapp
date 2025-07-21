@@ -1,7 +1,8 @@
 // src/api/http/handlers/auth.rs
 use axum::{extract::State, response::Json, http::StatusCode};
 use kaspa_addresses::{Address, Prefix, Version};
-use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
+
+
 use kaspa_wrpc_client::prelude::RpcApi;
 use kdapp::{
     engine::EpisodeMessage,
@@ -43,8 +44,18 @@ pub async fn start_auth(
         },
     };
     
-    // Generate episode ID
-    let episode_id: u64 = rand::thread_rng().gen();
+    // Determine if we're creating a new episode or joining existing one
+    let (episode_id, is_joining_existing) = match req.episode_id {
+        Some(existing_id) => {
+            println!("🎯 Joining existing episode: {}", existing_id);
+            (existing_id, true)
+        },
+        None => {
+            let new_id = rand::thread_rng().gen();
+            println!("🆕 Creating new episode: {}", new_id);
+            (new_id, false)
+        }
+    };
     
     // Create participant Kaspa address for transaction funding (like CLI does)
     let participant_addr = Address::new(
@@ -64,10 +75,18 @@ pub async fn start_auth(
         &participant_wallet.keypair.x_only_public_key().0.serialize()
     );
     
-    // Create NewEpisode message for blockchain
-    let new_episode = EpisodeMessage::<AuthWithCommentsEpisode>::NewEpisode { 
-        episode_id: episode_id as u32, 
-        participants: vec![participant_pubkey] 
+    // Create appropriate message for blockchain
+    let episode_message = if is_joining_existing {
+        // For joining existing episode, we don't create a new episode
+        // Instead, we'll just proceed to challenge request
+        println!("🎯 Skipping episode creation - joining existing episode {}", episode_id);
+        None
+    } else {
+        // Create NewEpisode message for blockchain
+        Some(EpisodeMessage::<AuthWithCommentsEpisode>::NewEpisode { 
+            episode_id: episode_id as u32, 
+            participants: vec![participant_pubkey] 
+        })
     };
     
     // Quick UTXO check (detailed UTXO handling happens in blockchain engine)
@@ -97,24 +116,29 @@ pub async fn start_auth(
     println!("🎯 Episode ID: {}", episode_id);
     println!("👤 Participant PubKey: {}", participant_pubkey);
     
-    // ✅ Submit transaction to blockchain via AuthHttpPeer (centralized submission)
-    println!("📤 Submitting transaction to Kaspa blockchain via AuthHttpPeer...");
-    let submission_result = match state.auth_http_peer.as_ref().unwrap().submit_episode_message_transaction(
-        new_episode,
-    ).await {
-        Ok(tx_id) => {
-            println!("✅ MATRIX UI SUCCESS: Auth episode created - Transaction {}", tx_id);
-            println!("🎬 Episode {} initialized on blockchain", episode_id);
-            (tx_id, "submitted_to_blockchain".to_string())
+    // Handle episode creation vs joining existing episode
+    let (transaction_id, status) = if let Some(new_episode) = episode_message {
+        // ✅ Submit new episode transaction to blockchain via AuthHttpPeer
+        println!("📤 Submitting transaction to Kaspa blockchain via AuthHttpPeer...");
+        match state.auth_http_peer.as_ref().unwrap().submit_episode_message_transaction(
+            new_episode,
+        ).await {
+            Ok(tx_id) => {
+                println!("✅ MATRIX UI SUCCESS: Auth episode created - Transaction {}", tx_id);
+                println!("🎬 Episode {} initialized on blockchain", episode_id);
+                (tx_id, "submitted_to_blockchain".to_string())
+            }
+            Err(e) => {
+                println!("❌ MATRIX UI ERROR: Auth episode creation failed - {}", e);
+                println!("💡 Make sure participant wallet is funded: {}", participant_funding_addr);
+                ("error".to_string(), "transaction_submission_failed".to_string())
+            }
         }
-        Err(e) => {
-            println!("❌ MATRIX UI ERROR: Auth episode creation failed - {}", e);
-            println!("💡 Make sure participant wallet is funded: {}", participant_funding_addr);
-            ("error".to_string(), "transaction_submission_failed".to_string())
-        }
+    } else {
+        // For joining existing episode, return success without creating new episode
+        println!("✅ MATRIX UI SUCCESS: Ready to authenticate in existing episode {}", episode_id);
+        ("no_transaction_needed".to_string(), "joined_existing_episode".to_string())
     };
-    
-    let (transaction_id, status) = submission_result;
     
     Ok(Json(AuthResponse {
         episode_id: episode_id,

@@ -195,6 +195,9 @@ export function addNewComment() {
     document.getElementById('commentEpisodes').textContent = (commentCount + 1).toLocaleString();
 }
 
+// Track displayed comments to prevent duplicates
+const displayedComments = new Set();
+
 // Handle new comment received from blockchain via WebSocket
 export function handleNewComment(message) {
     console.log('🎯 P2P COMMENT RECEIVED - Adding to UI...', message.comment);
@@ -204,6 +207,18 @@ export function handleNewComment(message) {
         console.error('❌ Comments container not found');
         return;
     }
+    
+    // Create unique comment ID for deduplication
+    const commentId = `${message.episode_id}_${message.comment.id}_${message.comment.timestamp}`;
+    
+    // Check if we've already displayed this comment
+    if (displayedComments.has(commentId)) {
+        console.log('🔄 Duplicate comment ignored:', commentId);
+        return;
+    }
+    
+    // Mark comment as displayed
+    displayedComments.add(commentId);
     
     const comment = document.createElement('div');
     comment.className = 'comment-card comment-authenticated';

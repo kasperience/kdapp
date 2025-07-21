@@ -1,6 +1,6 @@
 // src/api/http/handlers/challenge.rs
 use axum::{extract::State, response::Json, http::StatusCode};
-use kaspa_wrpc_client::prelude::RpcApi;
+
 use kdapp::{
     engine::EpisodeMessage,
     pki::PubKey,
@@ -65,7 +65,7 @@ pub async fn request_challenge(
     let participant_secret_key = participant_wallet.keypair.secret_key();
     
     // Create participant's Kaspa address for transaction funding (True P2P!)
-    let participant_addr = kaspa_addresses::Address::new(
+    let _participant_addr = kaspa_addresses::Address::new(
         kaspa_addresses::Prefix::Testnet, 
         kaspa_addresses::Version::PubKey, 
         &participant_wallet.keypair.x_only_public_key().0.serialize()
