@@ -1,5 +1,5 @@
 import { resilientFetch } from './utils.js';
-import { isAuthenticated, currentEpisodeId, currentSessionToken } from './authForm.js';
+import { isAuthenticated, getCurrentEpisodeId, currentSessionToken } from './authForm.js';
 
 export function initCommentForm() {
     const commentInput = document.getElementById('commentInput');
@@ -64,7 +64,7 @@ async function submitCommentToBlockchain(commentText) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                episode_id: currentEpisodeId,
+                episode_id: getCurrentEpisodeId(),
                 text: commentText,
                 session_token: currentSessionToken,
             }),
