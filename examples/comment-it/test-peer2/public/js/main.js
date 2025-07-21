@@ -10,7 +10,7 @@ window.currentSessionToken = null;
 window.isAuthenticated = false;
 window.currentWallet = null;
 window.availableOrganizers = [
-    { name: 'local-development', url: window.location.origin, priority: 1, enabled: true },
+    { name: 'local-development', url: 'http://localhost:8080', priority: 1, enabled: true },
     { name: 'project-official', url: 'https://comments1.kaspa.community', priority: 2, enabled: false },
     { name: 'community-backup', url: 'https://comments2.kaspa.community', priority: 3, enabled: false }
 ];

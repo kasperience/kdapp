@@ -25,14 +25,14 @@ export async function fetchAndDisplayActiveEpisodes() {
                 const roomElement = document.createElement('div');
                 roomElement.className = 'active-room-item';
                 roomElement.innerHTML = `
-                    <span>Room ID: ${episode.episode_id}</span>
+                    <span>Room Code: ${episode.room_code}</span>
                     <span>Creator: ${episode.creator_public_key.substring(0, 10)}...</span>
                     <button class="join-room-btn" data-episode-id="${episode.episode_id}">Join Room</button>
                 `;
                 roomsList.appendChild(roomElement);
             });
             roomsPanel.style.display = 'block';
-            console.log(`📋 Displayed ${uniqueEpisodes.length} unique episodes (filtered from ${data.episodes.length} total)`);
+            console.log(`📋 Displayed ${uniqueEpisodes.length} unique rooms (filtered from ${data.episodes.length} total)`);
         } else {
             roomsList.innerHTML = '<p style="color: var(--primary-teal);">No active rooms found. Be the first to create one!</p>';
             roomsPanel.style.display = 'block';

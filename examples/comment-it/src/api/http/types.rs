@@ -122,8 +122,8 @@ pub struct GetCommentsResponse {
 
 #[derive(Serialize, Clone)]
 pub struct EpisodeInfo {
-    #[serde(serialize_with = "serialize_u64_as_string")]
     pub episode_id: u64,
+    pub room_code: String,
     pub creator_public_key: String,
     pub is_authenticated: bool,
 }

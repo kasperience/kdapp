@@ -407,6 +407,18 @@ impl AuthWithCommentsEpisode {
             false
         }
     }
+
+    /// Generate a memorable 6-character room code from the episode ID
+    pub fn generate_room_code(episode_id: u64) -> String {
+        use rand_chacha::ChaCha8Rng;
+        use rand::SeedableRng;
+        use rand::Rng;
+        let mut rng = ChaCha8Rng::seed_from_u64(episode_id);
+        let charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Exclude I, O, 0, 1 for clarity
+        (0..6)
+            .map(|_| charset.chars().nth(rng.gen_range(0..charset.len())).unwrap())
+            .collect()
+    }
     
     /// Legacy can_comment method for backward compatibility with existing handlers
     pub fn can_comment_legacy(&self, session_token: &str) -> bool {
