@@ -241,7 +241,6 @@ async fn run_comment_board(
                 state = new_state;
                 if state.room_members.contains(&format!("{}", participant_pk)) {
                     println!("✅ Successfully joined the room!");
-                    state.print();
                     break;
                 }
             }
@@ -303,7 +302,6 @@ async fn run_comment_board(
                 if received_id == episode_id {
                     if state.authenticated_users.contains(&format!("{}", participant_pk)) {
                         println!("✅ Successfully authenticated!");
-                        state.print();
                         break;
                     }
                 }
