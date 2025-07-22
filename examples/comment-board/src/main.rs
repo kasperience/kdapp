@@ -186,19 +186,7 @@ async fn run_comment_board(
 
     let episode_id = if let Some(room_id) = target_episode_id {
         println!("🎯 Joining room with Episode ID: {}", room_id);
-        println!("🔧 Creating local episode to enable participation...");
-        println!("💰 You pay for your own comments with address: {}", kaspa_addr);
-        
-        // Create a local episode to enable participation in existing rooms
-        // This solves the kdapp limitation where engines only process new transactions
-        let join_episode = EpisodeMessage::<CommentBoard>::NewEpisode { 
-            episode_id: room_id, 
-            participants: vec![] // Empty - open room
-        };
-        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &join_episode, FEE);
-        info!("Submitting local episode creation for room {}: {}", room_id, tx.id());
-        let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
-        utxo = generator::get_first_output_utxo(&tx);
+        println!("🔧 Local episode creation skipped (joining existing room).");
         room_id
     } else {
         // Create new room - organizer creates the episode
