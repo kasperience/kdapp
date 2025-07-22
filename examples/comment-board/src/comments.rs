@@ -165,7 +165,7 @@ impl Episode for CommentBoard {
             CommentCommand::RequestChallenge => {
                 // Generate challenge for authentication (from kaspa-auth pattern)
                 if self.challenge.is_none() {
-                    let challenge = format!("auth_{}", rand::thread_rng().gen::<u64>());
+                    let challenge = format!("auth_{}", metadata.tx_id);
                     self.challenge = Some(challenge.clone());
                     info!("[CommentBoard] 🔑 Challenge generated for {}: {}", participant_str, challenge);
                 } else {
