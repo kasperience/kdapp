@@ -9,11 +9,11 @@ window.currentEpisodeId = null;
 window.currentSessionToken = null;
 window.isAuthenticated = false;
 window.currentWallet = null;
-window.availableOrganizers = [
-    { name: 'local-development', url: window.location.origin, priority: 1, enabled: true },
-    { name: 'project-official', url: 'https://comments1.kaspa.community', priority: 2, enabled: false },
-    { name: 'community-backup', url: 'https://comments2.kaspa.community', priority: 3, enabled: false }
-];
+
+// --- CONFIGURABLE WEBSOCKET PORT FOR TESTING --- 
+// For peer1, use 8080. For peer2, use 8081.
+const wsPort = 8080; // <<< CHANGE THIS FOR DIFFERENT PEERS
+// -----------------------------------------------
 
 // Initialize functions on DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
@@ -47,11 +47,10 @@ document.addEventListener('DOMContentLoaded', () => {
         anonMode.addEventListener('change', handleAnonymousMode);
     }
 
-    // Initialize organizer peer count
+    // Initialize organizer peer count (now just a placeholder)
     const orgPeersElement = document.getElementById('organizerPeers');
     if (orgPeersElement) {
-        const enabledOrganizers = window.availableOrganizers.filter(org => org.enabled);
-        orgPeersElement.textContent = enabledOrganizers.length;
+        orgPeersElement.textContent = '1'; // Always 1 for the local peer
     }
 
     // Expose handleWebSocketMessage and handleAuthenticated to global scope for WebSocket and authForm
@@ -59,6 +58,50 @@ document.addEventListener('DOMContentLoaded', () => {
     window.handleAuthenticated = handleAuthenticated;
     window.showCommentForm = showCommentForm;
     window.addNewComment = addNewComment;
+
+    // Establish WebSocket connection to the backend
+    const wsUrl = `ws://localhost:${wsPort}`; 
+    window.commandWebSocket = new WebSocket(wsUrl);
+
+    window.commandWebSocket.onopen = () => {
+        console.log('✅ Command WebSocket connected to backend');
+    };
+
+    window.commandWebSocket.onmessage = (event) => {
+        console.log('📨 Command WebSocket message from backend:', event.data);
+        try {
+            const message = JSON.parse(event.data);
+            // Dispatch to appropriate handler
+            if (message.type === 'new_comment') {
+                addNewComment(message);
+            } else if (message.type === 'authentication_successful') {
+                handleAuthenticated(message.session_token);
+            } else if (message.type === 'authentication_failed') {
+                handleAuthenticationFailed(message.error);
+            } else if (message.type === 'session_revoked') {
+                handleSessionRevoked();
+            } else if (message.type === 'episode_rolled_back') {
+                console.warn('Episode rolled back:', message);
+            } else if (message.status === 'submitted') {
+                console.log(`Transaction submitted! TxId: ${message.tx_id}`);
+            } else if (message.status === 'error') {
+                console.error(`Backend error: ${message.message}`);
+            }
+        } catch (e) {
+            console.error("Error parsing WebSocket message:", e);
+        }
+    };
+
+    window.commandWebSocket.onerror = (error) => {
+        console.error('❌ Command WebSocket error:', error);
+    };
+
+    window.commandWebSocket.onclose = () => {
+        console.log('❌ Command WebSocket disconnected from backend');
+        // Attempt to reconnect after a delay
+        setTimeout(() => {
+            console.log('Attempting to reconnect Command WebSocket...');
+            window.commandWebSocket = new WebSocket(wsUrl);
+        }, 3000);
+    };
 });
-
-
