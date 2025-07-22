@@ -101,9 +101,7 @@ impl CommentState {
         }
         println!("Room members: {}", self.room_members.len());
         println!("Authenticated users: {}", self.authenticated_users.len());
-        if let Some(challenge) = &self.current_challenge {
-            println!("Current challenge: {}", challenge);
-        }
+        
         println!("Total comments: {}", self.total_comments);
         println!("===================");
     }
@@ -166,13 +164,16 @@ impl Episode for CommentBoard {
         match cmd {
             CommentCommand::RequestChallenge => {
                 // Generate challenge for authentication (from kaspa-auth pattern)
-                use rand::Rng;
-                let challenge = format!("auth_{}", rand::thread_rng().gen::<u64>());
-                self.challenge = Some(challenge.clone());
+                if self.challenge.is_none() {
+                    let challenge = format!("auth_{}", rand::thread_rng().gen::<u64>());
+                    self.challenge = Some(challenge.clone());
+                    info!("[CommentBoard] 🔑 Challenge generated for {}: {}", participant_str, challenge);
+                } else {
+                    info!("[CommentBoard] 🔑 Existing challenge for {}: {}", participant_str, self.challenge.as_ref().unwrap());
+                }
                 let old_timestamp = self.timestamp;
                 self.timestamp = metadata.accepting_time;
                 
-                info!("[CommentBoard] 🔑 Challenge generated for {}: {}", participant_str, challenge);
                 Ok(CommentRollback::new_join(false, old_timestamp))
             }
 
@@ -184,6 +185,7 @@ impl Episode for CommentBoard {
                         self.authenticated_users.insert(participant_str.clone());
                         let session_token = format!("sess_{}", rand::thread_rng().gen::<u64>());
                         self.session_tokens.insert(participant_str.clone(), session_token.clone());
+                        self.challenge = None; // Clear the challenge after successful authentication
                         
                         let old_timestamp = self.timestamp;
                         self.timestamp = metadata.accepting_time;
