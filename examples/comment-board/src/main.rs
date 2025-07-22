@@ -7,7 +7,8 @@ use kaspa_consensus_core::{
 use kaspa_wrpc_client::prelude::*;
 use log::*;
 use rand::Rng;
-use secp256k1::{Keypair, SecretKey};
+use secp256k1::{Keypair, SecretKey, Message};
+use sha2::{Digest, Sha256};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -251,6 +252,71 @@ async fn run_comment_board(
 
     let mut received_id = received_episode_id;
     let mut input = String::new();
+
+    // --- Authentication Flow ---
+    if !state.authenticated_users.contains(&format!("{}", participant_pk)) {
+        println!("🔑 Requesting authentication challenge...");
+        let request_challenge_cmd = CommentCommand::RequestChallenge;
+        let step = EpisodeMessage::<CommentBoard>::new_signed_command(episode_id, request_challenge_cmd, participant_sk, participant_pk);
+
+        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
+        info!("💰 Submitting RequestChallenge (you pay): {}", tx.id());
+        let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
+        utxo = generator::get_first_output_utxo(&tx);
+
+        // Wait for challenge
+        let mut challenge: Option<String> = None;
+        loop {
+            (received_id, state) = response_receiver.recv().await.unwrap();
+            if received_id == episode_id {
+                if let Some(c) = &state.current_challenge {
+                    challenge = Some(c.clone());
+                    println!("✅ Received challenge: {}", c);
+                    break;
+                }
+            }
+        }
+
+        // Sign the challenge and submit response
+        if let Some(challenge_text) = challenge {
+            println!("✍️ Signing challenge and submitting response...");
+            use sha2::{Digest, Sha256};
+            let secp = secp256k1::Secp256k1::new();
+            let mut hasher = Sha256::new();
+            hasher.update(challenge_text.as_bytes());
+            let message = Message::from_digest(hasher.finalize().into());
+            let signature = secp.sign_ecdsa(&message, &participant_sk);
+            let submit_response_cmd = CommentCommand::SubmitResponse {
+                signature: signature.to_string(),
+                nonce: challenge_text,
+            };
+            let step = EpisodeMessage::<CommentBoard>::new_signed_command(episode_id, submit_response_cmd, participant_sk, participant_pk);
+
+            let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
+            info!("💰 Submitting SubmitResponse (you pay): {}", tx.id());
+            let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
+            utxo = generator::get_first_output_utxo(&tx);
+
+            // Wait for authentication confirmation
+            loop {
+                (received_id, state) = response_receiver.recv().await.unwrap();
+                if received_id == episode_id {
+                    if state.authenticated_users.contains(&format!("{}", participant_pk)) {
+                        println!("✅ Successfully authenticated!");
+                        state.print();
+                        break;
+                    }
+                }
+            }
+        } else {
+            println!("❌ Failed to get challenge. Cannot authenticate.");
+            exit_signal.store(true, Ordering::Relaxed);
+            return;
+        }
+    } else {
+        println!("🎯 Already authenticated!");
+    }
+    // --- End Authentication Flow ---
 
     loop {
         // Display current state
