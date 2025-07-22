@@ -525,7 +525,8 @@ export function handleAnonymousMode() {
 
 // Global state - DECLARE FIRST
 window.availableOrganizers = [
-    { name: 'local-development', url: 'http://localhost:8080', priority: 1, enabled: true },
+    { name: 'test-peer2-organizer', url: 'http://localhost:8081', priority: 1, enabled: true },
+    { name: 'main-organizer', url: 'http://localhost:8080', priority: 2, enabled: true },
     { name: 'project-official', url: 'https://comments1.kaspa.community', priority: 2, enabled: false },
     { name: 'community-backup', url: 'https://comments2.kaspa.community', priority: 3, enabled: false }
 ];

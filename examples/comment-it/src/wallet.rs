@@ -14,7 +14,11 @@ pub struct WalletConfig {
 
 impl Default for WalletConfig {
     fn default() -> Self {
-        let wallet_dir = Path::new(".kaspa-auth").to_path_buf();
+        // Support custom wallet directory via environment variable for test-peer2
+        let wallet_dir = std::env::var("KASPA_AUTH_WALLET_DIR")
+            .map(|dir| Path::new(&dir).to_path_buf())
+            .unwrap_or_else(|_| Path::new(".kaspa-auth").to_path_buf());
+        
         let keypair_file = wallet_dir.join("wallet.key");
         let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
         

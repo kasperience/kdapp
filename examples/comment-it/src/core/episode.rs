@@ -16,7 +16,7 @@ use crate::crypto::signatures::SignatureVerifier;
 pub struct Comment {
     pub id: u64,
     pub text: String,
-    pub author: PubKey, // Pure public key authentication
+    pub author: String, // Public key string for serialization compatibility
     pub timestamp: u64,
 }
 
@@ -38,13 +38,15 @@ pub struct AuthWithCommentsEpisode {
     /// Room creation timestamp
     pub created_at: u64,
     
-    // Multi-participant authentication - Pure P2P
-    /// Set of authenticated public keys (no session tokens needed!)
-    pub authenticated_participants: std::collections::HashSet<PubKey>,
+    // Multi-participant authentication - Pure P2P  
+    /// Set of authenticated public key strings (no session tokens needed!)
+    pub authenticated_participants: std::collections::HashSet<String>,
     /// In-memory rate limiting: attempts per pubkey (using string representation)
     pub rate_limits: HashMap<String, u32>,
     /// All participants who can join this room (initially just creator, others can join)
     pub authorized_participants: Vec<PubKey>,
+    /// Active challenges per participant (pubkey -> challenge)
+    pub active_challenges: HashMap<String, String>,
     
     // Comment state (shared by all authenticated participants)
     /// All comments stored in this episode
@@ -72,6 +74,7 @@ impl Episode for AuthWithCommentsEpisode {
             authenticated_participants: std::collections::HashSet::new(),
             rate_limits: HashMap::new(),
             authorized_participants: participants, // Anyone can join this room
+            active_challenges: HashMap::new(), // No active challenges initially
             
             // Comment state (shared by all authenticated participants)
             comments: Vec::new(),
@@ -104,17 +107,19 @@ impl Episode for AuthWithCommentsEpisode {
                 info!("[AuthWithCommentsEpisode] RequestChallenge from: {:?}", participant);
                 
                 // Check if participant is already authenticated
-                if self.authenticated_participants.contains(&participant) {
+                let participant_key = format!("{}", participant);
+                if self.authenticated_participants.contains(&participant_key) {
                     info!("[AuthWithCommentsEpisode] Participant already authenticated: {:?}", participant);
                     return Err(EpisodeError::InvalidCommand(AuthError::AlreadyAuthenticated));
                 }
                 
-                // Generate challenge for this participant (stored temporarily in rate_limits for simplicity)
+                // Generate challenge for this participant
                 let new_challenge = ChallengeGenerator::generate_with_provided_timestamp(metadata.accepting_time);
                 
-                // Store challenge temporarily (will clean up after authentication)
-                // In real implementation, this could be in a separate challenges HashMap
-                // For now, we'll just generate challenge - verification happens in SubmitResponse
+                // Store challenge for this participant so HTTP API can access it
+                self.active_challenges.insert(participant_key.clone(), new_challenge.clone());
+                
+                info!("[AuthWithCommentsEpisode] Generated challenge {} for participant: {}", new_challenge, participant_key);
                 
                 // Increment rate limit
                 self.increment_rate_limit(&participant);
@@ -129,7 +134,8 @@ impl Episode for AuthWithCommentsEpisode {
                 info!("[AuthWithCommentsEpisode] SubmitResponse from: {:?}", participant);
                 
                 // Check if already authenticated
-                if self.authenticated_participants.contains(&participant) {
+                let participant_key = format!("{}", participant);
+                if self.authenticated_participants.contains(&participant_key) {
                     return Err(EpisodeError::InvalidCommand(AuthError::AlreadyAuthenticated));
                 }
                 
@@ -139,13 +145,17 @@ impl Episode for AuthWithCommentsEpisode {
                 }
                 
                 // ✅ PURE P2P: Add public key to authenticated set (no session tokens!)
-                let was_previously_authenticated = self.authenticated_participants.contains(&participant);
-                self.authenticated_participants.insert(participant);
+                let participant_key = format!("{}", participant);
+                let was_previously_authenticated = self.authenticated_participants.contains(&participant_key);
+                self.authenticated_participants.insert(participant_key.clone());
+                
+                // Clean up the challenge since authentication succeeded
+                self.active_challenges.remove(&participant_key);
                 
                 info!("[AuthWithCommentsEpisode] Authentication successful for: {:?}", participant);
                 
                 Ok(UnifiedRollback::Authentication {
-                    participant_key: format!("{}", participant),
+                    participant_key,
                     was_previously_authenticated,
                 })
             }
@@ -154,7 +164,8 @@ impl Episode for AuthWithCommentsEpisode {
                 info!("[AuthWithCommentsEpisode] RevokeSession from: {:?}", participant);
                 
                 // Check if participant is authenticated
-                if !self.authenticated_participants.contains(&participant) {
+                let participant_key = format!("{}", participant);
+                if !self.authenticated_participants.contains(&participant_key) {
                     return Err(EpisodeError::InvalidCommand(AuthError::SessionNotFound));
                 }
                 
@@ -164,12 +175,12 @@ impl Episode for AuthWithCommentsEpisode {
                 }
                 
                 // ✅ PURE P2P: Remove public key from authenticated set
-                let was_previously_authenticated = self.authenticated_participants.remove(&participant);
+                let was_previously_authenticated = self.authenticated_participants.remove(&participant_key);
                 
                 info!("[AuthWithCommentsEpisode] Session revoked successfully for: {:?}", participant);
                 
                 Ok(UnifiedRollback::SessionRevoked {
-                    participant_key: format!("{}", participant),
+                    participant_key,
                     was_previously_authenticated,
                 })
             }
@@ -187,7 +198,8 @@ impl Episode for AuthWithCommentsEpisode {
                 }
                 
                 // ✅ PURE P2P: Check if public key is authenticated (no session tokens!)
-                if !self.authenticated_participants.contains(&participant) {
+                let participant_key = format!("{}", participant);
+                if !self.authenticated_participants.contains(&participant_key) {
                     info!("[AuthWithCommentsEpisode] Comment rejected: Participant not authenticated");
                     return Err(EpisodeError::InvalidCommand(AuthError::InvalidSessionToken));
                 }
@@ -196,7 +208,7 @@ impl Episode for AuthWithCommentsEpisode {
                 let comment = Comment {
                     id: self.next_comment_id,
                     text: text.clone(),
-                    author: participant, // Store actual PubKey, not string!
+                    author: participant_key, // Store public key string for serialization
                     timestamp: metadata.accepting_time,
                 };
                 
@@ -215,34 +227,22 @@ impl Episode for AuthWithCommentsEpisode {
 
     fn rollback(&mut self, rollback: Self::CommandRollback) -> bool {
         match rollback {
-            UnifiedRollback::Challenge { .. } => {
-                // Challenge rollback simplified - in pure P2P, challenges don't change state
+            UnifiedRollback::Challenge { participant_key, .. } => {
+                // Remove the challenge that was generated
+                self.active_challenges.remove(&participant_key);
                 true
             }
             UnifiedRollback::Authentication { participant_key, was_previously_authenticated } => {
-                // Parse participant key back to PubKey
-                if let Ok(pubkey_bytes) = hex::decode(&participant_key) {
-                    if let Ok(pubkey) = secp256k1::PublicKey::from_slice(&pubkey_bytes) {
-                        let participant_pubkey = PubKey(pubkey);
-                        
-                        if was_previously_authenticated {
-                            self.authenticated_participants.insert(participant_pubkey);
-                        } else {
-                            self.authenticated_participants.remove(&participant_pubkey);
-                        }
-                    }
+                if was_previously_authenticated {
+                    self.authenticated_participants.insert(participant_key);
+                } else {
+                    self.authenticated_participants.remove(&participant_key);
                 }
                 true
             }
             UnifiedRollback::SessionRevoked { participant_key, was_previously_authenticated } => {
-                // Parse participant key back to PubKey  
                 if was_previously_authenticated {
-                    if let Ok(pubkey_bytes) = hex::decode(&participant_key) {
-                        if let Ok(pubkey) = secp256k1::PublicKey::from_slice(&pubkey_bytes) {
-                            let participant_pubkey = PubKey(pubkey);
-                            self.authenticated_participants.insert(participant_pubkey);
-                        }
-                    }
+                    self.authenticated_participants.insert(participant_key);
                 }
                 true
             }
@@ -276,25 +276,31 @@ impl AuthWithCommentsEpisode {
 
     /// Check if a participant is authenticated (pure P2P)
     pub fn is_participant_authenticated(&self, participant: &PubKey) -> bool {
-        self.authenticated_participants.contains(participant)
+        let participant_key = format!("{}", participant);
+        self.authenticated_participants.contains(&participant_key)
     }
     
     /// Get all authenticated participants (pure P2P)
-    pub fn get_authenticated_participants(&self) -> &std::collections::HashSet<PubKey> {
+    pub fn get_authenticated_participants(&self) -> &std::collections::HashSet<String> {
         &self.authenticated_participants
     }
     
     /// Check if a specific participant is authenticated
     pub fn is_user_authenticated(&self, participant: &PubKey) -> bool {
         let participant_key = format!("{}", participant);
-        self.authenticated_participants.get(&participant_key)
-            .map_or(false, |p| !p.session_token.is_empty())
+        self.authenticated_participants.contains(&participant_key)
     }
     
     /// Get the current challenge for a specific participant
     /// Pure P2P: Challenges are generated on-demand, no storage needed
-    pub fn generate_challenge_for_participant(&self, participant: &PubKey, timestamp: u64) -> String {
+    pub fn generate_challenge_for_participant(&self, _participant: &PubKey, timestamp: u64) -> String {
         ChallengeGenerator::generate_with_provided_timestamp(timestamp)
+    }
+    
+    /// Get active challenge for a participant (for HTTP API)
+    pub fn get_challenge_for_participant(&self, participant: &PubKey) -> Option<String> {
+        let participant_key = format!("{}", participant);
+        self.active_challenges.get(&participant_key).cloned()
     }
     
     /// Get the room creator's public key
@@ -320,7 +326,8 @@ impl AuthWithCommentsEpisode {
     
     /// Get comments by a specific author (pure P2P - using PubKey)
     pub fn get_comments_by_author(&self, author: &PubKey) -> Vec<&Comment> {
-        self.comments.iter().filter(|c| &c.author == author).collect()
+        let author_key = format!("{}", author);
+        self.comments.iter().filter(|c| c.author == author_key).collect()
     }
     
     /// Get the latest N comments
@@ -332,7 +339,8 @@ impl AuthWithCommentsEpisode {
     
     /// Pure P2P: Check if participant can comment (no session tokens!)
     pub fn can_comment(&self, participant: &PubKey) -> bool {
-        self.authenticated_participants.contains(participant)
+        let participant_key = format!("{}", participant);
+        self.authenticated_participants.contains(&participant_key)
     }
 
     /// Generate a memorable 6-character room code from the episode ID
@@ -369,7 +377,8 @@ impl AuthWithCommentsEpisode {
     
     /// Challenges are generated on-demand (pure P2P)
     pub fn challenge(&self) -> Option<String> {
-        None // Pure P2P: Challenges generated when needed
+        // Return any active challenge (for backward compatibility with WebSocket messages)
+        self.active_challenges.values().next().cloned()
     }
     
     /// Get the room creator as owner (for compatibility)

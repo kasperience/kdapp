@@ -1,5 +1,175 @@
-# 📋 NEXT SESSION ROADMAP - COMMENT EPISODE BLOCKCHAIN INTEGRATION
-Please follow: examples\comment-it\OVERTHINKING.md
+# 📋 TODAY'S SESSION ROADMAP - EPISODE CONTRACTS FOR ROOM RULES! 🚀
+
+## 🎯 **SENSATIONAL DEVELOPMENT: Episode Contracts on Kaspa!**
+**First time in Kaspa history**: Native episode contracts for implementing 'room' rules and moderation!
+
+### 🔥 **What Episode Contracts Enable:**
+- **Room Moderation Rules**: Organizers can define custom episode contracts
+- **Native Kaspa Contracts**: UTXO-based programmable safes with complex locks
+- **Off-Chain Logic**: Rules run on participant peers, verified on-chain
+- **Economic Enforcement**: Buy-ins, bonds, and penalties for rule violations
+- **Decentralized Arbitration**: Multi-signature dispute resolution
+
+### 📚 **Reference Architecture:** 
+Based on `../kaspa-auth/KaspaPokerTournament.md` - the complete episode contract system!
+
+## 🎯 **TODAY'S IMPLEMENTATION PRIORITY:**
+
+### Phase 1: Fix Compilation Issues ✅ (COMPLETED)
+- [x] Fixed session_token field access errors
+- [x] Updated Comment struct mapping for pure P2P
+- [x] Resolved unused variable warnings
+
+### Phase 2: Episode Contract Integration for Comment-It 🚀
+#### 2A: Basic Episode Contract Foundation
+- [ ] **Study episode contract patterns** from KaspaPokerTournament.md
+- [ ] **Design CommentRoom episode contract** with moderation rules
+- [ ] **Implement UTXO locking mechanism** for room participation fees
+- [ ] **Add multi-signature dispute resolution** for comment moderation
+
+#### 2B: Room Rules & Economic Model  
+- [ ] **Implement room creation** with customizable rules
+- [ ] **Add participation bonds** - users stake KAS to comment
+- [ ] **Economic penalties** for spam/abuse (forfeit bond)
+- [ ] **Reward system** for quality contributions
+
+#### 2C: Advanced Moderation Features
+- [ ] **Commitment-reveal schemes** for anonymous reporting
+- [ ] **Decentralized voting** on comment removal
+- [ ] **Automatic rule enforcement** via episode contract logic
+- [ ] **Appeal mechanism** with arbiter panel
+
+### Phase 3: Production Integration
+- [ ] **WebSocket integration** for real-time rule updates
+- [ ] **UI for room rules** configuration
+- [ ] **Documentation** for episode contract usage
+- [ ] **Testing** with real Kaspa transactions
+
+## 🏗️ **EPISODE CONTRACT ARCHITECTURE FOR COMMENT-IT**
+
+### 🎯 **CommentRoom Episode Contract Design**
+Based on the proven patterns from KaspaPokerTournament.md:
+
+```rust
+/// CommentRoom Episode Contract - Native Kaspa room rules
+pub struct CommentRoomEpisode {
+    // Room Identity & Rules
+    pub room_creator: PubKey,
+    pub room_rules: RoomRules,
+    pub created_at: u64,
+    
+    // Economic Model (from poker patterns)
+    pub participation_bond: u64,        // KAS required to comment
+    pub quality_rewards: HashMap<String, u64>, // Rewards for upvoted comments
+    pub penalty_pool: u64,              // Forfeited bonds from rule violations
+    
+    // Moderation System
+    pub moderators: Vec<PubKey>,        // Multi-sig arbiters
+    pub pending_disputes: HashMap<u64, Dispute>, // Comment disputes
+    pub reputation_scores: HashMap<String, i32>, // User reputation
+    
+    // Core Comment State (enhanced)
+    pub comments: Vec<Comment>,
+    pub comment_bonds: HashMap<u64, UtxoReference>, // Locked bonds per comment
+    pub voting_results: HashMap<u64, VoteResult>,   // Community moderation
+}
+
+/// Room Rules - Customizable by organizer
+pub struct RoomRules {
+    pub min_bond: u64,              // Minimum KAS to comment
+    pub max_comment_length: usize,  // Character limit
+    pub spam_detection: bool,       // Auto-detect spam
+    pub community_moderation: bool, // Enable voting on comments
+    pub reputation_threshold: i32,  // Min reputation to participate
+    pub penalty_multiplier: f64,    // Bond penalty for violations
+}
+```
+
+### 🔒 **UTXO Locking Mechanism - The Heart of Episode Contracts**
+
+#### Comment Participation Bond
+```rust
+// When user wants to comment:
+// 1. User locks KAS in programmable UTXO
+let comment_bond_utxo = create_utxo_with_script(
+    amount: room_rules.min_bond,
+    script: "Can be spent by: 
+             - User signature + no disputes for 24 hours, OR
+             - 2-of-3 moderator signatures (dispute resolution), OR  
+             - Community vote result + 7-day delay (democratic moderation)"
+);
+
+// 2. Comment is posted to blockchain
+// 3. Bond is released based on episode contract rules
+```
+
+#### Economic Incentive Model
+- **Quality Rewards**: Upvoted comments earn from penalty pool
+- **Penalty System**: Spam/abuse forfeits bond to penalty pool  
+- **Reputation Building**: Good contributors get lower bond requirements
+- **Moderator Incentives**: Arbiters earn fees from dispute resolution
+
+### 🛡️ **Decentralized Moderation System**
+
+#### Three-Layer Defense (from poker patterns):
+1. **Algorithmic Detection**: Episode contract auto-detects violations
+2. **Community Voting**: Democratic moderation by participants  
+3. **Arbiter Panel**: Multi-sig dispute resolution for complex cases
+
+#### Dispute Resolution Flow:
+```rust
+pub enum ModerationCommand {
+    // Level 1: Automatic rule enforcement
+    ReportViolation { comment_id: u64, violation_type: ViolationType },
+    
+    // Level 2: Community moderation  
+    InitiateCommunityVote { comment_id: u64, accusation: String },
+    SubmitVote { vote_id: u64, decision: bool, stake: u64 },
+    
+    // Level 3: Arbiter resolution
+    EscalateToArbiters { comment_id: u64, evidence: Evidence },
+    SubmitArbitratorDecision { dispute_id: u64, ruling: Ruling, signatures: Vec<Signature> },
+}
+```
+
+### 🎮 **Room Creation & Management**
+
+#### Organizer Creates Room with Custom Rules:
+```rust
+// Room creation transaction
+UnifiedCommand::CreateRoom {
+    rules: RoomRules {
+        min_bond: 1000,  // 0.001 KAS per comment
+        max_comment_length: 500,
+        community_moderation: true,
+        reputation_threshold: 0,  // Open to all
+        penalty_multiplier: 2.0,  // Double penalty for violations
+    },
+    moderator_panel: vec![mod1_pubkey, mod2_pubkey, mod3_pubkey],
+    initial_funding: 10000, // KAS for room operation & rewards
+}
+```
+
+### 💡 **Why Episode Contracts are Revolutionary for Comment-It**
+
+1. **Native Kaspa Integration**: No L2 needed - runs directly on Kaspa L1
+2. **Economic Spam Prevention**: Bonds make spam expensive, quality profitable
+3. **Decentralized Moderation**: No single authority - community + arbiters
+4. **Censorship Resistance**: Organizers can't arbitrarily delete comments
+5. **Self-Sustaining Economics**: Penalty pool funds quality rewards
+
+### 🚀 **Implementation Strategy**
+
+#### Start Simple, Add Complexity:
+1. **Basic Bond System**: Implement comment bonds first
+2. **Community Voting**: Add democratic moderation
+3. **Arbiter Panel**: Multi-sig dispute resolution  
+4. **Advanced Economics**: Reputation scores, dynamic bonds
+5. **UI Integration**: Room rules configuration interface
+
+This episode contract system transforms comment-it from a simple commenting app into a **revolutionary decentralized social platform** with built-in economic incentives and community governance!
+
+Please follow: PURE_KDAPP_REFACTOR_PLAN.md
 
 ## 🚨 **CRITICAL: MAIN.RS SIZE RULES - NEVER IGNORE!**
 

@@ -216,7 +216,8 @@ export function handleWebSocketMessage(message) {
             
         case 'authentication_successful':
             if (message.episode_id === getCurrentEpisodeId() && !isAuthenticated) {
-                handleAuthenticated(message.session_token);
+                console.log('🎯 Authentication successful message received:', message);
+                handleAuthenticated(message.session_token || 'pure_p2p_authenticated');
             }
             break;
             

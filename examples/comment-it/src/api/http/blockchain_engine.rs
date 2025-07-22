@@ -301,7 +301,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
         episode_id: EpisodeId,
         episode: &AuthWithCommentsEpisode,
         cmd: &UnifiedCommand,
-        _authorization: Option<kdapp::pki::PubKey>,
+        authorization: Option<kdapp::pki::PubKey>,
         _metadata: &kdapp::episode::PayloadMetadata,
     ) {
         println!("⚡ Episode {} updated on blockchain", episode_id);
@@ -354,23 +354,23 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
         }
         
         // Check what kind of update this is
-        if episode.is_authenticated() && episode.session_token().is_some() {
-            // Authentication successful
-            println!("🎭 MATRIX UI SUCCESS: User authenticated successfully");
+        if episode.is_authenticated() {
+            // Authentication successful - Pure P2P style
+            println!("🎭 MATRIX UI SUCCESS: User authenticated successfully (Pure P2P)");
             let message = WebSocketMessage {
                 message_type: "authentication_successful".to_string(),
                 episode_id: Some(episode_id.into()),
                 authenticated: Some(true),
                 challenge: episode.challenge(),
-                session_token: episode.session_token(),
+                session_token: Some("pure_p2p_authenticated".to_string()), // Fake token for frontend compatibility
                 comment: None,
                 comments: None,
             };
             let _ = self.websocket_tx.send(message);
-        } else if !episode.is_authenticated() && episode.session_token().is_none() && episode.challenge().is_some() {
+        } else if !episode.is_authenticated() && episode.challenge().is_some() {
             // Check if this was a session revocation by comparing with previous state
             if let Some(prev_episode) = previous_episode {
-                if prev_episode.is_authenticated() && prev_episode.session_token().is_some() {
+                if prev_episode.is_authenticated() {
                     // Previous state was authenticated, now it's not -> session revoked
                     println!("🎭 MATRIX UI SUCCESS: User session revoked (logout completed)");
                     let message = WebSocketMessage {
@@ -391,11 +391,19 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
             
             // Challenge was issued (initial state)
             println!("🎭 MATRIX UI SUCCESS: Authentication challenge issued to user");
+            
+            // Get the participant-specific challenge if authorization is available
+            let participant_challenge = if let Some(participant) = authorization {
+                episode.get_challenge_for_participant(&participant)
+            } else {
+                episode.challenge()
+            };
+            
             let message = WebSocketMessage {
                 message_type: "challenge_issued".to_string(),
                 episode_id: Some(episode_id.into()),
                 authenticated: Some(false),
-                challenge: episode.challenge(),
+                challenge: participant_challenge,
                 session_token: None,
                 comment: None,
                 comments: None,

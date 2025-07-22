@@ -327,7 +327,7 @@ async fn get_comments(
                 text: comment.text.clone(),
                 author: comment.author.clone(),
                 timestamp: comment.timestamp,
-                session_token: comment.session_token.clone(),
+                session_token: String::new(), // Pure P2P: No session tokens needed
             });
         }
     }
@@ -359,7 +359,7 @@ async fn get_latest_comments(
                 text: comment.text.clone(),
                 author: comment.author.clone(),
                 timestamp: comment.timestamp,
-                session_token: comment.session_token.clone(),
+                session_token: String::new(), // Pure P2P: No session tokens needed
             });
         }
     }
