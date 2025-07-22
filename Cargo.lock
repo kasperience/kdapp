@@ -578,6 +578,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
+name = "comment-board"
+version = "0.0.1"
+dependencies = [
+ "borsh",
+ "clap",
+ "env_logger",
+ "faster-hex",
+ "itertools 0.14.0",
+ "kaspa-addresses",
+ "kaspa-consensus-core",
+ "kaspa-core",
+ "kaspa-rpc-core",
+ "kaspa-txscript",
+ "kaspa-wrpc-client",
+ "kdapp",
+ "log",
+ "rand 0.8.5",
+ "secp256k1",
+ "serde",
+ "sha2",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "comment-it"
 version = "0.1.0"
 dependencies = [
