@@ -164,6 +164,33 @@ async fn run_comment_board(
     println!("📺 Connected to room: Episode {}", received_episode_id);
     state.print();
 
+    // Set forbidden words if provided (room creator only)
+    if let Some(forbidden_words_str) = &args.forbidden_words {
+        let forbidden_words: Vec<String> = forbidden_words_str
+            .split(',')
+            .map(|w| w.trim().to_string())
+            .collect();
+        
+        println!("🚫 Setting forbidden words: {:?}", forbidden_words);
+        let forbidden_cmd = CommentCommand::SetForbiddenWords { words: forbidden_words };
+        let step = EpisodeMessage::<CommentBoard>::new_signed_command(episode_id, forbidden_cmd, participant_sk, participant_pk);
+
+        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
+        info!("💰 Submitting forbidden words (you pay): {}", tx.id());
+        let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
+        utxo = generator::get_first_output_utxo(&tx);
+
+        // Wait for confirmation
+        loop {
+            let (received_id, new_state) = response_receiver.recv().await.unwrap();
+            if received_id == episode_id {
+                state = new_state;
+                println!("✅ Forbidden words set successfully!");
+                break;
+            }
+        }
+    }
+
     // Join the room if not already a member
     if !state.room_members.contains(&format!("{}", participant_pk)) {
         println!("🎉 Joining the room... (paying with your own wallet)");

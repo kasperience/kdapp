@@ -23,4 +23,8 @@ pub struct Args {
     ///  -- You may also specify `<subsystem>=<level>,<subsystem2>=<level>,...` to set the log level for individual subsystems
     #[arg(long = "loglevel", default_value = format!("info,{}=trace", env!("CARGO_PKG_NAME")))]
     pub log_level: String,
+
+    /// Forbidden words for room moderation (comma-separated, e.g., "fuck,shit,damn")
+    #[arg(long)]
+    pub forbidden_words: Option<String>,
 }

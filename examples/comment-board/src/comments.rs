@@ -38,6 +38,9 @@ pub enum CommentCommand {
     // Room commands (existing)
     JoinRoom,
     SubmitComment { text: String },
+    
+    // Moderation command
+    SetForbiddenWords { words: Vec<String> },
 }
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
@@ -124,6 +127,9 @@ pub struct CommentBoard {
     pub challenge: Option<String>,
     pub authenticated_users: std::collections::HashSet<String>, // PubKey strings of authenticated users
     pub session_tokens: std::collections::HashMap<String, String>, // PubKey -> session_token
+    
+    // Simple moderation
+    pub forbidden_words: Vec<String>, // Simple word filter for organizer
 }
 
 impl Episode for CommentBoard {
@@ -145,6 +151,9 @@ impl Episode for CommentBoard {
             challenge: None,
             authenticated_users: std::collections::HashSet::new(),
             session_tokens: std::collections::HashMap::new(),
+            
+            // Simple moderation (will be set by room creator)
+            forbidden_words: Vec::new(),
         }
     }
 
@@ -235,6 +244,14 @@ impl Episode for CommentBoard {
                     return Err(EpisodeError::InvalidCommand(CommentError::TooLong));
                 }
 
+                // Check forbidden words
+                let text_lower = text.to_lowercase();
+                for forbidden_word in &self.forbidden_words {
+                    if text_lower.contains(&forbidden_word.to_lowercase()) {
+                        return Err(EpisodeError::InvalidCommand(CommentError::Unauthorized));
+                    }
+                }
+
                 // Create comment
                 let comment = Comment {
                     id: self.next_comment_id,
@@ -260,6 +277,24 @@ impl Episode for CommentBoard {
 
                 info!("[CommentBoard] ✅ Comment {} added by {}", comment_id, participant_str);
                 Ok(CommentRollback::new_comment(comment_id, old_timestamp))
+            }
+
+            CommentCommand::SetForbiddenWords { words } => {
+                // Only room creator can set forbidden words
+                if let Some(creator) = &self.creator {
+                    if participant != *creator {
+                        return Err(EpisodeError::Unauthorized);
+                    }
+                } else {
+                    return Err(EpisodeError::Unauthorized);
+                }
+
+                let old_timestamp = self.timestamp;
+                self.timestamp = metadata.accepting_time;
+                self.forbidden_words = words.clone();
+
+                info!("[CommentBoard] 🚫 Forbidden words set: {:?}", words);
+                Ok(CommentRollback::new_join(false, old_timestamp))
             }
         }
     }
