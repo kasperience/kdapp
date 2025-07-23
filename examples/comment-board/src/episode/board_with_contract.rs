@@ -117,6 +117,18 @@ impl Episode for ContractCommentBoard {
         info!("[ContractCommentBoard] Executing {:?} from {}", cmd, participant_str);
 
         match cmd {
+            ContractCommand::JoinRoom { bond_amount } => {
+                self.execute_join_room(participant, *bond_amount, metadata)
+            }
+            
+            ContractCommand::RequestChallenge => {
+                self.execute_request_challenge(participant, metadata)
+            }
+            
+            ContractCommand::SubmitResponse { signature, nonce } => {
+                self.execute_submit_response(participant, signature, nonce, metadata)
+            }
+            
             ContractCommand::SubmitComment { text, bond_amount } => {
                 self.execute_submit_comment(participant, text, *bond_amount, metadata)
             }
@@ -156,6 +168,89 @@ impl Episode for ContractCommentBoard {
 }
 
 impl ContractCommentBoard {
+    /// Execute room joining with bond requirement
+    fn execute_join_room(
+        &mut self,
+        participant: PubKey,
+        bond_amount: u64,
+        metadata: &PayloadMetadata,
+    ) -> Result<ContractRollback, EpisodeError<ContractError>> {
+        let participant_str = format!("{}", participant);
+        
+        // Add user to room
+        self.contract.room_members.push(participant_str.clone());
+        self.contract.total_locked_value += bond_amount;
+        
+        info!("[ContractCommentBoard] ✅ {} joined room with {} KAS bond", 
+              participant_str, format_kas_amount(bond_amount));
+        
+        Ok(ContractRollback {
+            operation_type: "join_room".to_string(),
+            comment_id: None,
+            bond_amount: Some(bond_amount),
+            reputation_change: None,
+            penalty_pool_change: None,
+            prev_timestamp: metadata.accepting_time,
+            utxo_changes: vec![(format!("join_bond_{}", participant_str), bond_amount)],
+        })
+    }
+    
+    /// Execute challenge request
+    fn execute_request_challenge(
+        &mut self,
+        participant: PubKey,
+        metadata: &PayloadMetadata,
+    ) -> Result<ContractRollback, EpisodeError<ContractError>> {
+        let challenge = format!("auth_{}", metadata.tx_id);
+        self.contract.current_challenge = Some(challenge.clone());
+        
+        info!("[ContractCommentBoard] 🔑 Challenge generated: {}", challenge);
+        
+        Ok(ContractRollback {
+            operation_type: "request_challenge".to_string(),
+            comment_id: None,
+            bond_amount: None,
+            reputation_change: None,
+            penalty_pool_change: None,
+            prev_timestamp: metadata.accepting_time,
+            utxo_changes: vec![],
+        })
+    }
+    
+    /// Execute authentication response
+    fn execute_submit_response(
+        &mut self,
+        participant: PubKey,
+        signature: &str,
+        nonce: &str,
+        metadata: &PayloadMetadata,
+    ) -> Result<ContractRollback, EpisodeError<ContractError>> {
+        let participant_str = format!("{}", participant);
+        
+        if let Some(challenge) = &self.contract.current_challenge {
+            if nonce == challenge && !signature.is_empty() {
+                self.contract.authenticated_users.push(participant_str.clone());
+                self.contract.current_challenge = None;
+                
+                info!("[ContractCommentBoard] ✅ {} authenticated successfully", participant_str);
+                
+                Ok(ContractRollback {
+                    operation_type: "authenticate".to_string(),
+                    comment_id: None,
+                    bond_amount: None,
+                    reputation_change: None,
+                    penalty_pool_change: None,
+                    prev_timestamp: metadata.accepting_time,
+                    utxo_changes: vec![],
+                })
+            } else {
+                Err(EpisodeError::InvalidCommand(ContractError::UserNotAuthenticated))
+            }
+        } else {
+            Err(EpisodeError::InvalidCommand(ContractError::UserNotAuthenticated))
+        }
+    }
+
     /// Execute comment submission with economic bond
     fn execute_submit_comment(
         &mut self,

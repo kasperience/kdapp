@@ -143,19 +143,10 @@ async fn run_comment_board(
 
     let episode_id = if let Some(room_id) = target_episode_id {
         println!("🎯 Joining room with Episode ID: {}", room_id);
-        println!("🔧 Creating local episode to enable participation...");
         println!("💰 You pay for your own comments with address: {}", kaspa_addr);
         
-        // Create a local episode to enable participation in existing rooms
-        // This solves the kdapp limitation where engines only process new transactions
-        let join_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode { 
-            episode_id: room_id, 
-            participants: vec![] // Empty - open room
-        };
-        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &join_episode, FEE);
-        info!("Submitting local episode creation for room {}: {}", room_id, tx.id());
-        let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
-        utxo = generator::get_first_output_utxo(&tx);
+        // No longer creating local episode - trust kdapp's natural synchronization
+        // First real command will be JoinRoom which should trigger episode initialization
         room_id
     } else {
         // Create new room - organizer creates the episode
@@ -229,7 +220,7 @@ async fn run_comment_board(
     if !state.room_members.contains(&format!("{}", participant_pk)) {
         println!("🎉 Joining the room... (paying with your own wallet)");
         let join_cmd = CommentCommand::JoinRoom;
-        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::SubmitComment { text: "joined".to_string(), bond_amount: 0 }, participant_sk, participant_pk);
+        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::JoinRoom { bond_amount: 10_000_000_000 }, participant_sk, participant_pk);
 
         let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
         info!("💰 Submitting join room (you pay): {}", tx.id());
@@ -258,7 +249,7 @@ async fn run_comment_board(
     if !state.authenticated_users.contains(&format!("{}", participant_pk)) {
         println!("🔑 Requesting authentication challenge...");
         let request_challenge_cmd = CommentCommand::RequestChallenge;
-        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::SubmitComment { text: "auth".to_string(), bond_amount: 0 }, participant_sk, participant_pk);
+        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::RequestChallenge, participant_sk, participant_pk);
 
         let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
         info!("💰 Submitting RequestChallenge (you pay): {}", tx.id());
@@ -291,7 +282,7 @@ async fn run_comment_board(
                 signature: signature.to_string(),
                 nonce: challenge_text,
             };
-            let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::SubmitComment { text: "auth_response".to_string(), bond_amount: 0 }, participant_sk, participant_pk);
+            let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::SubmitResponse { signature: signature.to_string(), nonce: challenge_text }, participant_sk, participant_pk);
 
             let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
             info!("💰 Submitting SubmitResponse (you pay): {}", tx.id());
