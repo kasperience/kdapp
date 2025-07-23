@@ -1,9 +1,10 @@
-# Comment Board - TRUE P2P Group Chat! 🎉
+# Comment Board - Real Economic Episode Contract! 🚀
 
-**Simple architecture**: One shared episode, everyone pays for their own transactions, no wallet draining!
+**Revolutionary**: First kdapp example with true economic enforcement on Kaspa L1!
 
 ## 🚀 Features - The CORRECT Way!
 
+- **💎 Episode Contracts** - First-ever economic smart contracts on kdapp/Kaspa L1!
 - **🎯 One Episode, Many Wallets** - Shared room state, individual payments
 - **💰 Fair Economics** - You pay for your own comments, nobody can drain others
 - **🔐 Your Kaspa Key = Your Identity** - No separate comment keys needed!
@@ -11,37 +12,55 @@
 - **⚡ Pure kdapp Architecture** - Exactly how the framework was designed
 - **🌐 Unlimited Participants** - Anyone can join any room
 
-## 🎮 Usage - Simple & Powerful!
+## 🎮 Usage - Modern CLI Interface
 
 ### 🆕 Create New Room (Organizer)
 ```bash
-# Create room with your Kaspa wallet
-cargo run --bin comment-board -- --kaspa-private-key <your-kaspa-key>
+# Create room with optional economic bonds
+cargo run -- participant --kaspa-private-key <your-key> --bonds
+
+# Create room with free comments (no bonds)
+cargo run -- participant --kaspa-private-key <your-key>
 
 # Output: "🚀 Creating new room with Episode ID: 123456789"
-# Share this Episode ID with friends!
+# Share this Episode ID with participants!
 ```
 
 ### 👥 Join Existing Room (Participants)  
 ```bash
-# Join room with your OWN Kaspa wallet (works anytime!)
-cargo run --bin comment-board -- --kaspa-private-key <your-kaspa-key> --room-episode-id 123456789
+# Join with economic bonds (stake 100 KAS per comment)
+cargo run -- participant --kaspa-private-key <your-key> --room-episode-id 123456789 --bonds
 
-# The app automatically creates a local episode to enable participation
-# You pay for your own comments with your wallet
+# Join with free comments (no economic enforcement)  
+cargo run -- participant --kaspa-private-key <your-key> --room-episode-id 123456789
+
 # Your Kaspa public key becomes your username
+# You pay for your own transactions, nobody can drain your wallet
 ```
 
-### 🎯 How It Works Now
-- **Organizer**: Creates Episode with their wallet → Pays creation fee
-- **Participants**: Join by creating local episode with same ID → Each pays their own fees
-- **Everyone**: Uses their Kaspa key as identity → Comments visible to all
-- **Smart Fix**: Participants can join existing rooms anytime (local episode creation)
+### 🔐 Authentication Flow (Automatic)
+1. **Challenge Request**: System generates random nonce
+2. **Response Signing**: You sign with your Kaspa private key  
+3. **Verification**: Cryptographic proof of key ownership
+4. **Authenticated**: Can now post comments to the room
 
-### 💬 Party Commands
-- Type any text → Comment appears for EVERYONE in the room
-- Type `quit` → Leave the room (but comments stay forever!)
-- Anyone can join at any time with the Episode ID
+### 💬 Interactive Commands (While in Session)
+- **Type any text** → Submit comment to the blockchain
+- **`balance`** → Check wallet status and locked bonds
+- **`unlock`** → Release expired comment bonds back to wallet
+- **`quit`** → Exit session (comments remain on blockchain forever)
+
+### 🔄 Session Flow Example
+```
+=== 💬 Comment Board ===
+Comments: 3 | Members: 2
+[1722123456] alice123: Hello everyone!
+[1722123500] bob456: Hey there!
+[1722123530] alice123: How's everyone doing?
+========================
+
+Enter your comment (or 'quit' to exit, 'balance' for wallet info, 'unlock' to check unlockable bonds):
+```
 
 ## 🎪 How It Actually Works - CORRECT kdapp Architecture
 
@@ -62,15 +81,37 @@ Everyone comments: Each person pays ~0.001 TKAS per comment
 Result: Alice paid ~0.001 TKAS total, not drained by others! ✅
 ```
 
-## 💰 Economic Incentives: The Comment Bond
+## 💰 Economic Episode Contracts: Real UTXO Locking
 
-To demonstrate real "skin in the game" and prevent spam, this comment board implements a simple **Comment Bond** system:
+This implements **true economic episode contracts** - the first kdapp example with real wallet enforcement:
 
-1.  **Users pay 100 KAS to post a comment.** This amount is temporarily locked.
-2.  **The bond is locked for 10 minutes.** During this time, it cannot be reclaimed.
-3.  **The bond is released after 10 minutes** if no issues are reported, making it available for the user again.
+### 🎯 **Two Usage Modes**
 
-This creates a basic "pay-to-play" economic participation model.
+#### 🆓 **Free Mode** (Default)
+```bash
+cargo run -- participant --kaspa-private-key <key>
+```
+- **No bonds required** - comment freely
+- **Only pay network fees** (~0.001 KAS per transaction)
+- **Good for**: Testing, casual use, open discussions
+
+#### 💎 **Economic Mode** (With `--bonds`)
+```bash
+cargo run -- participant --kaspa-private-key <key> --bonds
+```
+- **100 KAS bond per comment** - real economic enforcement
+- **Bonds lock for 10 minutes** - prevents spam flooding
+- **Automatic unlock** - funds return to your wallet after timer
+- **Good for**: High-quality discussions, preventing abuse
+
+### 🔒 **How Real UTXO Locking Works**
+
+1. **Comment Submission** → 100 KAS locks in your wallet (balance decreases)
+2. **10 Minute Timer** → Funds are truly unavailable for spending  
+3. **Automatic Release** → Use `unlock` command to reclaim expired bonds
+4. **Balance Protection** → Cannot comment if insufficient unlocked funds
+
+This is **real economic enforcement**, not fake point systems!
 
 ### How the Bond is Enforced (On-Chain vs. Off-Chain State)
 
