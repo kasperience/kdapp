@@ -72,10 +72,10 @@ impl Episode for ContractCommentBoard {
             default_rules,
             vec![], // No moderators initially
             0,      // No initial funding
-            Some(259200) // 3 days default lifetime
+            Some(7776000) // 3 months default lifetime (90 days)
         );
         
-        let expires_at = metadata.accepting_time + 259200; // 3 days from creation
+        let expires_at = metadata.accepting_time + 7776000; // 3 months from creation
         
         info!("[ContractCommentBoard] ✅ Episode contract created, expires at: {}", expires_at);
         

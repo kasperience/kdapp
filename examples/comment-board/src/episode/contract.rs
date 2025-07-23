@@ -250,7 +250,7 @@ impl CommentRoomContract {
             room_creator: creator,
             room_rules: rules,
             created_at: 0, // Will be set by PayloadMetadata
-            episode_lifetime: episode_lifetime.unwrap_or(259200), // 3 days default
+            episode_lifetime: episode_lifetime.unwrap_or(7776000), // 3 months default
             
             // Economic initialization
             participation_bond: rules.min_bond,

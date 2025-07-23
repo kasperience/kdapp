@@ -60,7 +60,7 @@ pub enum TerminalCommand {
         #[arg(long, default_value_t = 10000)]
         initial_funding: u64,
         
-        /// Custom episode lifetime in seconds (default: 259200 = 3 days)
+        /// Custom episode lifetime in seconds (default: 7776000 = 3 months)
         #[arg(long)]
         custom_lifetime: Option<u64>,
         
