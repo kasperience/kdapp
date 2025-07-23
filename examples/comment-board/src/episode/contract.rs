@@ -48,6 +48,7 @@ pub struct RoomRules {
     pub min_bond: u64,              // Minimum KAS to comment (prevents spam)
     pub max_bond: u64,              // Maximum bond (for reputation-based discounts)
     pub penalty_multiplier: f64,    // Bond penalty for violations (2.0 = double penalty)
+    pub bonds_enabled: bool,
     pub reward_pool_percentage: f64, // % of penalties that go to quality rewards
     
     // Content Rules
@@ -212,12 +213,12 @@ impl Default for RoomRules {
     fn default() -> Self {
         RoomRules {
             // Conservative defaults for initial showcase (10x reduced for testing)
-            min_bond: 100,               // 0.0001 KAS (very low barrier)
+            min_bond: 10_000_000_000, // 100 KAS (reasonable default)
             max_bond: 10000,             // 0.01 KAS (reasonable max)
-            penalty_multiplier: 2.0,     // Double penalty for violations
-            reward_pool_percentage: 0.8, // 80% of penalties become rewards
-            
-            // Content rules
+            penalty_multiplier: 2.0,
+            reward_pool_percentage: 0.0,
+            bonds_enabled: true,
+            // Moderation Parameters
             max_comment_length: 500,     // Twitter-like length
             min_reputation_threshold: -50, // Allow some negative reputation
             spam_detection_enabled: true,

@@ -77,6 +77,7 @@ pub struct Comment {
     pub text: String,
     pub author: String, // PubKey as string
     pub timestamp: u64,
+    pub bond_amount: u64,
 }
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
@@ -89,17 +90,26 @@ pub struct CommentState {
 }
 
 impl CommentState {
-    pub fn print(&self) {
+    pub fn print(&self, args: &crate::cli::Args) {
         println!("=== Comment Board ===");
         if self.comments.is_empty() {
             println!("No comments yet. Be the first to comment!");
         } else {
             for comment in &self.comments {
-                println!("[{}] {}: {}", 
-                    comment.timestamp, 
-                    &comment.author[..min(8, comment.author.len())], // Show first 8 chars of pubkey
-                    comment.text
-                );
+                if args.bonds {
+                    println!("[{}] {} (Bond: {:.6} KAS): {}", 
+                        comment.timestamp, 
+                        &comment.author[..min(8, comment.author.len())], // Show first 8 chars of pubkey
+                        comment.bond_amount as f64 / 100_000_000.0,
+                        comment.text
+                    );
+                } else {
+                    println!("[{}] {}: {}", 
+                        comment.timestamp, 
+                        &comment.author[..min(8, comment.author.len())], // Show first 8 chars of pubkey
+                        comment.text
+                    );
+                }
             }
         }
         println!("Room members: {}", self.room_members.len());
@@ -224,7 +234,7 @@ impl Episode for CommentBoard {
                 Ok(CommentRollback::new_join(was_in_room, old_timestamp))
             }
 
-            CommentCommand::SubmitComment { text, bond_amount: _ } => {
+            CommentCommand::SubmitComment { text, bond_amount } => {
                 // Check if user is authenticated (using kaspa-auth pattern)
                 if !self.authenticated_users.contains(&participant_str) {
                     return Err(EpisodeError::InvalidCommand(CommentError::NotAuthenticated));
@@ -258,6 +268,7 @@ impl Episode for CommentBoard {
                     text: text.clone(),
                     author: participant_str.clone(),
                     timestamp: metadata.accepting_time,
+                    bond_amount: *bond_amount,
                 };
 
                 let comment_id = self.next_comment_id;

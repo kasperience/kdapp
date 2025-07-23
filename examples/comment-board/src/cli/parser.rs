@@ -27,4 +27,8 @@ pub struct Args {
     /// Forbidden words for room moderation (comma-separated, e.g., "fuck,shit,damn")
     #[arg(long)]
     pub forbidden_words: Option<String>,
+
+    /// Enable economic comment bonds (users pay 100 KAS to comment)
+    #[arg(long, default_value_t = false)]
+    pub bonds: bool,
 }

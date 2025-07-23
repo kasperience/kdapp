@@ -281,11 +281,30 @@ impl ContractCommentBoard {
         metadata: &PayloadMetadata,
     ) -> Result<ContractRollback, EpisodeError<ContractError>> {
         let participant_str = format!("{}", participant);
+        info!("[ContractCommentBoard] execute_submit_comment: received bond_amount = {}", bond_amount);
         
         // Validate comment content
         if text.trim().is_empty() {
             return Err(EpisodeError::InvalidCommand(
                 ContractError::RoomRulesViolation { rule: "Empty comment".to_string() }
+            ));
+        }
+
+        // Enforce bond based on room rules
+        if self.contract.room_rules.bonds_enabled {
+            let required_bond = self.contract.room_rules.min_bond; // Use min_bond from room rules
+            if bond_amount != required_bond {
+                return Err(EpisodeError::InvalidCommand(
+                    ContractError::InsufficientBond { 
+                        required: required_bond, 
+                        provided: bond_amount
+                    }
+                ));
+            }
+        } else if bond_amount > 0 {
+            // If bonds are disabled by organizer, but a bond was provided by participant, reject it.
+            return Err(EpisodeError::InvalidCommand(
+                ContractError::RoomRulesViolation { rule: "Bonds are disabled for this room by organizer".to_string() }
             ));
         }
         
@@ -346,6 +365,7 @@ pub struct ContractState {
     pub total_comments: u64,
     pub total_locked_value: u64,
     pub penalty_pool: u64,
+    pub room_rules: RoomRules,
 }
 
 impl ContractCommentBoard {
@@ -359,6 +379,7 @@ impl ContractCommentBoard {
             total_comments: self.contract.total_comments,
             total_locked_value: self.contract.total_locked_value,
             penalty_pool: self.contract.penalty_pool,
+            room_rules: self.contract.room_rules.clone(),
         }
     }
 }

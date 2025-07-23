@@ -97,6 +97,7 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
         wrpc_url: args.wrpc_url.clone(),
         log_level: args.log_level.clone(),
         forbidden_words: args.forbidden_words.clone(),
+        bonds: args.bonds,
     };
 
     // Run the participant task
@@ -110,7 +111,7 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
             participant_sk, 
             participant_pk, 
             target_episode_id,
-            args_clone
+            args_clone,
         ).await;
     });
 
@@ -228,8 +229,13 @@ async fn run_comment_board(
     // Join the room if not already a member
     if !state.room_members.contains(&format!("{}", participant_pk)) {
         println!("🎉 Joining the room... (paying with your own wallet)");
-        let join_cmd = CommentCommand::JoinRoom;
-        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::JoinRoom { bond_amount: 10_000_000_000 }, participant_sk, participant_pk);
+        let bond_amount = if args.bonds { if state.room_rules.bonds_enabled { state.room_rules.min_bond } else { 0 } } else { 0 };
+        if args.bonds {
+            println!("💸 Joining room with a {} KAS bond...", bond_amount / 100_000_000);
+        } else {
+            println!("💬 Joining room (no bond)...");
+        }
+        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::JoinRoom { bond_amount }, participant_sk, participant_pk);
 
         let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
         info!("💰 Submitting join room (you pay): {}", tx.id());
@@ -353,9 +359,13 @@ async fn run_comment_board(
             continue;
         }
 
-        // DEMO: Submit comment with a 100 KAS bond
-        let bond_amount = 10_000_000_000; // 100 KAS in Sompis
-        println!("💸 Submitting comment with a {} KAS bond...", bond_amount / 100_000_000);
+        // Submit comment with bond based on room rules
+        let bond_amount = if args.bonds { if state.room_rules.bonds_enabled { state.room_rules.min_bond } else { 0 } } else { 0 };
+        if args.bonds {
+            println!("💸 Submitting comment with a {} KAS bond...", bond_amount / 100_000_000);
+        } else {
+            println!("💬 Submitting comment (no bond)...");
+        }
         let cmd = ContractCommand::SubmitComment { 
             text: comment_text.to_string(),
             bond_amount,
