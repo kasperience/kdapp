@@ -41,7 +41,7 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
     };
 
     // Generate or obtain Kaspa private key
-    let kaspa_signer = if let Some(private_key_hex) = args.kaspa_private_key {
+    let kaspa_signer = if let Some(ref private_key_hex) = args.kaspa_private_key {
         let mut private_key_bytes = [0u8; 32];
         faster_hex::hex_decode(private_key_hex.as_bytes(), &mut private_key_bytes).unwrap();
         Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).unwrap()
@@ -85,6 +85,16 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
         engine.start(vec![CommentHandler { sender: response_sender, participant: participant_pk }]);
     });
 
+    // Clone args for the async task
+    let args_clone = Args {
+        kaspa_private_key: args.kaspa_private_key.clone(),
+        room_episode_id: args.room_episode_id,
+        mainnet: args.mainnet,
+        wrpc_url: args.wrpc_url.clone(),
+        log_level: args.log_level.clone(),
+        forbidden_words: args.forbidden_words.clone(),
+    };
+
     // Run the participant task
     let participant_task = tokio::spawn(async move {
         run_comment_board(
@@ -96,7 +106,7 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
             participant_sk, 
             participant_pk, 
             target_episode_id,
-            args
+            args_clone
         ).await;
     });
 
