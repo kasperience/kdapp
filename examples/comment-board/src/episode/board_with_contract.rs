@@ -58,14 +58,35 @@ impl Episode for ContractCommentBoard {
     type CommandError = ContractError;
 
     fn initialize(participants: Vec<PubKey>, metadata: &PayloadMetadata) -> Self {
-        info!("[ContractCommentBoard] Episode contract initializing...");
+        if participants.is_empty() {
+            info!("[ContractCommentBoard] Episode registration only - no state initialization");
+            // Return minimal state for episode registration (participants will sync via commands)
+            return Self {
+                contract: CommentRoomContract::new(
+                    PubKey(secp256k1::PublicKey::from_secret_key(&secp256k1::SECP256K1, &secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap())),
+                    RoomRules::default(),
+                    vec![],
+                    0,
+                    Some(7776000)
+                ),
+                locked_utxos: HashMap::new(),
+                user_bonds: HashMap::new(),
+                next_comment_id: 1,
+                next_dispute_id: 1,
+                next_vote_id: 1,
+                user_reputation_cache: HashMap::new(),
+                active_votes: HashMap::new(),
+                contract_created_at: metadata.accepting_time,
+                contract_expires_at: metadata.accepting_time + 7776000,
+                showcase_highlights: vec![],
+            };
+        }
         
-        // Default contract setup - can be customized via CreateRoom command
+        info!("[ContractCommentBoard] Episode contract initializing with {} participants...", participants.len());
+        
+        // Full contract setup for organizer
         let default_rules = RoomRules::default();
-        let creator = participants.first().copied().unwrap_or_else(|| {
-            // Generate a default creator if none provided
-            PubKey(secp256k1::PublicKey::from_slice(&[0u8; 33]).unwrap_or_else(|_| secp256k1::PublicKey::from_secret_key(&secp256k1::SECP256K1, &secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap())))
-        });
+        let creator = participants.first().copied().unwrap();
         
         let contract = CommentRoomContract::new(
             creator,

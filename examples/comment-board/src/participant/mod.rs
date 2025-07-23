@@ -143,10 +143,19 @@ async fn run_comment_board(
 
     let episode_id = if let Some(room_id) = target_episode_id {
         println!("🎯 Joining room with Episode ID: {}", room_id);
+        println!("🔧 Registering episode with local engine for command processing...");
         println!("💰 You pay for your own comments with address: {}", kaspa_addr);
         
-        // No longer creating local episode - trust kdapp's natural synchronization
-        // First real command will be JoinRoom which should trigger episode initialization
+        // Create episode registration transaction - empty participants means no state initialization
+        // This allows the engine to recognize the episode_id when processing commands
+        let register_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode { 
+            episode_id: room_id, 
+            participants: vec![] // Empty - engine registers episode_id but doesn't call initialize()
+        };
+        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &register_episode, FEE);
+        info!("Submitting episode registration for room {}: {}", room_id, tx.id());
+        let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
+        utxo = generator::get_first_output_utxo(&tx);
         room_id
     } else {
         // Create new room - organizer creates the episode
@@ -280,7 +289,7 @@ async fn run_comment_board(
             let signature = secp.sign_ecdsa(&message, &participant_sk);
             let submit_response_cmd = CommentCommand::SubmitResponse {
                 signature: signature.to_string(),
-                nonce: challenge_text,
+                nonce: challenge_text.clone(),
             };
             let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::SubmitResponse { signature: signature.to_string(), nonce: challenge_text }, participant_sk, participant_pk);
 
