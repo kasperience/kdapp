@@ -27,8 +27,12 @@ use kdapp::{
 
 use crate::{
     cli::Args,
-    comments::{CommentCommand, CommentState, CommentBoard},
-    episode::handler::CommentHandler,
+    comments::CommentCommand,
+    episode::{
+        handler::CommentHandler,
+        board_with_contract::{ContractCommentBoard, ContractState},
+        commands::ContractCommand,
+    },
     utils::{PATTERN, PREFIX, FEE},
 };
 
@@ -79,8 +83,8 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
     let exit_signal = Arc::new(AtomicBool::new(false));
     let exit_signal_receiver = exit_signal.clone();
 
-    // Run the engine
-    let mut engine = engine::Engine::<CommentBoard, CommentHandler>::new(receiver);
+    // Run the engine with Episode Contract
+    let mut engine = engine::Engine::<ContractCommentBoard, CommentHandler>::new(receiver);
     let engine_task = tokio::task::spawn_blocking(move || {
         engine.start(vec![CommentHandler { sender: response_sender, participant: participant_pk }]);
     });
@@ -123,7 +127,7 @@ async fn run_comment_board(
     kaspad: KaspaRpcClient,
     kaspa_signer: Keypair,
     kaspa_addr: Address,
-    mut response_receiver: UnboundedReceiver<(EpisodeId, CommentState)>,
+    mut response_receiver: UnboundedReceiver<(EpisodeId, ContractState)>,
     exit_signal: Arc<AtomicBool>,
     participant_sk: SecretKey,
     participant_pk: PubKey,
@@ -144,7 +148,7 @@ async fn run_comment_board(
         
         // Create a local episode to enable participation in existing rooms
         // This solves the kdapp limitation where engines only process new transactions
-        let join_episode = EpisodeMessage::<CommentBoard>::NewEpisode { 
+        let join_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode { 
             episode_id: room_id, 
             participants: vec![] // Empty - open room
         };
@@ -161,7 +165,7 @@ async fn run_comment_board(
         println!("⚠️  IMPORTANT: Friends must start their terminals BEFORE you create this room!");
         println!("💰 You pay for room creation with address: {}", kaspa_addr);
         
-        let new_episode = EpisodeMessage::<CommentBoard>::NewEpisode { 
+        let new_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode { 
             episode_id: new_episode_id, 
             participants: vec![] // Empty - anyone can join by sending commands!
         };
@@ -174,9 +178,26 @@ async fn run_comment_board(
 
     let (received_episode_id, mut state) = response_receiver.recv().await.unwrap();
     println!("📺 Connected to room: Episode {}", received_episode_id);
-    state.print();
+    
+    // Display contract status instead of basic state
+    println!("=== 💰 Episode Contract Room ===");
+    println!("💬 Comments: {}", state.comments.len());
+    println!("👥 Members: {}", state.room_members.len());
+    println!("🔒 Total Locked: {:.6} KAS", state.total_locked_value as f64 / 100_000_000.0);
+    println!("⚖️ Penalty Pool: {:.6} KAS", state.penalty_pool as f64 / 100_000_000.0);
+    for comment in &state.comments {
+        println!("[{}] {}: {} (Bond: {:.6} KAS)", 
+            comment.timestamp, 
+            &comment.author[..8], 
+            comment.text,
+            comment.bond_amount as f64 / 100_000_000.0
+        );
+    }
+    println!("===============================");
 
-    // Set forbidden words if provided (room creator only)
+    // TODO: Forbidden words feature temporarily disabled (not working properly)
+    // Will be restored in future commit once authorization issues are resolved
+    /*
     if let Some(forbidden_words_str) = &args.forbidden_words {
         let forbidden_words: Vec<String> = forbidden_words_str
             .split(',')
@@ -202,12 +223,13 @@ async fn run_comment_board(
             }
         }
     }
+    */
 
     // Join the room if not already a member
     if !state.room_members.contains(&format!("{}", participant_pk)) {
         println!("🎉 Joining the room... (paying with your own wallet)");
         let join_cmd = CommentCommand::JoinRoom;
-        let step = EpisodeMessage::<CommentBoard>::new_signed_command(episode_id, join_cmd, participant_sk, participant_pk);
+        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::SubmitComment { text: "joined".to_string(), bond_amount: 0 }, participant_sk, participant_pk);
 
         let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
         info!("💰 Submitting join room (you pay): {}", tx.id());
@@ -236,7 +258,7 @@ async fn run_comment_board(
     if !state.authenticated_users.contains(&format!("{}", participant_pk)) {
         println!("🔑 Requesting authentication challenge...");
         let request_challenge_cmd = CommentCommand::RequestChallenge;
-        let step = EpisodeMessage::<CommentBoard>::new_signed_command(episode_id, request_challenge_cmd, participant_sk, participant_pk);
+        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::SubmitComment { text: "auth".to_string(), bond_amount: 0 }, participant_sk, participant_pk);
 
         let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
         info!("💰 Submitting RequestChallenge (you pay): {}", tx.id());
@@ -269,7 +291,7 @@ async fn run_comment_board(
                 signature: signature.to_string(),
                 nonce: challenge_text,
             };
-            let step = EpisodeMessage::<CommentBoard>::new_signed_command(episode_id, submit_response_cmd, participant_sk, participant_pk);
+            let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::SubmitComment { text: "auth_response".to_string(), bond_amount: 0 }, participant_sk, participant_pk);
 
             let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
             info!("💰 Submitting SubmitResponse (you pay): {}", tx.id());
@@ -299,7 +321,20 @@ async fn run_comment_board(
     loop {
         // Display current state
         if received_id == episode_id {
-            state.print();
+            // Display contract status
+            println!("=== 💰 Episode Contract Room ===");
+            println!("💬 Comments: {}", state.comments.len());
+            println!("👥 Members: {}", state.room_members.len());
+            println!("🔒 Total Locked: {:.6} KAS", state.total_locked_value as f64 / 100_000_000.0);
+            for comment in &state.comments {
+                println!("[{}] {}: {} (Bond: {:.6} KAS)", 
+                    comment.timestamp, 
+                    &comment.author[..8], 
+                    comment.text,
+                    comment.bond_amount as f64 / 100_000_000.0
+                );
+            }
+            println!("===============================");
         }
 
         // Get user input
@@ -318,9 +353,14 @@ async fn run_comment_board(
             continue;
         }
 
-        // Submit comment to blockchain - YOU pay for YOUR comment!
-        let cmd = CommentCommand::SubmitComment { text: comment_text.to_string() };
-        let step = EpisodeMessage::<CommentBoard>::new_signed_command(episode_id, cmd, participant_sk, participant_pk);
+        // DEMO: Submit comment with a 100 KAS bond
+        let bond_amount = 10_000_000_000; // 100 KAS in Sompis
+        println!("💸 Submitting comment with a {} KAS bond...", bond_amount / 100_000_000);
+        let cmd = ContractCommand::SubmitComment { 
+            text: comment_text.to_string(),
+            bond_amount,
+        };
+        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, cmd, participant_sk, participant_pk);
 
         let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
         info!("💰 Submitting comment (you pay): {}", tx.id());

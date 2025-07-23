@@ -37,7 +37,7 @@ pub enum CommentCommand {
     
     // Room commands (existing)
     JoinRoom,
-    SubmitComment { text: String },
+    SubmitComment { text: String, bond_amount: u64 },
     
     // Moderation command
     SetForbiddenWords { words: Vec<String> },
@@ -224,7 +224,7 @@ impl Episode for CommentBoard {
                 Ok(CommentRollback::new_join(was_in_room, old_timestamp))
             }
 
-            CommentCommand::SubmitComment { text } => {
+            CommentCommand::SubmitComment { text, bond_amount: _ } => {
                 // Check if user is authenticated (using kaspa-auth pattern)
                 if !self.authenticated_users.contains(&participant_str) {
                     return Err(EpisodeError::InvalidCommand(CommentError::NotAuthenticated));

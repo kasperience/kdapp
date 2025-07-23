@@ -248,7 +248,7 @@ impl CommentRoomContract {
     ) -> Self {
         CommentRoomContract {
             room_creator: creator,
-            room_rules: rules,
+            room_rules: rules.clone(),
             created_at: 0, // Will be set by PayloadMetadata
             episode_lifetime: episode_lifetime.unwrap_or(7776000), // 3 months default
             
