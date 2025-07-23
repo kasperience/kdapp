@@ -290,10 +290,19 @@ impl ContractCommentBoard {
             ));
         }
 
-        // Enforce bond based on room rules
-        if self.contract.room_rules.bonds_enabled {
-            let required_bond = self.contract.room_rules.min_bond; // Use min_bond from room rules
-            if bond_amount != required_bond {
+        // Flexible bond enforcement - allow participant choice
+        if bond_amount > 0 {
+            // Participant wants to use bonds - validate the amount
+            if !self.contract.room_rules.bonds_enabled {
+                return Err(EpisodeError::InvalidCommand(
+                    ContractError::RoomRulesViolation { 
+                        rule: "Bonds are disabled for this room by organizer".to_string() 
+                    }
+                ));
+            }
+            
+            let required_bond = self.contract.room_rules.min_bond;
+            if bond_amount < required_bond {
                 return Err(EpisodeError::InvalidCommand(
                     ContractError::InsufficientBond { 
                         required: required_bond, 
@@ -301,12 +310,8 @@ impl ContractCommentBoard {
                     }
                 ));
             }
-        } else if bond_amount > 0 {
-            // If bonds are disabled by organizer, but a bond was provided by participant, reject it.
-            return Err(EpisodeError::InvalidCommand(
-                ContractError::RoomRulesViolation { rule: "Bonds are disabled for this room by organizer".to_string() }
-            ));
         }
+        // If bond_amount == 0, participant chose no bond - allow this even if bonds are enabled
         
         // Create economic comment
         let comment_id = self.next_comment_id;

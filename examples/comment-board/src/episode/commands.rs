@@ -223,8 +223,8 @@ impl std::fmt::Display for ContractError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ContractError::InsufficientBond { required, provided } => {
-                write!(f, "Insufficient bond: required {} KAS, provided {} KAS", 
-                       *required as f64 / 100000.0, *provided as f64 / 100000.0)
+                write!(f, "Insufficient bond: required {:.6} KAS, provided {:.6} KAS", 
+                       *required as f64 / 100_000_000.0, *provided as f64 / 100_000_000.0)
             }
             ContractError::ReputationTooLow { current, required } => {
                 write!(f, "Reputation too low: {} (required: {})", current, required)

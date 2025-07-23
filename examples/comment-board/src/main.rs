@@ -6,6 +6,7 @@ mod comments;
 mod episode;
 mod participant;
 mod utils;
+mod wallet;
 
 use cli::{Args, handle_command};
 

@@ -34,6 +34,7 @@ use crate::{
         commands::ContractCommand,
     },
     utils::{PATTERN, PREFIX, FEE},
+    wallet::UtxoLockManager,
 };
 
 pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error>> {
@@ -139,6 +140,10 @@ async fn run_comment_board(
     assert!(!entries.is_empty(), "No UTXOs found! Fund your address: {}", kaspa_addr);
     let entry = entries.first().cloned();
     let mut utxo = entry.map(|entry| (TransactionOutpoint::from(entry.outpoint), UtxoEntry::from(entry.utxo_entry))).unwrap();
+
+    // Initialize UTXO lock manager for real economic enforcement
+    let mut utxo_manager = UtxoLockManager::new(&kaspad, kaspa_addr.clone()).await.unwrap();
+    info!("🏦 Wallet initialized with {:.6} KAS available", utxo_manager.get_available_balance() as f64 / 100_000_000.0);
 
     let generator = generator::TransactionGenerator::new(kaspa_signer, PATTERN, PREFIX);
 
@@ -345,13 +350,54 @@ async fn run_comment_board(
 
         // Get user input
         input.clear();
-        println!("Enter your comment (or 'quit' to exit):");
+        println!("Enter your comment (or 'quit' to exit, 'balance' for wallet info, 'unlock' to check unlockable bonds):");
         std::io::stdin().read_line(&mut input).unwrap();
         let comment_text = input.trim();
 
         if comment_text == "quit" {
             exit_signal.store(true, Ordering::Relaxed);
             break;
+        }
+
+        // Handle special commands
+        if comment_text == "balance" {
+            // Refresh and display current balance
+            if let Err(e) = utxo_manager.refresh_utxos(&kaspad).await {
+                warn!("Failed to refresh UTXOs: {}", e);
+            }
+            let balance_info = utxo_manager.get_balance_info();
+            balance_info.display();
+            continue;
+        }
+
+        if comment_text == "unlock" {
+            // 🔓 TIME-BASED UTXO UNLOCKING: Check and unlock available bonds
+            let mut unlocked_total = 0u64;
+            let locked_comment_ids: Vec<u64> = utxo_manager.locked_utxos.keys().copied().collect();
+            
+            for comment_id in locked_comment_ids {
+                if utxo_manager.can_unlock_bond(comment_id) {
+                    match utxo_manager.unlock_bond(comment_id) {
+                        Ok(unlocked_amount) => {
+                            unlocked_total += unlocked_amount;
+                            println!("🔓 Unlocked {:.6} KAS bond for comment {}", 
+                                     unlocked_amount as f64 / 100_000_000.0, comment_id);
+                        }
+                        Err(e) => {
+                            warn!("Failed to unlock bond for comment {}: {}", comment_id, e);
+                        }
+                    }
+                }
+            }
+            
+            if unlocked_total > 0 {
+                println!("✅ Total unlocked: {:.6} KAS", unlocked_total as f64 / 100_000_000.0);
+                let balance_info = utxo_manager.get_balance_info();
+                balance_info.display();
+            } else {
+                println!("⏰ No bonds ready to unlock yet. Bonds unlock 24 hours after posting with no disputes.");
+            }
+            continue;
         }
 
         if comment_text.is_empty() {
@@ -361,8 +407,18 @@ async fn run_comment_board(
 
         // Submit comment with bond based on room rules
         let bond_amount = if args.bonds { if state.room_rules.bonds_enabled { state.room_rules.min_bond } else { 0 } } else { 0 };
-        if args.bonds {
-            println!("💸 Submitting comment with a {} KAS bond...", bond_amount / 100_000_000);
+        
+        // 🔒 REAL ECONOMIC ENFORCEMENT: Check if user can afford the bond
+        if bond_amount > 0 {
+            if !utxo_manager.can_afford_bond(bond_amount) {
+                println!("❌ INSUFFICIENT BALANCE FOR BOND!");
+                let balance_info = utxo_manager.get_balance_info();
+                balance_info.display();
+                println!("💸 Required bond: {:.6} KAS", bond_amount as f64 / 100_000_000.0);
+                println!("⚠️  Please fund your wallet or comment without --bonds flag");
+                continue;
+            }
+            println!("💸 Submitting comment with a {:.6} KAS bond...", bond_amount as f64 / 100_000_000.0);
         } else {
             println!("💬 Submitting comment (no bond)...");
         }
@@ -385,6 +441,32 @@ async fn run_comment_board(
                 if let Some(latest_comment) = state.comments.last() {
                     if latest_comment.text == comment_text && latest_comment.author == format!("{}", participant_pk) {
                         println!("✅ Comment added to blockchain!");
+                        
+                        // 🔒 REAL UTXO LOCKING: Lock the bond if one was used
+                        if bond_amount > 0 {
+                            match utxo_manager.lock_utxo_for_comment(
+                                latest_comment.id, 
+                                bond_amount, 
+                                86400 // 24 hours lock period
+                            ) {
+                                Ok(utxo_ref) => {
+                                    println!("🔒 Locked {:.6} KAS bond for comment {} (UTXO: {})", 
+                                             bond_amount as f64 / 100_000_000.0, 
+                                             latest_comment.id, 
+                                             utxo_ref);
+                                    println!("⏰ Bond will unlock automatically in 24 hours if no disputes");
+                                },
+                                Err(e) => {
+                                    warn!("Failed to lock UTXO for bond: {}", e);
+                                }
+                            }
+                            
+                            // Display updated balance
+                            let balance_info = utxo_manager.get_balance_info();
+                            println!("💰 Updated balance: {:.6} KAS available, {:.6} KAS locked in bonds", 
+                                     balance_info.available_balance as f64 / 100_000_000.0,
+                                     balance_info.locked_balance as f64 / 100_000_000.0);
+                        }
                         break;
                     }
                 }
