@@ -415,6 +415,15 @@ impl ContractCommentBoard {
             ));
         }
         
+        // Check forbidden words
+        if let Some(forbidden_word) = self.contract.contains_forbidden_words(text) {
+            return Err(EpisodeError::InvalidCommand(
+                ContractError::RoomRulesViolation { 
+                    rule: format!("Contains forbidden word: '{}'", forbidden_word)
+                }
+            ));
+        }
+        
         // Check bond amount
         let required_bond = self.contract.calculate_bond_price(&participant);
         if bond_amount < required_bond {

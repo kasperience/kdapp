@@ -67,6 +67,10 @@ pub enum TerminalCommand {
         /// Moderator public keys (comma-separated)
         #[arg(long)]
         moderators: Option<String>,
+        
+        /// Forbidden words (comma-separated, e.g., "fuck,shit,damn,spam,scam")
+        #[arg(long)]
+        forbidden_words: Option<String>,
     },
     
     /// Join an existing room with a participation bond
@@ -211,8 +215,14 @@ impl From<&TerminalCommand> for Option<RoomRules> {
                 max_length, 
                 penalty_multiplier, 
                 community_moderation,
+                forbidden_words,
                 ..
             } => {
+                let forbidden_list = forbidden_words
+                    .as_ref()
+                    .map(|words| words.split(',').map(|w| w.trim().to_string()).collect())
+                    .unwrap_or_default();
+                    
                 Some(RoomRules {
                     min_bond: *min_bond,
                     max_bond: min_bond * 100, // Default max is 100x min
@@ -221,6 +231,7 @@ impl From<&TerminalCommand> for Option<RoomRules> {
                     max_comment_length: *max_length,
                     min_reputation_threshold: -50,
                     spam_detection_enabled: true,
+                    forbidden_words: forbidden_list,
                     community_moderation: *community_moderation,
                     auto_penalty_enabled: true,
                     dispute_resolution_timeout: 172800, // 2 days
@@ -307,6 +318,12 @@ pub mod display {
                  rules.voting_period / 3600);
         println!("║ 🎁 Quality Bonuses: {}                                                     ║", 
                  if rules.quality_bonus_enabled { "✅ Enabled" } else { "❌ Disabled" });
+        
+        if !rules.forbidden_words.is_empty() {
+            println!("║ 🚫 Forbidden Words: {}                                              ║", 
+                     rules.forbidden_words.join(", "));
+        }
+        
         println!("╚══════════════════════════════════════════════════════════════════════════════╝");
     }
     

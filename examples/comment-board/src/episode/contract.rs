@@ -54,6 +54,7 @@ pub struct RoomRules {
     pub max_comment_length: usize,  // Character limit
     pub min_reputation_threshold: i32, // Min reputation to participate
     pub spam_detection_enabled: bool, // Auto-detect spam patterns
+    pub forbidden_words: Vec<String>, // Simple word filter for organizer
     
     // Moderation Features
     pub community_moderation: bool, // Enable voting on comments
@@ -220,6 +221,7 @@ impl Default for RoomRules {
             max_comment_length: 500,     // Twitter-like length
             min_reputation_threshold: -50, // Allow some negative reputation
             spam_detection_enabled: true,
+            forbidden_words: vec![], // No forbidden words by default
             
             // Moderation settings
             community_moderation: true,
@@ -305,6 +307,21 @@ impl CommentRoomContract {
             .unwrap_or(0);
             
         reputation >= self.room_rules.min_reputation_threshold
+    }
+    
+    /// Check if comment contains forbidden words (simple filter)
+    pub fn contains_forbidden_words(&self, text: &str) -> Option<String> {
+        if self.room_rules.forbidden_words.is_empty() {
+            return None;
+        }
+        
+        let text_lower = text.to_lowercase();
+        for forbidden_word in &self.room_rules.forbidden_words {
+            if text_lower.contains(&forbidden_word.to_lowercase()) {
+                return Some(forbidden_word.clone());
+            }
+        }
+        None
     }
     
     /// Get contract statistics for Twitter showcase
