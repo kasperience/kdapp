@@ -71,7 +71,7 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
 
     // Connect kaspad clients
     let kaspad = connect_client(network, args.wrpc_url.clone()).await.unwrap();
-    let participant_kaspad = connect_client(network, args.wrpc_url).await.unwrap();
+    let participant_kaspad = connect_client(network, args.wrpc_url.clone()).await.unwrap();
 
     // Define channels and exit flag
     let (sender, receiver) = channel();
@@ -95,7 +95,8 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
             exit_signal, 
             participant_sk, 
             participant_pk, 
-            target_episode_id
+            target_episode_id,
+            args
         ).await;
     });
 
@@ -117,6 +118,7 @@ async fn run_comment_board(
     participant_sk: SecretKey,
     participant_pk: PubKey,
     target_episode_id: Option<u32>,
+    args: Args,
 ) {
     let entries = kaspad.get_utxos_by_addresses(vec![kaspa_addr.clone()]).await.unwrap();
     assert!(!entries.is_empty(), "No UTXOs found! Fund your address: {}", kaspa_addr);
