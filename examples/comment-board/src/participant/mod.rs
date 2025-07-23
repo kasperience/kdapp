@@ -388,7 +388,7 @@ async fn run_comment_board(
                 let balance_info = utxo_manager.get_balance_info();
                 balance_info.display();
             } else {
-                println!("⏰ No bonds ready to unlock yet. Bonds unlock 24 hours after posting with no disputes.");
+                println!("⏰ No bonds ready to unlock yet. Bonds unlock 10 minutes after posting with no disputes.");
             }
             continue;
         }
@@ -440,14 +440,14 @@ async fn run_comment_board(
                             match utxo_manager.lock_utxo_for_comment(
                                 latest_comment.id, 
                                 bond_amount, 
-                                86400 // 24 hours lock period
+                                600 // 10 minutes lock period for testing
                             ) {
                                 Ok(utxo_ref) => {
                                     println!("🔒 Locked {:.6} KAS bond for comment {} (UTXO: {})", 
                                              bond_amount as f64 / 100_000_000.0, 
                                              latest_comment.id, 
                                              utxo_ref);
-                                    println!("⏰ Bond will unlock automatically in 24 hours if no disputes");
+                                    println!("⏰ Bond will unlock automatically in 10 minutes if no disputes");
                                 },
                                 Err(e) => {
                                     warn!("Failed to lock UTXO for bond: {}", e);
