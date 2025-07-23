@@ -211,9 +211,9 @@ pub struct VoteResult {
 impl Default for RoomRules {
     fn default() -> Self {
         RoomRules {
-            // Conservative defaults for initial showcase
-            min_bond: 1000,              // 0.001 KAS (very low barrier)
-            max_bond: 100000,            // 0.1 KAS (reasonable max)
+            // Conservative defaults for initial showcase (10x reduced for testing)
+            min_bond: 100,               // 0.0001 KAS (very low barrier)
+            max_bond: 10000,             // 0.01 KAS (reasonable max)
             penalty_multiplier: 2.0,     // Double penalty for violations
             reward_pool_percentage: 0.8, // 80% of penalties become rewards
             

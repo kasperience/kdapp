@@ -40,8 +40,8 @@ pub struct ContractArgs {
 pub enum TerminalCommand {
     /// Create a new comment room with custom rules and economic parameters
     CreateRoom {
-        /// Minimum bond amount in sompi (default: 1000 = 0.00001 KAS)
-        #[arg(long, default_value_t = 1000)]
+        /// Minimum bond amount in sompi (default: 100 = 0.000001 KAS)
+        #[arg(long, default_value_t = 100)]
         min_bond: u64,
         
         /// Maximum comment length (default: 500)
@@ -57,7 +57,7 @@ pub enum TerminalCommand {
         community_moderation: bool,
         
         /// Initial funding for the room in sompi
-        #[arg(long, default_value_t = 100000)]
+        #[arg(long, default_value_t = 10000)]
         initial_funding: u64,
         
         /// Custom episode lifetime in seconds (default: 259200 = 3 days)
@@ -76,7 +76,7 @@ pub enum TerminalCommand {
     /// Join an existing room with a participation bond
     JoinRoom {
         /// Bond amount to lock for participation (must meet room minimum)
-        #[arg(long, default_value_t = 1000)]
+        #[arg(long, default_value_t = 100)]
         bond_amount: u64,
     },
     
@@ -86,7 +86,7 @@ pub enum TerminalCommand {
         text: String,
         
         /// Bond amount for this comment (higher bonds show more confidence)
-        #[arg(long, default_value_t = 1000)]
+        #[arg(long, default_value_t = 100)]
         bond: u64,
     },
     
@@ -113,7 +113,7 @@ pub enum TerminalCommand {
         decision: CliVoteDecision,
         
         /// KAS amount to stake on this vote (shows confidence)
-        #[arg(long, default_value_t = 500)]
+        #[arg(long, default_value_t = 50)]
         stake: u64,
     },
     
@@ -123,7 +123,7 @@ pub enum TerminalCommand {
         comment_id: u64,
         
         /// KAS to stake on this upvote
-        #[arg(long, default_value_t = 100)]
+        #[arg(long, default_value_t = 10)]
         stake: u64,
     },
     
@@ -133,7 +133,7 @@ pub enum TerminalCommand {
         comment_id: u64,
         
         /// KAS to stake on this downvote
-        #[arg(long, default_value_t = 100)]
+        #[arg(long, default_value_t = 10)]
         stake: u64,
     },
     
