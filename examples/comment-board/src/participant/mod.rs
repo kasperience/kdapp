@@ -185,21 +185,17 @@ async fn run_comment_board(
     let (received_episode_id, mut state) = response_receiver.recv().await.unwrap();
     println!("📺 Connected to room: Episode {}", received_episode_id);
     
-    // Display contract status instead of basic state
-    println!("=== 💰 Episode Contract Room ===");
-    println!("💬 Comments: {}", state.comments.len());
-    println!("👥 Members: {}", state.room_members.len());
-    println!("🔒 Total Locked: {:.6} KAS", state.total_locked_value as f64 / 100_000_000.0);
-    println!("⚖️ Penalty Pool: {:.6} KAS", state.penalty_pool as f64 / 100_000_000.0);
+    // Display simple comment board
+    println!("=== 💬 Comment Board ===");
+    println!("Comments: {} | Members: {}", state.comments.len(), state.room_members.len());
     for comment in &state.comments {
-        println!("[{}] {}: {} (Bond: {:.6} KAS)", 
+        println!("[{}] {}: {}", 
             comment.timestamp, 
             &comment.author[..8], 
-            comment.text,
-            comment.bond_amount as f64 / 100_000_000.0
+            comment.text
         );
     }
-    println!("===============================");
+    println!("========================");
 
     // TODO: Forbidden words feature temporarily disabled (not working properly)
     // Will be restored in future commit once authorization issues are resolved
@@ -332,20 +328,17 @@ async fn run_comment_board(
     loop {
         // Display current state
         if received_id == episode_id {
-            // Display contract status
-            println!("=== 💰 Episode Contract Room ===");
-            println!("💬 Comments: {}", state.comments.len());
-            println!("👥 Members: {}", state.room_members.len());
-            println!("🔒 Total Locked: {:.6} KAS", state.total_locked_value as f64 / 100_000_000.0);
+            // Display simple comment board
+            println!("=== 💬 Comment Board ===");
+            println!("Comments: {} | Members: {}", state.comments.len(), state.room_members.len());
             for comment in &state.comments {
-                println!("[{}] {}: {} (Bond: {:.6} KAS)", 
+                println!("[{}] {}: {}", 
                     comment.timestamp, 
                     &comment.author[..8], 
-                    comment.text,
-                    comment.bond_amount as f64 / 100_000_000.0
+                    comment.text
                 );
             }
-            println!("===============================");
+            println!("========================");
         }
 
         // Get user input
