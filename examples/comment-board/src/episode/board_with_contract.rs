@@ -202,7 +202,7 @@ impl ContractCommentBoard {
         self.contract.room_members.push(participant_str.clone());
         self.contract.total_locked_value += bond_amount;
         
-        info!("[ContractCommentBoard] ✅ {} joined room with {} KAS bond", 
+        info!("[ContractCommentBoard] ✅ {} joined room with {} bond", 
               participant_str, format_kas_amount(bond_amount));
         
         Ok(ContractRollback {
@@ -340,7 +340,7 @@ impl ContractCommentBoard {
         self.contract.total_locked_value += bond_amount;
         self.next_comment_id += 1;
         
-        info!("[ContractCommentBoard] Comment {} posted by {} with {} KAS bond", 
+        info!("[ContractCommentBoard] Comment {} posted by {} with {} bond", 
               comment_id, participant_str, format_kas_amount(bond_amount));
         
         Ok(ContractRollback {
