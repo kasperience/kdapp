@@ -141,8 +141,8 @@ async fn run_comment_board(
     let entry = entries.first().cloned();
     let mut utxo = entry.map(|entry| (TransactionOutpoint::from(entry.outpoint), UtxoEntry::from(entry.utxo_entry))).unwrap();
 
-    // Initialize UTXO lock manager for real economic enforcement
-    let mut utxo_manager = UtxoLockManager::new(&kaspad, kaspa_addr.clone()).await.unwrap();
+    // Initialize UTXO lock manager for real economic enforcement - Phase 1.1
+    let mut utxo_manager = UtxoLockManager::new(&kaspad, kaspa_addr.clone(), kaspa_signer).await.unwrap();
     info!("🏦 Wallet initialized with {:.6} KAS available", utxo_manager.get_available_balance() as f64 / 100_000_000.0);
 
     let generator = generator::TransactionGenerator::new(kaspa_signer, PATTERN, PREFIX);
@@ -435,22 +435,23 @@ async fn run_comment_board(
                     if latest_comment.text == comment_text && latest_comment.author == format!("{}", participant_pk) {
                         println!("✅ Comment added to blockchain!");
                         
-                        // 🔒 REAL UTXO LOCKING: Lock the bond if one was used
+                        // 🔒 PHASE 1.1: Create REAL bond transaction on Kaspa blockchain
                         if bond_amount > 0 {
                             match utxo_manager.lock_utxo_for_comment(
                                 latest_comment.id, 
                                 bond_amount, 
                                 600 // 10 minutes lock period for testing
-                            ) {
-                                Ok(utxo_ref) => {
-                                    println!("🔒 Locked {:.6} KAS bond for comment {} (UTXO: {})", 
-                                             bond_amount as f64 / 100_000_000.0, 
+                            ).await {
+                                Ok(bond_tx_id) => {
+                                    println!("🔒 Created REAL bond transaction {} for comment {} ({:.6} KAS)", 
+                                             bond_tx_id, 
                                              latest_comment.id, 
-                                             utxo_ref);
-                                    println!("⏰ Bond will unlock automatically in 10 minutes if no disputes");
+                                             bond_amount as f64 / 100_000_000.0);
+                                    println!("⏳ Bond transaction submitted to Kaspa blockchain - awaiting confirmation");
+                                    println!("⏰ Bond will unlock in 10 minutes after confirmation (if no disputes)");
                                 },
                                 Err(e) => {
-                                    warn!("Failed to lock UTXO for bond: {}", e);
+                                    warn!("Failed to create bond transaction: {}", e);
                                 }
                             }
                             
