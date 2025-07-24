@@ -81,9 +81,9 @@ Everyone comments: Each person pays ~0.001 TKAS per comment
 Result: Alice paid ~0.001 TKAS total, not drained by others! ✅
 ```
 
-## 💰 Economic Episode Contracts: Real UTXO Locking
+## 💰 Economic Episode Contracts: Incentive-Based Economics
 
-This implements **true economic episode contracts** - the first kdapp example with real wallet enforcement:
+This implements **economic episode contracts** - the first kdapp example with voluntary economic participation:
 
 ### 🎯 **Two Usage Modes**
 
@@ -99,19 +99,35 @@ cargo run -- participant --kaspa-private-key <key>
 ```bash
 cargo run -- participant --kaspa-private-key <key> --bonds
 ```
-- **100 KAS bond per comment** - real economic enforcement
-- **Bonds lock for 10 minutes** - prevents spam flooding
-- **Automatic unlock** - funds return to your wallet after timer
+- **100 KAS bond per comment** - economic incentive system
+- **Bonds tracked for 10 minutes** - encourages thoughtful participation  
+- **Honor system unlock** - participants choose to follow economic rules
 - **Good for**: High-quality discussions, preventing abuse
 
-### 🔒 **How Real UTXO Locking Works**
+### 🎮 **How Incentive-Based Economics Works**
 
-1. **Comment Submission** → 100 KAS locks in your wallet (balance decreases)
-2. **10 Minute Timer** → Funds are truly unavailable for spending  
-3. **Automatic Release** → Use `unlock` command to reclaim expired bonds
-4. **Balance Protection** → Cannot comment if insufficient unlocked funds
+1. **Comment Submission** → 100 KAS tracked as "bonded" (application accounting)
+2. **10 Minute Timer** → Encourages participants to honor the economic game
+3. **Voluntary Unlock** → Use `unlock` command when timer expires
+4. **Balance Tracking** → Application prevents new comments if "bonds" exceed balance
 
-This is **real economic enforcement**, not fake point systems!
+This is **economic theater** - voluntary participation in economic rules, not blockchain enforcement!
+
+### ⚠️ **Technical Honesty: What This Is and Isn't**
+
+**✅ What it IS:**
+- Application-level economic accounting
+- Incentive system encouraging good behavior
+- Game theory in action - people follow rules because it benefits them
+- Proof-of-concept for episode-based economics
+
+**❌ What it ISN'T:**
+- True blockchain UTXO locking (funds can be spent externally)
+- Consensus-level enforcement (requires protocol changes)
+- Technically preventing fund movement (only application prevents it)
+- Real smart contract locking (that would need deeper integration)
+
+**The beauty**: It works through **voluntary economic alignment**, not technical coercion!
 
 ### How the Bond is Enforced (On-Chain vs. Off-Chain State)
 
