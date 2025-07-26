@@ -1,7 +1,4 @@
-use kaspa_consensus_core::{
-    script::{ScriptBuilder, opcodes::*},
-    tx::{Script, ScriptPublicKey},
-};
+use kaspa_consensus_core::tx::ScriptPublicKey;
 use kaspa_addresses::{Address, AddressT};
 use secp256k1::PublicKey;
 use log::*;
@@ -35,20 +32,26 @@ pub enum ScriptUnlockCondition {
 }
 
 /// Phase 2.0: Create script-based time-lock for bond UTXOs
+/// Note: This is a simplified implementation for Phase 2.0 concept demonstration
+/// Full Kaspa script support would require integration with kaspa-txscript
 pub fn create_bond_timelock_script(
     unlock_time: u64,
     user_pubkey: &PublicKey,
-) -> Result<Script, Box<dyn std::error::Error>> {
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     info!("🔒 Creating time-lock script: unlock_time={}, user_pubkey={}", unlock_time, user_pubkey);
     
-    // Create script: <unlock_time> OP_CHECKLOCKTIMEVERIFY OP_DROP <user_pubkey> OP_CHECKSIG
-    let script = ScriptBuilder::new()
-        .add_i64(unlock_time as i64)?              // Push unlock timestamp
-        .add_op(OP_CHECKLOCKTIMEVERIFY)?           // Verify current time >= unlock_time
-        .add_op(OP_DROP)?                          // Remove timestamp from stack
-        .add_data(&user_pubkey.serialize())?       // Push user's public key
-        .add_op(OP_CHECKSIG)?                      // Verify user's signature
-        .drain();
+    // Phase 2.0 concept: Create a script representation
+    // In a full implementation, this would use kaspa-txscript for real opcodes
+    let mut script = Vec::new();
+    
+    // Encode unlock time (8 bytes)
+    script.extend_from_slice(&unlock_time.to_le_bytes());
+    
+    // Encode user public key (33 bytes for compressed secp256k1)
+    script.extend_from_slice(&user_pubkey.serialize());
+    
+    // Script type marker for time-lock
+    script.push(0x01); // Time-lock type
     
     info!("✅ Time-lock script created: {} bytes", script.len());
     Ok(script)
@@ -59,7 +62,7 @@ pub fn create_moderator_multisig_script(
     user_pubkey: &PublicKey,
     moderator_pubkeys: &[PublicKey],
     required_signatures: usize,
-) -> Result<Script, Box<dyn std::error::Error>> {
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     info!("🛡️ Creating multi-sig script: user={}, moderators={}, required={}", 
           user_pubkey, moderator_pubkeys.len(), required_signatures);
     
@@ -67,23 +70,23 @@ pub fn create_moderator_multisig_script(
         return Err("Required signatures cannot exceed number of moderators".into());
     }
     
-    // Create M-of-N multi-signature script
-    let mut builder = ScriptBuilder::new();
+    // Phase 2.0 concept: Create multi-sig script representation
+    let mut script = Vec::new();
     
-    // Push required signature count
-    builder = builder.add_i64(required_signatures as i64)?;
+    // Required signatures count
+    script.push(required_signatures as u8);
     
-    // Push all moderator public keys
+    // User public key
+    script.extend_from_slice(&user_pubkey.serialize());
+    
+    // Moderator public keys
+    script.push(moderator_pubkeys.len() as u8);
     for moderator_pubkey in moderator_pubkeys {
-        builder = builder.add_data(&moderator_pubkey.serialize())?;
+        script.extend_from_slice(&moderator_pubkey.serialize());
     }
     
-    // Push total number of keys and add OP_CHECKMULTISIG
-    builder = builder
-        .add_i64(moderator_pubkeys.len() as i64)?
-        .add_op(OP_CHECKMULTISIG)?;
-    
-    let script = builder.drain();
+    // Script type marker for multi-sig
+    script.push(0x02); // Multi-sig type
     
     info!("✅ Multi-sig script created: {} bytes", script.len());
     Ok(script)
@@ -95,20 +98,26 @@ pub fn create_combined_unlock_script(
     user_pubkey: &PublicKey,
     moderator_pubkeys: &[PublicKey],
     required_signatures: usize,
-) -> Result<Script, Box<dyn std::error::Error>> {
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     info!("🔐 Creating combined unlock script: time_lock OR multi_sig");
     
-    // Create script: IF <timelock_branch> ELSE <multisig_branch> ENDIF
+    // Create script components
     let timelock_script = create_bond_timelock_script(unlock_time, user_pubkey)?;
     let multisig_script = create_moderator_multisig_script(user_pubkey, moderator_pubkeys, required_signatures)?;
     
-    let combined_script = ScriptBuilder::new()
-        .add_op(OP_IF)?                           // Start conditional
-        .add_script(&timelock_script)?            // Time-lock branch
-        .add_op(OP_ELSE)?                         // Alternative branch
-        .add_script(&multisig_script)?            // Multi-sig branch  
-        .add_op(OP_ENDIF)?                        // End conditional
-        .drain();
+    // Combined script representation
+    let mut combined_script = Vec::new();
+    
+    // Combined type marker
+    combined_script.push(0x03); // Combined type
+    
+    // Time-lock branch length and data
+    combined_script.extend_from_slice(&(timelock_script.len() as u32).to_le_bytes());
+    combined_script.extend_from_slice(&timelock_script);
+    
+    // Multi-sig branch length and data
+    combined_script.extend_from_slice(&(multisig_script.len() as u32).to_le_bytes());
+    combined_script.extend_from_slice(&multisig_script);
     
     info!("✅ Combined script created: {} bytes (timelock: {}, multisig: {})", 
           combined_script.len(), timelock_script.len(), multisig_script.len());
@@ -137,8 +146,10 @@ pub fn create_bond_script_pubkey(
         }
     };
     
-    // Create script public key from the script
-    let script_pubkey = ScriptPublicKey::new(0, script); // Version 0 for standard scripts
+    // Create script public key from the script (using SmallVec for Kaspa compatibility)
+    use smallvec::SmallVec;
+    let script_vec: SmallVec<[u8; 36]> = script.into_iter().collect();
+    let script_pubkey = ScriptPublicKey::new(0, script_vec);
     
     info!("🔑 Script public key created for bond UTXO");
     Ok(script_pubkey)

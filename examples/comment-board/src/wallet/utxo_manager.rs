@@ -311,6 +311,7 @@ impl UtxoLockManager {
         use crate::utils::{PATTERN, PREFIX, FEE};
         use kdapp::generator::TransactionGenerator;
         use kaspa_consensus_core::tx::{Transaction, TransactionInput, TransactionOutput, UtxoEntry as CoreUtxoEntry};
+        use kaspa_consensus_core::subnets::SubnetworkId;
         
         // Create bond payload with script information
         let bond_payload = format!("SCRIPT_BOND:{}:{}:{}", 
@@ -359,7 +360,7 @@ impl UtxoLockManager {
         };
         
         // Create change output back to user
-        let change_script_pubkey = ScriptPublicKey::new(0, vec![]); // Standard P2PK script for user
+        let change_script_pubkey = ScriptPublicKey::new(0, vec![].into()); // Standard P2PK script for user
         let change_output = TransactionOutput {
             value: change_amount,
             script_public_key: change_script_pubkey,
@@ -375,7 +376,7 @@ impl UtxoLockManager {
                 vec![script_output] 
             },
             0, // lock_time
-            0, // subnetwork_id
+            SubnetworkId::from_bytes([0; 20]), // subnetwork_id
             0, // gas
             bond_payload.into_bytes(),
         );
@@ -441,7 +442,7 @@ impl UtxoLockManager {
         let tx_id = bond_tx.id().to_string();
         
         // Submit REAL transaction to Kaspa blockchain
-        match self.kaspad.submit_transaction((&bond_tx).into(), false).await {
+        match self.kaspad_client.submit_transaction((&bond_tx).into(), false).await {
             Ok(_) => {
                 info!("✅ REAL bond transaction {} successfully submitted to Kaspa blockchain", tx_id);
                 info!("🔗 Phase 1.2: On-chain proof created for comment {} bond ({:.6} KAS)", 
@@ -535,7 +536,7 @@ impl UtxoLockManager {
         
         for (comment_id, tx_id) in &self.pending_bonds {
             // Check if transaction is confirmed by looking for it in the blockchain
-            match self.kaspad.get_utxos_by_addresses(vec![self.kaspa_address.clone()]).await {
+            match self.kaspad_client.get_utxos_by_addresses(vec![self.kaspa_address.clone()]).await {
                 Ok(entries) => {
                     // If we can see UTXOs, the transaction likely confirmed
                     if !entries.is_empty() {
