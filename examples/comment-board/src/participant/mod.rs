@@ -350,7 +350,7 @@ async fn run_comment_board(
 
         // Get user input
         input.clear();
-        println!("Enter your comment (or 'quit' to exit, 'balance' for wallet info, 'unlock' to check unlockable bonds):");
+        println!("Enter your comment (or 'quit', 'balance', 'unlock', 'bonds', 'upgrade', 'script-bond'):");
         std::io::stdin().read_line(&mut input).unwrap();
         let comment_text = input.trim();
 
@@ -397,6 +397,136 @@ async fn run_comment_board(
             } else {
                 println!("⏰ No bonds ready to unlock yet. Bonds unlock 10 minutes after posting with no disputes.");
             }
+            continue;
+        }
+
+        // Phase 2.0: Enhanced bond status with enforcement level details
+        if comment_text == "bonds" {
+            println!("=== 🔒 Bond Status (Phase 1.2 + 2.0) ===");
+            if utxo_manager.locked_utxos.is_empty() {
+                println!("No active bonds");
+            } else {
+                for (comment_id, locked_utxo) in &utxo_manager.locked_utxos {
+                    match &locked_utxo.enforcement_level {
+                        crate::wallet::utxo_manager::BondEnforcementLevel::ApplicationLayer { proof_transaction_id } => {
+                            println!("💬 Comment {}: {:.6} KAS (Phase 1.2 - Application Layer)", 
+                                   comment_id, locked_utxo.bond_amount as f64 / 100_000_000.0);
+                            println!("  🔗 Proof TX: {}", proof_transaction_id);
+                            println!("  ⚠️  Enforcement: Application-layer tracking");
+                        }
+                        crate::wallet::utxo_manager::BondEnforcementLevel::ScriptBased { script_pubkey, unlock_script_condition } => {
+                            println!("🔐 Comment {}: {:.6} KAS (Phase 2.0 - Script Enforced)", 
+                                   comment_id, locked_utxo.bond_amount as f64 / 100_000_000.0);
+                            println!("  🔒 Script size: {} bytes", script_pubkey.script().len());
+                            println!("  ✅ Enforcement: TRUE blockchain script-based locking");
+                            match unlock_script_condition {
+                                crate::wallet::kaspa_scripts::ScriptUnlockCondition::TimeLock { unlock_time, .. } => {
+                                    println!("  ⏰ Unlock time: {} (time-lock only)", unlock_time);
+                                }
+                                crate::wallet::kaspa_scripts::ScriptUnlockCondition::TimeOrModerator { unlock_time, moderator_pubkeys, required_signatures, .. } => {
+                                    println!("  ⏰ Unlock time: {} OR moderator consensus", unlock_time);
+                                    println!("  👥 Moderators: {} (require {} signatures)", moderator_pubkeys.len(), required_signatures);
+                                }
+                                _ => {
+                                    println!("  🛡️ Complex unlock conditions");
+                                }
+                            }
+                        }
+                    }
+                    if let Some(confirmation_height) = locked_utxo.confirmation_height {
+                        println!("  ✅ Confirmed at height {}", confirmation_height);
+                    } else {
+                        println!("  ⏳ Pending confirmation");
+                    }
+                    println!("  🔗 Explorer: https://explorer-tn10.kaspa.org/txs/{}", locked_utxo.bond_transaction_id);
+                }
+            }
+            println!("=====================");
+            continue;
+        }
+
+        // Phase 2.0: Upgrade existing Phase 1.2 bonds to Phase 2.0 script-based enforcement
+        if comment_text == "upgrade" {
+            println!("=== 🔄 Upgrade Bonds to Phase 2.0 ===");
+            
+            // Find application-layer bonds that can be upgraded
+            let upgradeable_bonds: Vec<u64> = utxo_manager.locked_utxos.iter()
+                .filter_map(|(comment_id, bond)| {
+                    match &bond.enforcement_level {
+                        crate::wallet::utxo_manager::BondEnforcementLevel::ApplicationLayer { .. } => Some(*comment_id),
+                        _ => None,
+                    }
+                })
+                .collect();
+            
+            if upgradeable_bonds.is_empty() {
+                println!("❌ No Phase 1.2 bonds available for upgrade");
+                println!("💡 Only application-layer bonds can be upgraded to script-based enforcement");
+            } else {
+                println!("🔄 Upgradeable bonds found: {}", upgradeable_bonds.len());
+                for comment_id in &upgradeable_bonds {
+                    if let Some(bond) = utxo_manager.locked_utxos.get(comment_id) {
+                        println!("  💬 Comment {}: {:.6} KAS", comment_id, bond.bond_amount as f64 / 100_000_000.0);
+                    }
+                }
+                
+                println!("\n🔐 Upgrading first bond to Phase 2.0 script-based enforcement...");
+                if let Some(first_comment_id) = upgradeable_bonds.first() {
+                    match utxo_manager.upgrade_bond_to_script_based(*first_comment_id, None, None).await {
+                        Ok(new_tx_id) => {
+                            println!("✅ Bond upgrade successful!");
+                            println!("🔗 New script-based transaction: {}", new_tx_id);
+                            println!("🔒 Funds are now TRULY locked by blockchain script");
+                            println!("💎 No application trust required - pure cryptographic enforcement");
+                        }
+                        Err(e) => {
+                            println!("❌ Upgrade failed: {}", e);
+                        }
+                    }
+                }
+            }
+            println!("===============================");
+            continue;
+        }
+
+        // Phase 2.0: Create new script-based bond directly
+        if comment_text == "script-bond" {
+            println!("=== 🔐 Create Phase 2.0 Script-Based Bond ===");
+            
+            let balance_info = utxo_manager.get_balance_info();
+            balance_info.display();
+            
+            if balance_info.available_balance < 100_000_000 { // 1 KAS minimum
+                println!("❌ Insufficient balance for script-based bond");
+                println!("💰 Minimum: 1.0 KAS, Available: {:.6} KAS", balance_info.available_balance as f64 / 100_000_000.0);
+            } else {
+                println!("\n🔒 Creating Phase 2.0 script-based bond...");
+                println!("💰 Bond amount: 100.000000 KAS");
+                println!("⏰ Lock duration: 10 minutes");
+                println!("🔐 Enforcement: TRUE blockchain script-based locking");
+                
+                let next_comment_id = state.total_comments + 1000; // Use high comment ID for testing
+                match utxo_manager.create_script_based_bond(
+                    next_comment_id,
+                    100_000_000, // 100 KAS
+                    600, // 10 minutes
+                    None, // No moderators for now
+                    None,
+                ).await {
+                    Ok(bond_tx_id) => {
+                        println!("✅ Phase 2.0 script-based bond created successfully!");
+                        println!("🔗 Transaction ID: {}", bond_tx_id);
+                        println!("🔒 Funds are TRULY locked by blockchain script");
+                        println!("💎 Zero trust required - cryptographic enforcement only");
+                        println!("⏰ Will automatically unlock in 10 minutes");
+                        println!("🔗 Explorer: https://explorer-tn10.kaspa.org/txs/{}", bond_tx_id);
+                    }
+                    Err(e) => {
+                        println!("❌ Script-based bond creation failed: {}", e);
+                    }
+                }
+            }
+            println!("===============================");
             continue;
         }
 
