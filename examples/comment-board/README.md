@@ -55,11 +55,36 @@ cargo run -- participant --kaspa-private-key <your-key> --room-episode-id 123456
 3. **Verification**: Cryptographic proof of key ownership
 4. **Authenticated**: Can now post comments to the room
 
-### 💬 Interactive Commands (While in Session)
+### 💬 Basic Interactive Commands
 - **Type any text** → Submit comment to the blockchain
 - **`balance`** → Check wallet status and locked bonds
 - **`unlock`** → Release expired comment bonds back to wallet
 - **`quit`** → Exit session (comments remain on blockchain forever)
+
+### 🚀 **Phase 2.0 Revolutionary Commands**
+
+#### **`script-bond`** - TRUE Blockchain-Enforced Bonds
+```
+Enter: script-bond
+Creates: 100 KAS bond with REAL blockchain script enforcement
+Revolutionary: Funds truly locked by cryptographic scripts (no app trust!)
+First-Ever: Episode Contracts with mathematical enforcement on Kaspa L1
+```
+
+#### **`upgrade`** - Migrate to Cryptographic Enforcement  
+```
+Enter: upgrade
+Action: Converts Phase 1.2 bonds to Phase 2.0 script-based enforcement
+Historic: First live migration from application-trust to crypto-enforcement
+Result: Your bonds become TRULY blockchain-locked UTXOs
+```
+
+#### **`bonds`** - Enhanced Bond Inspector
+```
+Shows: 💬 Phase 1.2 (App Layer) vs 🔐 Phase 2.0 (Script Enforced)
+Details: Script sizes, unlock conditions, confirmation status
+Explorer: Direct Kaspa blockchain verification links
+```
 
 ### 🔄 Session Flow Example
 ```
