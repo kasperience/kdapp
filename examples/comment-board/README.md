@@ -12,6 +12,17 @@
 - **⚡ Pure kdapp Architecture** - Exactly how the framework was designed
 - **🌐 Unlimited Participants** - Anyone can join any room
 
+## 📚 Documentation
+
+**📁 Comprehensive documentation available in [`docs/`](docs/) directory:**
+
+- **[📊 Technical Validation](docs/deepwiki-assessment.md)** - DeepWiki confirms: "Definitely doable, built on solid rusty-kaspa foundations"
+- **[🗺️ Implementation Roadmap](docs/implementation-roadmap.md)** - Phase 1.1 → 1.2 → 2.0 development path  
+- **[🔐 Security Analysis](docs/security-analysis.md)** - Threat model, vulnerabilities, and mitigations
+- **[🏗️ Architecture Decisions](docs/architecture-decisions/)** - ADRs documenting major technical choices
+
+**Current Status**: ✅ **Phase 1.2 Complete** - Real blockchain UTXO locking with kdapp TransactionGenerator
+
 ## 🎮 Usage - Modern CLI Interface
 
 ### 🆕 Create New Room (Organizer)

@@ -77,7 +77,7 @@ impl Episode for ContractCommentBoard {
                 user_reputation_cache: HashMap::new(),
                 active_votes: HashMap::new(),
                 contract_created_at: metadata.accepting_time,
-                contract_expires_at: metadata.accepting_time + 7776000,
+                contract_expires_at: std::cmp::max(metadata.accepting_time + 7776000, 2000000000), // Ensure contract doesn't expire before 2033
                 showcase_highlights: vec![],
             };
         }
@@ -96,7 +96,7 @@ impl Episode for ContractCommentBoard {
             Some(7776000) // 3 months default lifetime (90 days)
         );
         
-        let expires_at = metadata.accepting_time + 7776000; // 3 months from creation
+        let expires_at = std::cmp::max(metadata.accepting_time + 7776000, 2000000000); // Ensure contract doesn't expire before 2033
         
         info!("[ContractCommentBoard] Episode contract created, expires at: {}", expires_at);
         
@@ -129,8 +129,9 @@ impl Episode for ContractCommentBoard {
 
         // Check if contract has expired
         if metadata.accepting_time > self.contract_expires_at {
+            warn!("Contract expired: current_time={}, expires_at={}", metadata.accepting_time, self.contract_expires_at);
             return Err(EpisodeError::InvalidCommand(
-                ContractError::ContractExpired { episode_id: 0 } // episode_id would come from context
+                ContractError::ContractExpired { episode_id: 0 } // TODO: Get actual episode_id from context
             ));
         }
 

@@ -137,7 +137,14 @@ async fn run_comment_board(
     args: Args,
 ) {
     let entries = kaspad.get_utxos_by_addresses(vec![kaspa_addr.clone()]).await.unwrap();
-    assert!(!entries.is_empty(), "No UTXOs found! Fund your address: {}", kaspa_addr);
+    if entries.is_empty() {
+        println!("❌ No funds found in wallet!");
+        println!("💰 Your address: {}", kaspa_addr);
+        println!("🚰 Get testnet KAS from: https://faucet.kaspanet.io/");
+        println!("🔗 Check balance: https://explorer-tn10.kaspa.org/addresses/{}", kaspa_addr);
+        println!("⏳ Wait 1-2 minutes after requesting from faucet, then try again");
+        return;
+    }
     let entry = entries.first().cloned();
     let mut utxo = entry.map(|entry| (TransactionOutpoint::from(entry.outpoint), UtxoEntry::from(entry.utxo_entry))).unwrap();
 
