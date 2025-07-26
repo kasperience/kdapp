@@ -12,10 +12,13 @@ include.workspace = true
 anyhow = "1.0.98"
 clap = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "fs"] }
-keyring = { version = "2.0.0", features = ["windows-native"] }
+keyring = { version = "3.0.0", features = ["windows-native"] }
 kaspa-core = { workspace = true }
 kaspa-wrpc-client = { workspace = true }
 kaspa-consensus-core = { workspace = true }
 kaspa-addresses = { workspace = true }
+kaspa-rpc-core = { workspace = true }
 hex = "0.4"
 secp256k1 = { workspace = true, features = ["global-context", "rand-std"] }
+rand = "0.8"
+workflow-rpc = { workspace = true }

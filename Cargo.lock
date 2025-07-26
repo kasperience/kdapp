@@ -598,6 +598,7 @@ dependencies = [
  "secp256k1",
  "serde",
  "sha2",
+ "smallvec",
  "thiserror 1.0.69",
  "tokio",
 ]
@@ -2207,12 +2208,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdapp-wallet"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "kaspa-addresses",
+ "kaspa-consensus-core",
+ "kaspa-core",
+ "kaspa-rpc-core",
+ "kaspa-wrpc-client",
+ "keyring",
+ "rand 0.8.5",
+ "secp256k1",
+ "tokio",
+ "workflow-rpc",
+]
+
+[[package]]
 name = "keccak"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
 dependencies = [
  "cpufeatures",
+]
+
+[[package]]
+name = "keyring"
+version = "3.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1961983669d57bdfe6c0f3ef8e4c229b5ef751afcc7d87e4271d2f71f6ccfa8b"
+dependencies = [
+ "byteorder",
+ "log",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3780,9 +3811,11 @@ checksum = "c6989540ced10490aaf14e6bad2e3d33728a2813310a0c71d1574304c49631cd"
 dependencies = [
  "futures-util",
  "log",
+ "native-tls",
  "rustls",
  "rustls-pki-types",
  "tokio",
+ "tokio-native-tls",
  "tokio-rustls",
  "tungstenite 0.23.0",
  "webpki-roots 0.26.11",
@@ -4016,6 +4049,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
+ "native-tls",
  "rand 0.8.5",
  "rustls",
  "rustls-pki-types",

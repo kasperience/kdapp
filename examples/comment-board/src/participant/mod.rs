@@ -574,6 +574,13 @@ async fn run_comment_board(
                         
                         // 🔒 PHASE 1.1: Create REAL bond transaction on Kaspa blockchain
                         if bond_amount > 0 {
+                            // 🔄 Refresh UTXO state after comment transaction
+                            println!("🔄 Refreshing UTXO state after comment transaction...");
+                            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await; // Small delay for transaction processing
+                            if let Err(e) = utxo_manager.refresh_utxos(&kaspad).await {
+                                println!("⚠️ Warning: Could not refresh UTXOs: {}", e);
+                            }
+                            
                             match utxo_manager.lock_utxo_for_comment(
                                 latest_comment.id, 
                                 bond_amount, 
