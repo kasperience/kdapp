@@ -1,16 +1,16 @@
-# Comment Board - Real Economic Episode Contract! 🚀
+# Comment Board - Economic Episode Contract
 
-**Revolutionary**: First kdapp example with true economic enforcement on Kaspa L1!
+kdapp example with economic enforcement on Kaspa L1.
 
-## 🚀 Features - The CORRECT Way!
+## Features
 
-- **💎 Episode Contracts** - First-ever economic smart contracts on kdapp/Kaspa L1!
-- **🎯 One Episode, Many Wallets** - Shared room state, individual payments
-- **💰 Fair Economics** - You pay for your own comments, nobody can drain others
-- **🔐 Your Kaspa Key = Your Identity** - No separate comment keys needed!
-- **📺 Real-time Updates** - Everyone sees all comments instantly
-- **⚡ Pure kdapp Architecture** - Exactly how the framework was designed
-- **🌐 Unlimited Participants** - Anyone can join any room
+- **Episode Contracts** - Economic smart contracts on kdapp/Kaspa L1
+- **One Episode, Many Wallets** - Shared room state, individual payments
+- **Fair Economics** - You pay for your own comments, nobody can drain others
+- **Kaspa Key = Identity** - No separate comment keys needed
+- **Real-time Updates** - Everyone sees all comments instantly
+- **Pure kdapp Architecture** - Exactly how the framework was designed
+- **Unlimited Participants** - Anyone can join any room
 
 ## 📚 Documentation
 
@@ -21,7 +21,7 @@
 - **[🔐 Security Analysis](docs/security-analysis.md)** - Threat model, vulnerabilities, and mitigations
 - **[🏗️ Architecture Decisions](docs/architecture-decisions/)** - ADRs documenting major technical choices
 
-**Current Status**: ✅ **Phase 1.2 Complete** - Real blockchain UTXO locking with kdapp TransactionGenerator
+**Current Status**: Phase 2.0 Complete - Script-based UTXO locking with cryptographic enforcement
 
 ## 🎮 Usage - Modern CLI Interface
 
@@ -61,29 +61,27 @@ cargo run -- participant --kaspa-private-key <your-key> --room-episode-id 123456
 - **`unlock`** → Release expired comment bonds back to wallet
 - **`quit`** → Exit session (comments remain on blockchain forever)
 
-### 🚀 **Phase 2.0 Revolutionary Commands**
+### 🔒 **Phase 2.0 Script-Based Commands**
 
-#### **`script-bond`** - TRUE Blockchain-Enforced Bonds
+#### **`script-bond`** - Blockchain Script Enforcement
 ```
-Enter: script-bond
-Creates: 100 KAS bond with REAL blockchain script enforcement
-Revolutionary: Funds truly locked by cryptographic scripts (no app trust!)
-First-Ever: Episode Contracts with mathematical enforcement on Kaspa L1
-```
-
-#### **`upgrade`** - Migrate to Cryptographic Enforcement  
-```
-Enter: upgrade
-Action: Converts Phase 1.2 bonds to Phase 2.0 script-based enforcement
-Historic: First live migration from application-trust to crypto-enforcement
-Result: Your bonds become TRULY blockchain-locked UTXOs
+Creates 100 KAS bond with cryptographic script locking
+Funds locked by blockchain scripts, not application logic
+Episode Contracts with mathematical enforcement
 ```
 
-#### **`bonds`** - Enhanced Bond Inspector
+#### **`upgrade`** - Script Migration  
 ```
-Shows: 💬 Phase 1.2 (App Layer) vs 🔐 Phase 2.0 (Script Enforced)
+Converts Phase 1.2 bonds to Phase 2.0 script-based enforcement
+Migrates from application-trust to crypto-enforcement
+Bonds become blockchain-locked UTXOs
+```
+
+#### **`bonds`** - Bond Inspector
+```
+Shows Phase 1.2 (App Layer) vs Phase 2.0 (Script Enforced)
 Details: Script sizes, unlock conditions, confirmation status
-Explorer: Direct Kaspa blockchain verification links
+Includes blockchain verification links
 ```
 
 ### 🔄 Session Flow Example
