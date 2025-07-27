@@ -161,20 +161,20 @@ impl UtxoLockManager {
                   entry.amount as f64 / 100_000_000.0);
             
             // EMERGENCY MASS LIMIT PROTECTION: Refuse bond creation if UTXO too large
-            if entry.amount > 5_000_000_000 { // > 50 KAS - guaranteed mass limit failure
+            if entry.amount > 100_000 { // > 0.001 KAS - guaranteed mass limit failure (mass ≈ UTXO sompi value!)
                 return Err(format!(
                     "❌ MASS LIMIT PROTECTION: Selected UTXO ({:.6} KAS) will cause transaction mass > 100,000\n\
-                     💡 SOLUTION: Fund wallet with smaller amounts (< 50 KAS each) or use manual UTXO management\n\
-                     🔧 Alternative: Send multiple small transactions to your wallet instead of one large faucet request",
+                     💡 CRITICAL: Mass limit = 100,000, transaction mass ≈ UTXO amount in sompi\n\
+                     🔧 SOLUTION: Need micro-UTXOs < 0.001 KAS each! Use aggressive splitting.",
                     entry.amount as f64 / 100_000_000.0
                 ));
             }
             
             // Verify UTXO is safe for mass limit
-            if entry.amount > 2_000_000_000 { // > 20 KAS
+            if entry.amount > 50_000 { // > 0.0005 KAS
                 warn!("⚠️ Selected UTXO may cause mass limit issues: {:.6} KAS", 
                       entry.amount as f64 / 100_000_000.0);
-                warn!("💡 Consider splitting this UTXO first or funding wallet with smaller amounts");
+                warn!("💡 Need micro-UTXOs: < 0.001 KAS for guaranteed bond compatibility");
             }
                 let current_time = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -538,19 +538,19 @@ impl UtxoLockManager {
         let large_utxo = self.available_utxos.iter().find(|(_, entry)| entry.amount > max_utxo_size);
         
         if let Some((outpoint, entry)) = large_utxo.cloned() {
-            info!("🔄 Splitting large UTXO: {:.6} KAS -> 2 smaller chunks (conservative approach)", 
-                  entry.amount as f64 / 100_000_000.0);
+            use crate::utils::FEE;
             
-            use crate::utils::{PATTERN, PREFIX, FEE};
-            use kdapp::generator::TransactionGenerator;
+            // AGGRESSIVE MICRO-UTXO SPLITTING: Create many tiny UTXOs for bond compatibility
+            let target_chunk_size = 25_000; // 0.00025 KAS per chunk (well under mass limit)
+            let available_amount = entry.amount - FEE;
+            let num_outputs = std::cmp::min(available_amount / target_chunk_size, 100); // Max 100 outputs per transaction
+            let chunk_size = available_amount / num_outputs;
             
-            // CONSERVATIVE: Only create 2 outputs to minimize transaction mass
-            // Split the large UTXO roughly in half
-            let chunk_size = (entry.amount - FEE) / 2;
-            let num_outputs = 2; // Always just 2 outputs to minimize mass
+            info!("🔄 MICRO-SPLITTING large UTXO: {:.6} KAS -> {} tiny chunks (mass limit solution)", 
+                  entry.amount as f64 / 100_000_000.0, num_outputs);
             
-            if chunk_size < 1_000_000 { // Less than 0.01 KAS per chunk
-                return Err("UTXO too small to split (< 0.01 KAS per chunk)".to_string());
+            if chunk_size < 10_000 { // Less than 0.0001 KAS per chunk
+                return Err("UTXO too small to split into micro-UTXOs".to_string());
             }
             
             info!("📦 Creating {} UTXOs of ~{:.6} KAS each (minimizing transaction mass)", 
@@ -571,24 +571,26 @@ impl UtxoLockManager {
                 sig_op_count: 1,
             };
             
-            // Create two equal outputs
+            // Create multiple micro-UTXO outputs
             let script = kaspa_txscript::pay_to_address_script(&self.kaspa_address);
             
-            let output1 = TransactionOutput {
-                value: chunk_size,
-                script_public_key: script.clone(),
-            };
+            let mut outputs = Vec::new();
+            for _ in 0..num_outputs {
+                outputs.push(TransactionOutput {
+                    value: chunk_size,
+                    script_public_key: script.clone(),
+                });
+            }
             
-            let output2 = TransactionOutput {
-                value: chunk_size,
-                script_public_key: script,
-            };
+            info!("🔬 Creating {} micro-UTXOs of {:.6} KAS each (total: {:.6} KAS)", 
+                  outputs.len(), chunk_size as f64 / 100_000_000.0, 
+                  (chunk_size * num_outputs) as f64 / 100_000_000.0);
             
             // Build native wallet transaction (NO pattern matching!)
             let unsigned_tx = Transaction::new(
                 0,                              // version
                 vec![tx_input],                 // inputs
-                vec![output1, output2],         // outputs
+                outputs,                        // multiple micro-outputs
                 0,                              // lock_time
                 SubnetworkId::from_bytes([0; 20]), // subnetwork_id
                 0,                              // gas

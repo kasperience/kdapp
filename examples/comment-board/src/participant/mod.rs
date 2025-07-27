@@ -158,8 +158,8 @@ async fn run_comment_board(
     };
     info!("🏦 Wallet initialized with {:.6} KAS available", utxo_manager.get_available_balance() as f64 / 100_000_000.0);
 
-    // Auto-split large UTXOs to avoid transaction mass limit (100,000 mass = ~1 KAS max)
-    let max_safe_utxo = 100_000_000; // 1 KAS to stay well under mass limit
+    // Auto-split large UTXOs to avoid transaction mass limit (mass ≈ UTXO sompi value!)
+    let max_safe_utxo = 50_000; // 0.0005 KAS - MUST be under 100,000 sompi for bonds!
     if utxo_manager.available_utxos.iter().any(|(_, e)| e.amount > max_safe_utxo) {
         println!("🔄 Splitting large UTXOs to avoid transaction mass limit...");
         match utxo_manager.split_large_utxo(max_safe_utxo).await {
