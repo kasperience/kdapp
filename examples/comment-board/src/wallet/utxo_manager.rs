@@ -161,17 +161,17 @@ impl UtxoLockManager {
                   entry.amount as f64 / 100_000_000.0);
             
             // EMERGENCY MASS LIMIT PROTECTION: Refuse bond creation if UTXO too large
-            if entry.amount > 500_000_000 { // > 5 KAS - guaranteed mass limit failure
+            if entry.amount > 5_000_000_000 { // > 50 KAS - guaranteed mass limit failure
                 return Err(format!(
                     "❌ MASS LIMIT PROTECTION: Selected UTXO ({:.6} KAS) will cause transaction mass > 100,000\n\
-                     💡 SOLUTION: Fund wallet with smaller amounts (< 0.5 KAS each) or use manual UTXO management\n\
+                     💡 SOLUTION: Fund wallet with smaller amounts (< 50 KAS each) or use manual UTXO management\n\
                      🔧 Alternative: Send multiple small transactions to your wallet instead of one large faucet request",
                     entry.amount as f64 / 100_000_000.0
                 ));
             }
             
             // Verify UTXO is safe for mass limit
-            if entry.amount > 100_000_000 { // > 1 KAS
+            if entry.amount > 2_000_000_000 { // > 20 KAS
                 warn!("⚠️ Selected UTXO may cause mass limit issues: {:.6} KAS", 
                       entry.amount as f64 / 100_000_000.0);
                 warn!("💡 Consider splitting this UTXO first or funding wallet with smaller amounts");
