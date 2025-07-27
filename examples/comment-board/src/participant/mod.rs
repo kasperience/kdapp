@@ -166,7 +166,23 @@ async fn run_comment_board(
             }
             Err(e) => {
                 println!("⚠️ Warning: Could not split UTXOs: {}", e);
-                println!("💡 Tip: Manually send smaller amounts to your wallet to avoid mass limit issues");
+                println!("💡 MANUAL UTXO MANAGEMENT REQUIRED:");
+                println!("   1️⃣ Send multiple smaller amounts (< 0.5 KAS each) to your wallet");
+                println!("   2️⃣ Avoid single large faucet requests (> 5 KAS)");
+                println!("   3️⃣ Current system will gracefully prevent mass limit failures");
+                
+                // Check if we have any massive UTXOs that will definitely fail
+                let massive_utxos: Vec<_> = utxo_manager.available_utxos.iter()
+                    .filter(|(_, e)| e.amount > 500_000_000) // > 5 KAS
+                    .collect();
+                
+                if !massive_utxos.is_empty() {
+                    println!("🚨 DETECTED {} MASSIVE UTXOs that will cause bond failures:", massive_utxos.len());
+                    for (_, entry) in &massive_utxos {
+                        println!("   💥 {:.6} KAS - guaranteed mass limit failure", entry.amount as f64 / 100_000_000.0);
+                    }
+                    println!("🔧 SOLUTION: Use this wallet for non-bond transactions only, or send smaller amounts to a new wallet");
+                }
             }
         }
     } else {

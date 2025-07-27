@@ -159,6 +159,16 @@ impl UtxoLockManager {
             info!("🔍 Selected UTXO: {:.6} KAS (smallest available for minimal mass)", 
                   entry.amount as f64 / 100_000_000.0);
             
+            // EMERGENCY MASS LIMIT PROTECTION: Refuse bond creation if UTXO too large
+            if entry.amount > 500_000_000 { // > 5 KAS - guaranteed mass limit failure
+                return Err(format!(
+                    "❌ MASS LIMIT PROTECTION: Selected UTXO ({:.6} KAS) will cause transaction mass > 100,000\n\
+                     💡 SOLUTION: Fund wallet with smaller amounts (< 0.5 KAS each) or use manual UTXO management\n\
+                     🔧 Alternative: Send multiple small transactions to your wallet instead of one large faucet request",
+                    entry.amount as f64 / 100_000_000.0
+                ));
+            }
+            
             // Verify UTXO is safe for mass limit
             if entry.amount > 100_000_000 { // > 1 KAS
                 warn!("⚠️ Selected UTXO may cause mass limit issues: {:.6} KAS", 
@@ -483,57 +493,61 @@ impl UtxoLockManager {
         }
     }
     
-    /// Split large UTXOs to avoid transaction mass limit issues
+    /// Split large UTXOs to avoid transaction mass limit issues  
+    /// Uses conservative approach: 2-output splits to minimize mass
     pub async fn split_large_utxo(&mut self, max_utxo_size: u64) -> Result<(), String> {
         // Find the first large UTXO
         let large_utxo = self.available_utxos.iter().find(|(_, entry)| entry.amount > max_utxo_size);
         
         if let Some((outpoint, entry)) = large_utxo.cloned() {
-            info!("🔄 Splitting large UTXO: {:.6} KAS -> smaller chunks", 
+            info!("🔄 Splitting large UTXO: {:.6} KAS -> 2 smaller chunks (conservative approach)", 
                   entry.amount as f64 / 100_000_000.0);
             
             use crate::utils::{PATTERN, PREFIX, FEE};
             use kdapp::generator::TransactionGenerator;
             
-            // Calculate how many outputs we need
-            let chunk_size = max_utxo_size / 2; // Create chunks half the max size
-            let num_outputs = std::cmp::min(
-                (entry.amount - FEE) / chunk_size,
-                10 // Max 10 outputs to keep transaction simple
-            ) as usize;
+            // CONSERVATIVE: Only create 2 outputs to minimize transaction mass
+            // Split the large UTXO roughly in half
+            let chunk_size = (entry.amount - FEE) / 2;
+            let num_outputs = 2; // Always just 2 outputs to minimize mass
             
-            if num_outputs < 2 {
-                return Err("UTXO too small to split effectively".to_string());
+            if chunk_size < 1_000_000 { // Less than 0.01 KAS per chunk
+                return Err("UTXO too small to split (< 0.01 KAS per chunk)".to_string());
             }
             
-            info!("📦 Creating {} smaller UTXOs of ~{:.6} KAS each", 
+            info!("📦 Creating {} UTXOs of ~{:.6} KAS each (minimizing transaction mass)", 
                   num_outputs, chunk_size as f64 / 100_000_000.0);
             
             let generator = TransactionGenerator::new(self.keypair, PATTERN, PREFIX);
             let utxos_to_use = vec![(outpoint.clone(), entry.clone())];
             
-            // Create splitting transaction with multiple outputs
+            // Create minimal splitting transaction with just 2 outputs
             let split_tx = generator.build_transaction(
                 &utxos_to_use,
-                chunk_size * num_outputs as u64, // Total amount minus fee
-                num_outputs as u64, // Convert usize to u64
+                chunk_size * 2, // Two equal chunks
+                2, // Always 2 outputs for minimal mass
                 &self.kaspa_address,
-                "UTXO_SPLIT".as_bytes().to_vec(), // Minimal payload
+                "SPLIT".as_bytes().to_vec(), // Minimal payload to reduce mass
             );
             
             match self.kaspad_client.submit_transaction((&split_tx).into(), false).await {
                 Ok(_) => {
-                    info!("✅ UTXO split transaction {} submitted successfully", split_tx.id());
+                    info!("✅ Conservative UTXO split transaction {} submitted successfully", split_tx.id());
                     info!("🔄 Refreshing UTXO set after split...");
                     
                     // Remove the old large UTXO
                     self.available_utxos.retain(|(op, _)| op != &outpoint);
                     
                     // The new UTXOs will be picked up on next refresh
+                    info!("💡 If still too large, run split again for further division");
                     Ok(())
                 }
                 Err(e) => {
                     error!("❌ Failed to submit UTXO split transaction: {}", e);
+                    if e.to_string().contains("transaction storage mass") {
+                        error!("💡 Even 2-output split exceeded mass limit. Manual wallet management required.");
+                        error!("🔧 Solution: Send smaller amounts (< 0.5 KAS) to your wallet from external source");
+                    }
                     Err(format!("UTXO split failed: {}", e))
                 }
             }
