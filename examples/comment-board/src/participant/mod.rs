@@ -159,9 +159,22 @@ async fn run_comment_board(
         match utxo_manager.split_large_utxo(max_safe_utxo).await {
             Ok(_) => {
                 println!("✅ UTXOs split successfully");
-                // Refresh after split
+                // Refresh after split and update our UTXO for transactions
                 if let Err(e) = utxo_manager.refresh_utxos(&kaspad).await {
                     println!("⚠️ Warning: Could not refresh UTXOs after split: {}", e);
+                } else {
+                    // CRITICAL: Update utxo variable to use one of the new split UTXOs
+                    if let Some((new_outpoint, new_entry)) = utxo_manager.available_utxos.first() {
+                        utxo = (new_outpoint.clone(), new_entry.clone());
+                        println!("🔄 Updated to use new split UTXO: {:.6} KAS", new_entry.amount as f64 / 100_000_000.0);
+                        
+                        // Small delay to ensure blockchain state propagation
+                        println!("⏳ Waiting for blockchain state to propagate...");
+                        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                    } else {
+                        println!("❌ No UTXOs available after split - this shouldn't happen!");
+                        return;
+                    }
                 }
             }
             Err(e) => {
@@ -204,9 +217,17 @@ async fn run_comment_board(
         };
         let tx = generator.build_command_transaction(utxo, &kaspa_addr, &register_episode, FEE);
         info!("Submitting episode registration for room {}: {}", room_id, tx.id());
-        let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
-        utxo = generator::get_first_output_utxo(&tx);
-        room_id
+        match kaspad.submit_transaction(tx.as_ref().into(), false).await {
+            Ok(_) => {
+                utxo = generator::get_first_output_utxo(&tx);
+                room_id
+            }
+            Err(e) => {
+                println!("❌ Failed to register episode: {}", e);
+                println!("💡 This might be a double-spend error. Try running the command again.");
+                return;
+            }
+        }
     } else {
         // Create new room - organizer creates the episode
         let new_episode_id = rand::thread_rng().gen();
@@ -221,9 +242,22 @@ async fn run_comment_board(
         };
         let tx = generator.build_command_transaction(utxo, &kaspa_addr, &new_episode, FEE);
         info!("Submitting room creation: {}", tx.id());
-        let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
-        utxo = generator::get_first_output_utxo(&tx);
-        new_episode_id
+        match kaspad.submit_transaction(tx.as_ref().into(), false).await {
+            Ok(_) => {
+                utxo = generator::get_first_output_utxo(&tx);
+                new_episode_id
+            }
+            Err(e) => {
+                println!("❌ Failed to create room: {}", e);
+                if e.to_string().contains("already spent") {
+                    println!("💡 Double-spend detected. The UTXO was already used by another transaction.");
+                    println!("🔄 Try running the command again - fresh UTXOs should be available after the split.");
+                } else {
+                    println!("💡 Error details: {}", e);
+                }
+                return;
+            }
+        }
     };
 
     let (received_episode_id, mut state) = response_receiver.recv().await.unwrap();
