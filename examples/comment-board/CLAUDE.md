@@ -299,6 +299,14 @@ let msg = EpisodeMessage::<CommentRoom>::new_signed_command(
 
 ## 🚫 **DEVELOPMENT RULES**
 
+### 🚨 **NEVER PUSH WITHOUT TESTING**
+**ABSOLUTE RULE**: Never `git push` without successful compilation:
+- ❌ NEVER push broken code that doesn't compile
+- ❌ NEVER push without running build locally first
+- ✅ ALWAYS test compilation before any push
+- ✅ Fix all errors and warnings before push
+- ✅ User must confirm "cargo build" succeeds
+
 ### CARGO COMMANDS ARE USER RESPONSIBILITY
 **CRITICAL RULE**: Claude must NEVER run cargo commands:
 - ❌ `cargo build`, `cargo run`, `cargo test`, `cargo check`

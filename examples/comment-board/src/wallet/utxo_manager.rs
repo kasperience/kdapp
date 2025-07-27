@@ -7,6 +7,7 @@ use log::*;
 
 // Phase 2.0: Import script generation for true UTXO locking
 use crate::wallet::kaspa_scripts::{ScriptUnlockCondition, create_bond_script_pubkey, validate_script_conditions};
+use crate::utils::FEE;
 
 /// Real UTXO Locking Manager for Economic Episode Contracts - Phase 1.1 Implementation
 #[derive(Debug, Clone)]
@@ -515,7 +516,7 @@ impl UtxoLockManager {
             let split_tx = generator.build_transaction(
                 &utxos_to_use,
                 chunk_size * num_outputs as u64, // Total amount minus fee
-                num_outputs,
+                num_outputs as u64, // Convert usize to u64
                 &self.kaspa_address,
                 "UTXO_SPLIT".as_bytes().to_vec(), // Minimal payload
             );
