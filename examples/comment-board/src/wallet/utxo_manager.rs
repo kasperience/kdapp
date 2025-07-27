@@ -137,9 +137,33 @@ impl UtxoLockManager {
             ));
         }
         
-        // Find a suitable UTXO to spend
-        if let Some((outpoint, entry)) = self.available_utxos.first().cloned() {
-            if entry.amount >= bond_amount + 1000 { // Need extra for fees
+        // Find the SMALLEST suitable UTXO to minimize mass calculation
+        let mut best_utxo: Option<(TransactionOutpoint, UtxoEntry)> = None;
+        let min_required = FEE * 2 + 1000; // Minimal amount needed for proof transaction
+        
+        for (outpoint, entry) in &self.available_utxos {
+            if entry.amount >= min_required {
+                match &best_utxo {
+                    None => best_utxo = Some((outpoint.clone(), entry.clone())),
+                    Some((_, best_entry)) => {
+                        if entry.amount < best_entry.amount {
+                            best_utxo = Some((outpoint.clone(), entry.clone()));
+                        }
+                    }
+                }
+            }
+        }
+        
+        if let Some((outpoint, entry)) = best_utxo {
+            info!("🔍 Selected UTXO: {:.6} KAS (smallest available for minimal mass)", 
+                  entry.amount as f64 / 100_000_000.0);
+            
+            // Verify UTXO is safe for mass limit
+            if entry.amount > 100_000_000 { // > 1 KAS
+                warn!("⚠️ Selected UTXO may cause mass limit issues: {:.6} KAS", 
+                      entry.amount as f64 / 100_000_000.0);
+                warn!("💡 Consider splitting this UTXO first or funding wallet with smaller amounts");
+            }
                 let current_time = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
@@ -182,11 +206,13 @@ impl UtxoLockManager {
                     }
                     Err(e) => Err(format!("Failed to create bond transaction: {}", e))
                 }
-            } else {
-                Err("No UTXO large enough for bond amount plus fees".to_string())
-            }
         } else {
-            Err("No UTXOs available".to_string())
+            Err(format!("No UTXO large enough for bond transaction. Required: {:.6} KAS, Available UTXOs: {}", 
+                       min_required as f64 / 100_000_000.0,
+                       self.available_utxos.iter()
+                           .map(|(_, e)| format!("{:.6}", e.amount as f64 / 100_000_000.0))
+                           .collect::<Vec<_>>()
+                           .join(", ")))
         }
     }
     
@@ -456,6 +482,66 @@ impl UtxoLockManager {
         }
     }
     
+    /// Split large UTXOs to avoid transaction mass limit issues
+    pub async fn split_large_utxo(&mut self, max_utxo_size: u64) -> Result<(), String> {
+        // Find the first large UTXO
+        let large_utxo = self.available_utxos.iter().find(|(_, entry)| entry.amount > max_utxo_size);
+        
+        if let Some((outpoint, entry)) = large_utxo.cloned() {
+            info!("🔄 Splitting large UTXO: {:.6} KAS -> smaller chunks", 
+                  entry.amount as f64 / 100_000_000.0);
+            
+            use crate::utils::{PATTERN, PREFIX, FEE};
+            use kdapp::generator::TransactionGenerator;
+            
+            // Calculate how many outputs we need
+            let chunk_size = max_utxo_size / 2; // Create chunks half the max size
+            let num_outputs = std::cmp::min(
+                (entry.amount - FEE) / chunk_size,
+                10 // Max 10 outputs to keep transaction simple
+            ) as usize;
+            
+            if num_outputs < 2 {
+                return Err("UTXO too small to split effectively".to_string());
+            }
+            
+            info!("📦 Creating {} smaller UTXOs of ~{:.6} KAS each", 
+                  num_outputs, chunk_size as f64 / 100_000_000.0);
+            
+            let generator = TransactionGenerator::new(self.keypair, PATTERN, PREFIX);
+            let utxos_to_use = vec![(outpoint.clone(), entry.clone())];
+            
+            // Create splitting transaction with multiple outputs
+            let split_tx = generator.build_transaction(
+                &utxos_to_use,
+                chunk_size * num_outputs as u64, // Total amount minus fee
+                num_outputs,
+                &self.kaspa_address,
+                "UTXO_SPLIT".as_bytes().to_vec(), // Minimal payload
+            );
+            
+            match self.kaspad_client.submit_transaction((&split_tx).into(), false).await {
+                Ok(_) => {
+                    info!("✅ UTXO split transaction {} submitted successfully", split_tx.id());
+                    info!("🔄 Refreshing UTXO set after split...");
+                    
+                    // Remove the old large UTXO
+                    self.available_utxos.retain(|(op, _)| op != &outpoint);
+                    
+                    // The new UTXOs will be picked up on next refresh
+                    Ok(())
+                }
+                Err(e) => {
+                    error!("❌ Failed to submit UTXO split transaction: {}", e);
+                    Err(format!("UTXO split failed: {}", e))
+                }
+            }
+        } else {
+            info!("✅ No large UTXOs found (all under {:.6} KAS)", max_utxo_size as f64 / 100_000_000.0);
+            Ok(())
+        }
+    }
+
     /// Helper to get current timestamp
     fn current_time(&self) -> u64 {
         std::time::SystemTime::now()

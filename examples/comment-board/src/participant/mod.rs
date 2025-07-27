@@ -152,6 +152,27 @@ async fn run_comment_board(
     let mut utxo_manager = UtxoLockManager::new(&kaspad, kaspa_addr.clone(), kaspa_signer).await.unwrap();
     info!("🏦 Wallet initialized with {:.6} KAS available", utxo_manager.get_available_balance() as f64 / 100_000_000.0);
 
+    // Auto-split large UTXOs to avoid transaction mass limit (100,000 mass = ~1 KAS max)
+    let max_safe_utxo = 100_000_000; // 1 KAS to stay well under mass limit
+    if utxo_manager.available_utxos.iter().any(|(_, e)| e.amount > max_safe_utxo) {
+        println!("🔄 Splitting large UTXOs to avoid transaction mass limit...");
+        match utxo_manager.split_large_utxo(max_safe_utxo).await {
+            Ok(_) => {
+                println!("✅ UTXOs split successfully");
+                // Refresh after split
+                if let Err(e) = utxo_manager.refresh_utxos(&kaspad).await {
+                    println!("⚠️ Warning: Could not refresh UTXOs after split: {}", e);
+                }
+            }
+            Err(e) => {
+                println!("⚠️ Warning: Could not split UTXOs: {}", e);
+                println!("💡 Tip: Manually send smaller amounts to your wallet to avoid mass limit issues");
+            }
+        }
+    } else {
+        println!("✅ All UTXOs are reasonably sized (under 1 KAS) - mass limit safe");
+    }
+
     let generator = generator::TransactionGenerator::new(kaspa_signer, PATTERN, PREFIX);
 
     let episode_id = if let Some(room_id) = target_episode_id {
