@@ -77,10 +77,11 @@ impl UtxoLockManager {
         kaspad: &KaspaRpcClient,
         kaspa_address: Address,
         keypair: Keypair, // Need keypair for signing bond transactions
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, String> {
         info!("🔍 Scanning wallet UTXOs for balance calculation...");
         
-        let entries = kaspad.get_utxos_by_addresses(vec![kaspa_address.clone()]).await?;
+        let entries = kaspad.get_utxos_by_addresses(vec![kaspa_address.clone()]).await
+            .map_err(|e| format!("Failed to get UTXOs: {}", e))?;
         
         let available_utxos: Vec<(TransactionOutpoint, UtxoEntry)> = entries
             .into_iter()
@@ -340,7 +341,7 @@ impl UtxoLockManager {
         source_entry: &UtxoEntry,
         script_pubkey: &ScriptPublicKey,
         script_condition: &ScriptUnlockCondition,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<String, String> {
         info!("🔐 Phase 2.0: Creating REAL script-based bond transaction");
         info!("💰 Bond amount: {:.6} KAS", bond_amount as f64 / 100_000_000.0);
         info!("🔒 Script enforcement: TRUE blockchain-level locking");
@@ -368,7 +369,7 @@ impl UtxoLockManager {
         if source_entry.amount < total_needed {
             return Err(format!("Insufficient funds: need {:.6} KAS, have {:.6} KAS", 
                              total_needed as f64 / 100_000_000.0,
-                             source_entry.amount as f64 / 100_000_000.0).into());
+                             source_entry.amount as f64 / 100_000_000.0));
         }
         
         let change_amount = source_entry.amount - total_needed;
@@ -432,7 +433,7 @@ impl UtxoLockManager {
             }
             Err(e) => {
                 error!("❌ Failed to submit script bond transaction: {}", e);
-                Err(format!("Script bond transaction submission failed: {}", e).into())
+                Err(format!("Script bond transaction submission failed: {}", e))
             }
         }
     }
@@ -444,7 +445,7 @@ impl UtxoLockManager {
         bond_amount: u64,
         source_outpoint: &TransactionOutpoint,
         source_entry: &UtxoEntry,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<String, String> {
         info!("📡 Phase 1.2: Creating REAL bond transaction on Kaspa blockchain...");
         
         // Phase 1.2: Create REAL on-chain transaction for bond proof
@@ -488,7 +489,7 @@ impl UtxoLockManager {
             }
             Err(e) => {
                 error!("❌ Failed to submit bond transaction: {}", e);
-                Err(format!("Bond transaction submission failed: {}", e).into())
+                Err(format!("Bond transaction submission failed: {}", e))
             }
         }
     }
@@ -632,7 +633,7 @@ impl UtxoLockManager {
     
     /// Get detailed balance information
     /// Phase 1.2: Scan for bond confirmations and update status
-    pub async fn scan_pending_bonds(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn scan_pending_bonds(&mut self) -> Result<(), String> {
         let mut confirmed_bonds = Vec::new();
         
         for (comment_id, tx_id) in &self.pending_bonds {
@@ -744,10 +745,11 @@ impl UtxoLockManager {
     }
     
     /// Refresh UTXO state from blockchain
-    pub async fn refresh_utxos(&mut self, kaspad: &KaspaRpcClient) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn refresh_utxos(&mut self, kaspad: &KaspaRpcClient) -> Result<(), String> {
         info!("🔄 Refreshing UTXO state from blockchain...");
         
-        let entries = kaspad.get_utxos_by_addresses(vec![self.kaspa_address.clone()]).await?;
+        let entries = kaspad.get_utxos_by_addresses(vec![self.kaspa_address.clone()]).await
+            .map_err(|e| format!("Failed to refresh UTXOs: {}", e))?;
         
         self.available_utxos = entries
             .into_iter()

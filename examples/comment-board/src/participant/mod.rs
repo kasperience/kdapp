@@ -149,7 +149,13 @@ async fn run_comment_board(
     let mut utxo = entry.map(|entry| (TransactionOutpoint::from(entry.outpoint), UtxoEntry::from(entry.utxo_entry))).unwrap();
 
     // Initialize UTXO lock manager for real economic enforcement - Phase 1.1
-    let mut utxo_manager = UtxoLockManager::new(&kaspad, kaspa_addr.clone(), kaspa_signer).await.unwrap();
+    let mut utxo_manager = match UtxoLockManager::new(&kaspad, kaspa_addr.clone(), kaspa_signer).await {
+        Ok(manager) => manager,
+        Err(e) => {
+            println!("❌ Failed to initialize UTXO manager: {}", e);
+            return;
+        }
+    };
     info!("🏦 Wallet initialized with {:.6} KAS available", utxo_manager.get_available_balance() as f64 / 100_000_000.0);
 
     // Auto-split large UTXOs to avoid transaction mass limit (100,000 mass = ~1 KAS max)
