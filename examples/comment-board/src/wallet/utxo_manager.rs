@@ -556,18 +556,52 @@ impl UtxoLockManager {
             info!("📦 Creating {} UTXOs of ~{:.6} KAS each (minimizing transaction mass)", 
                   num_outputs, chunk_size as f64 / 100_000_000.0);
             
-            // Use TransactionGenerator but with EMPTY payload (no episode data)
-            let generator = TransactionGenerator::new(self.keypair, PATTERN, PREFIX);
-            let utxos_to_use = vec![(outpoint.clone(), entry.clone())];
+            // Use NATIVE Kaspa transactions for wallet operations (no episode overhead)
+            use kaspa_consensus_core::{
+                tx::{Transaction, TransactionInput, TransactionOutput, TransactionOutpoint as CoreOutpoint, MutableTransaction},
+                subnets::SubnetworkId,
+                sign::sign,
+            };
             
-            // Create minimal splitting transaction with NO episode payload
-            let split_tx = generator.build_transaction(
-                &utxos_to_use,
-                chunk_size * 2, // Two equal chunks
-                2, // Always 2 outputs for minimal mass
-                &self.kaspa_address,
-                vec![], // EMPTY PAYLOAD - no episode data!
+            // Create transaction input
+            let tx_input = TransactionInput {
+                previous_outpoint: CoreOutpoint::new(outpoint.transaction_id, outpoint.index),
+                signature_script: vec![],
+                sequence: 0,
+                sig_op_count: 1,
+            };
+            
+            // Create two equal outputs
+            let script = kaspa_txscript::pay_to_address_script(&self.kaspa_address);
+            
+            let output1 = TransactionOutput {
+                value: chunk_size,
+                script_public_key: script.clone(),
+            };
+            
+            let output2 = TransactionOutput {
+                value: chunk_size,
+                script_public_key: script,
+            };
+            
+            // Build native wallet transaction (NO pattern matching!)
+            let unsigned_tx = Transaction::new(
+                0,                              // version
+                vec![tx_input],                 // inputs
+                vec![output1, output2],         // outputs
+                0,                              // lock_time
+                SubnetworkId::from_bytes([0; 20]), // subnetwork_id
+                0,                              // gas
+                vec![],                         // NO payload - pure wallet operation
             );
+            
+            // Sign the transaction
+            let mutable_tx = MutableTransaction::with_entries(
+                unsigned_tx,
+                vec![entry.clone()],
+            );
+            
+            let split_tx = sign(mutable_tx, self.keypair).tx;
             
             match self.kaspad_client.submit_transaction((&split_tx).into(), false).await {
                 Ok(_) => {
