@@ -25,6 +25,47 @@ src/
     └── http_fallback.rs # HTTP coordination
 ```
 
+## 🚨 **CRITICAL KDAPP RULE: NEVER BUILD WALLETS WITH TRANSACTIONGENERATOR**
+
+### ❌ **ABSOLUTE FORBIDDEN: Using TransactionGenerator for Wallet Operations**
+**This causes circular mass limit issues that can waste DAYS of debugging!**
+
+```rust
+// ❌ WRONG - Causes 99,998,720 mass (near 100,000 limit!)
+let generator = TransactionGenerator::new(keypair, PATTERN, PREFIX);
+let wallet_tx = generator.build_transaction(&utxos, amount, 1, &address, payload);
+```
+
+### ✅ **CORRECT ARCHITECTURAL SEPARATION**
+
+#### **Episode Operations** → Use `TransactionGenerator`
+```rust
+// ✅ RIGHT - For episode coordination (needs pattern matching)
+let generator = TransactionGenerator::new(keypair, PATTERN, PREFIX);
+let episode_tx = generator.build_command_transaction(utxo, &address, &episode_msg, fee);
+```
+
+#### **Wallet Operations** → Use Native Kaspa
+```rust
+// ✅ RIGHT - For wallet operations (no pattern matching needed)
+use kaspa_consensus_core::{tx::*, sign::sign};
+let native_tx = Transaction::new(version, inputs, outputs, lock_time, subnet_id, gas, payload);
+let signed_tx = sign(MutableTransaction::with_entries(native_tx, utxo_entries), keypair);
+```
+
+### 🔥 **ROOT CAUSE: Pattern Matching Overhead**
+TransactionGenerator brute forces transaction IDs (up to 1,024 attempts) to match kdapp patterns. Each finalize() call increases transaction mass, causing even tiny transactions to hit 99,998,720 mass near the 100,000 limit.
+
+### 💡 **DEBUGGING TIP**
+If you see transaction mass near 100,000 with small UTXOs:
+1. Check if you're using TransactionGenerator for wallet operations
+2. Replace with native kaspa_consensus_core transactions  
+3. Mass should drop to minimal levels immediately
+
+**This architectural mistake causes days of circular debugging! Solution time: 30 minutes once you know the rule.**
+
+---
+
 ### 🔥 **ENFORCEMENT RULES FOR CLAUDE & GEMINI**
 1. **Before adding ANY code to main.rs**: Check file size with `du -h main.rs`
 2. **If main.rs > 40KB**: MUST extract to appropriate module first

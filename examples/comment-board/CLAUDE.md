@@ -1,4 +1,80 @@
 # 📋 COMMENT-BOARD: EPISODE CONTRACTS FOR ROOM MODERATION
+
+## 🚨 **CRITICAL ARCHITECTURAL RULE: NEVER BUILD WALLETS WITH TRANSACTIONGENERATOR**
+
+### ❌ **ABSOLUTE FORBIDDEN: Using TransactionGenerator for Wallet Operations**
+**This causes circular mass limit issues that can waste DAYS of debugging!**
+
+```rust
+// ❌ WRONG - Causes 99,998,720 mass (near 100,000 limit!)
+let generator = TransactionGenerator::new(keypair, PATTERN, PREFIX);
+let wallet_tx = generator.build_transaction(&utxos, amount, 1, &address, payload);
+```
+
+### ✅ **CORRECT ARCHITECTURAL SEPARATION**
+
+#### **Episode Operations** → Use `TransactionGenerator`
+```rust
+// ✅ RIGHT - For episode coordination (needs pattern matching)
+let generator = TransactionGenerator::new(keypair, PATTERN, PREFIX);
+let episode_tx = generator.build_command_transaction(utxo, &address, &episode_msg, fee);
+```
+
+#### **Wallet Operations** → Use Native Kaspa
+```rust
+// ✅ RIGHT - For wallet operations (no pattern matching needed)
+use kaspa_consensus_core::{tx::*, sign::sign};
+
+let native_tx = Transaction::new(version, inputs, outputs, lock_time, subnet_id, gas, payload);
+let signed_tx = sign(MutableTransaction::with_entries(native_tx, utxo_entries), keypair);
+```
+
+### 🔥 **ROOT CAUSE: Pattern Matching Overhead**
+```rust
+// kdapp/src/generator.rs - Lines 93-98
+while !check_pattern(unsigned_tx.id(), &self.pattern) {
+    nonce = nonce.checked_add(1).unwrap(); // Up to 1,024 attempts!
+    Payload::set_nonce(&mut unsigned_tx.payload, nonce);
+    unsigned_tx.finalize(); // Each finalize() adds mass!
+}
+```
+
+**Why It Happens:**
+- TransactionGenerator brute forces transaction IDs to match patterns
+- Can require up to 1,024 nonce attempts (2^10 pattern)
+- Each `finalize()` call increases transaction mass
+- Result: Even tiny transactions hit 99,998,720 mass (near 100,000 limit)
+
+### 📋 **OPERATION CLASSIFICATION CHECKLIST**
+
+**Use TransactionGenerator for:**
+- ✅ Episode commands (SubmitComment, JoinRoom, etc.)
+- ✅ Episode coordination transactions
+- ✅ Anything that needs kdapp pattern matching
+
+**Use Native Kaspa for:**
+- ✅ Bond proof transactions
+- ✅ UTXO splitting/management
+- ✅ Wallet balance operations
+- ✅ Any transaction that doesn't participate in episode state
+
+### 💡 **DEBUGGING TIP**
+If you see transaction mass near 100,000 with small UTXOs:
+1. Check if you're using TransactionGenerator for wallet operations
+2. Replace with native kaspa_consensus_core transactions
+3. Mass should drop to minimal levels immediately
+
+### 🎯 **SAVES DAYS OF CIRCULAR DEBUGGING**
+This architectural mistake causes:
+- ❌ Mass limit errors with any UTXO size
+- ❌ Circular UTXO splitting problems  
+- ❌ Hours/days of threshold guessing
+- ❌ Confusion about "why even small UTXOs fail"
+
+**Solution time: 30 minutes once you know the rule!**
+
+---
+
 🚨 TECHNICAL CHALLENGE FOR OPUS 4 / GEMINI PRO 2.5
 
   The Kaspa Transaction Mass Limit Problem
