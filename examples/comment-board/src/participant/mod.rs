@@ -160,20 +160,24 @@ async fn run_comment_board(
             Ok(_) => {
                 println!("✅ UTXOs split successfully");
                 // Refresh after split and update our UTXO for transactions
-                if let Err(e) = utxo_manager.refresh_utxos(&kaspad).await {
-                    println!("⚠️ Warning: Could not refresh UTXOs after split: {}", e);
-                } else {
-                    // CRITICAL: Update utxo variable to use one of the new split UTXOs
-                    if let Some((new_outpoint, new_entry)) = utxo_manager.available_utxos.first() {
-                        utxo = (new_outpoint.clone(), new_entry.clone());
-                        println!("🔄 Updated to use new split UTXO: {:.6} KAS", new_entry.amount as f64 / 100_000_000.0);
-                        
-                        // Small delay to ensure blockchain state propagation
-                        println!("⏳ Waiting for blockchain state to propagate...");
-                        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-                    } else {
-                        println!("❌ No UTXOs available after split - this shouldn't happen!");
-                        return;
+                match utxo_manager.refresh_utxos(&kaspad).await {
+                    Ok(_) => {
+                        // CRITICAL: Update utxo variable to use one of the new split UTXOs
+                        if let Some((new_outpoint, new_entry)) = utxo_manager.available_utxos.first() {
+                            utxo = (new_outpoint.clone(), new_entry.clone());
+                            println!("🔄 Updated to use new split UTXO: {:.6} KAS", new_entry.amount as f64 / 100_000_000.0);
+                            
+                            // Small delay to ensure blockchain state propagation
+                            println!("⏳ Waiting for blockchain state to propagate...");
+                            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                        } else {
+                            println!("❌ No UTXOs available after split - this shouldn't happen!");
+                            return;
+                        }
+                    }
+                    Err(_) => {
+                        println!("⚠️ Warning: Could not refresh UTXOs after split");
+                        println!("💡 Try running the command again if you encounter issues");
                     }
                 }
             }
