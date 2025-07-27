@@ -173,9 +173,22 @@ async fn run_comment_board(
                             utxo = (new_outpoint.clone(), new_entry.clone());
                             println!("🔄 Updated to use new split UTXO: {:.6} KAS", new_entry.amount as f64 / 100_000_000.0);
                             
-                            // Small delay to ensure blockchain state propagation
-                            println!("⏳ Waiting for blockchain state to propagate...");
-                            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                            // Wait for blockchain state propagation and UTXO confirmation
+                            println!("⏳ Waiting for split transaction to confirm (3 seconds)...");
+                            tokio::time::sleep(tokio::time::Duration::from_millis(3000)).await;
+                            
+                            // Refresh UTXOs again to ensure we have confirmed UTXOs
+                            match utxo_manager.refresh_utxos(&kaspad).await {
+                                Ok(_) => {
+                                    if let Some((confirmed_outpoint, confirmed_entry)) = utxo_manager.available_utxos.first() {
+                                        utxo = (confirmed_outpoint.clone(), confirmed_entry.clone());
+                                        println!("✅ Using confirmed UTXO: {:.6} KAS", confirmed_entry.amount as f64 / 100_000_000.0);
+                                    }
+                                }
+                                Err(_) => {
+                                    println!("⚠️ Could not refresh UTXOs after wait");
+                                }
+                            }
                         } else {
                             println!("❌ No UTXOs available after split - this shouldn't happen!");
                             return;
@@ -234,7 +247,13 @@ async fn run_comment_board(
             }
             Err(e) => {
                 println!("❌ Failed to register episode: {}", e);
-                println!("💡 This might be a double-spend error. Try running the command again.");
+                if e.to_string().contains("already spent") {
+                    println!("💡 Double-spend detected. Try running the command again.");
+                } else if e.to_string().contains("orphan") {
+                    println!("💡 Orphan transaction detected. Wait a few seconds and try again.");
+                } else {
+                    println!("💡 Try running the command again.");
+                }
                 return;
             }
         }
@@ -262,6 +281,10 @@ async fn run_comment_board(
                 if e.to_string().contains("already spent") {
                     println!("💡 Double-spend detected. The UTXO was already used by another transaction.");
                     println!("🔄 Try running the command again - fresh UTXOs should be available after the split.");
+                } else if e.to_string().contains("orphan") {
+                    println!("💡 Orphan transaction detected. The parent transaction hasn't been confirmed yet.");
+                    println!("⏳ Wait a few seconds and try again - the split transaction needs confirmation first.");
+                    println!("🔧 Alternative: Use a wallet with smaller, confirmed UTXOs to avoid this issue.");
                 } else {
                     println!("💡 Error details: {}", e);
                 }
