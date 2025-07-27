@@ -451,31 +451,68 @@ impl UtxoLockManager {
         // Phase 1.2: Create REAL on-chain transaction for bond proof
         // This creates a small proof transaction that proves economic commitment
         
-        use crate::utils::{PATTERN, PREFIX, FEE};
-        use kdapp::generator::TransactionGenerator;
+        use crate::utils::FEE;
+        use kaspa_consensus_core::{
+            tx::{Transaction, TransactionInput, TransactionOutput, TransactionOutpoint as CoreOutpoint, MutableTransaction},
+            subnets::SubnetworkId,
+            sign::sign,
+        };
         
-        // Create bond payload
-        let bond_payload = format!("BOND:{}:{}", comment_id, bond_amount);
+        // Create bond reference data (not for pattern matching, just for logging)
+        let bond_reference = format!("BOND:{}:{}", comment_id, bond_amount);
+        info!("🔐 Creating native bond proof: {} (amount: {:.6} KAS)", bond_reference, bond_amount as f64 / 100_000_000.0);
         
-        // Initialize transaction generator with our keypair
-        let generator = TransactionGenerator::new(self.keypair, PATTERN, PREFIX);
+        // Create NATIVE Kaspa transaction (NO pattern matching overhead!)
+        let proof_amount = FEE * 2; // Small proof amount
+        let change_amount = source_entry.amount - proof_amount;
         
-        // Create proof transaction with small amount (preserves user's funds)
-        let proof_amount = FEE * 2; // Small amount for proof transaction
-        let utxos_to_use = vec![(source_outpoint.clone(), source_entry.clone())];
+        if change_amount < FEE {
+            return Err("UTXO too small for bond proof transaction".to_string());
+        }
         
-        info!("🔐 Creating proof transaction: {:.6} KAS (preserves {:.6} KAS for user)", 
+        // Create transaction input
+        let tx_input = TransactionInput {
+            previous_outpoint: CoreOutpoint::new(source_outpoint.transaction_id, source_outpoint.index),
+            signature_script: vec![], // Will be filled by signing
+            sequence: 0,
+            sig_op_count: 1,
+        };
+        
+        // Create outputs
+        let script = kaspa_txscript::pay_to_address_script(&self.kaspa_address);
+        
+        let proof_output = TransactionOutput {
+            value: proof_amount,
+            script_public_key: script.clone(),
+        };
+        
+        let change_output = TransactionOutput {
+            value: change_amount,
+            script_public_key: script,
+        };
+        
+        info!("💸 Native transaction: {:.6} KAS proof + {:.6} KAS change (NO pattern matching)", 
               proof_amount as f64 / 100_000_000.0,
-              bond_amount as f64 / 100_000_000.0);
+              change_amount as f64 / 100_000_000.0);
         
-        // Build transaction using kdapp generator
-        let bond_tx = generator.build_transaction(
-            &utxos_to_use,
-            proof_amount, // Small proof amount
-            1, // Single output
-            &self.kaspa_address, // Send back to self
-            bond_payload.into_bytes(),
+        // Build minimal native transaction
+        let unsigned_tx = Transaction::new(
+            0,                              // version
+            vec![tx_input],                 // inputs
+            vec![proof_output, change_output], // outputs
+            0,                              // lock_time
+            SubnetworkId::from_bytes([0; 20]), // subnetwork_id
+            0,                              // gas
+            bond_reference.into_bytes(),    // Simple payload (no pattern matching)
         );
+        
+        // Sign the transaction
+        let mutable_tx = MutableTransaction::with_entries(
+            unsigned_tx,
+            vec![source_entry.clone()],
+        );
+        
+        let bond_tx = sign(mutable_tx, self.keypair).tx;
         
         let tx_id = bond_tx.id().to_string();
         
