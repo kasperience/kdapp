@@ -519,16 +519,17 @@ impl UtxoLockManager {
             info!("📦 Creating {} UTXOs of ~{:.6} KAS each (minimizing transaction mass)", 
                   num_outputs, chunk_size as f64 / 100_000_000.0);
             
+            // Use TransactionGenerator but with EMPTY payload (no episode data)
             let generator = TransactionGenerator::new(self.keypair, PATTERN, PREFIX);
             let utxos_to_use = vec![(outpoint.clone(), entry.clone())];
             
-            // Create minimal splitting transaction with just 2 outputs
+            // Create minimal splitting transaction with NO episode payload
             let split_tx = generator.build_transaction(
                 &utxos_to_use,
                 chunk_size * 2, // Two equal chunks
                 2, // Always 2 outputs for minimal mass
                 &self.kaspa_address,
-                "SPLIT".as_bytes().to_vec(), // Minimal payload to reduce mass
+                vec![], // EMPTY PAYLOAD - no episode data!
             );
             
             match self.kaspad_client.submit_transaction((&split_tx).into(), false).await {
