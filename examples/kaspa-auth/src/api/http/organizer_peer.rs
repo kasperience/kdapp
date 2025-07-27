@@ -14,10 +14,11 @@ use crate::api::http::{
         challenge::request_challenge,
         verify::verify_auth,
         status::get_status,
+        revoke::revoke_session,
     },
     blockchain_engine::AuthHttpPeer,
 };
-use crate::api::websocket::organizer::websocket_handler;
+use crate::api::http::websocket::websocket_handler;
 use axum::Json;
 use serde_json::json;
 use kaspa_addresses::{Address, Prefix, Version};
@@ -53,7 +54,7 @@ async fn wallet_status() -> Json<serde_json::Value> {
             let kaspa_addr = Address::new(
                 Prefix::Testnet,
                 Version::PubKey,
-                &wallet.keypair.x_only_public_key().0.serialize()
+                &wallet.keypair.public_key().serialize()[1..]
             );
             
             Json(json!({
@@ -81,7 +82,7 @@ async fn wallet_client() -> Json<serde_json::Value> {
             let kaspa_addr = Address::new(
                 Prefix::Testnet,
                 Version::PubKey,
-                &wallet.keypair.x_only_public_key().0.serialize()
+                &wallet.keypair.public_key().serialize()[1..]
             );
             
             Json(json!({
@@ -156,7 +157,7 @@ async fn wallet_debug() -> Json<serde_json::Value> {
                 let kaspa_addr = Address::new(
                     Prefix::Testnet,
                     Version::PubKey,
-                    &wallet.keypair.x_only_public_key().0.serialize()
+                    &wallet.keypair.public_key().serialize()[1..]
                 );
                 
                 debug_info[command] = json!({
@@ -178,6 +179,79 @@ async fn wallet_debug() -> Json<serde_json::Value> {
     Json(debug_info)
 }
 
+async fn episode_authenticated(
+    State(state): State<PeerState>,
+    Json(payload): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let episode_id = payload["episode_id"].as_u64().unwrap_or(0);
+    let challenge = payload["challenge"].as_str().unwrap_or("");
+    
+    // Get the real session token from blockchain episode
+    let real_session_token = if let Ok(episodes) = state.blockchain_episodes.lock() {
+        if let Some(episode) = episodes.get(&episode_id) {
+            episode.session_token.clone()
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    // Broadcast WebSocket message for authentication success
+    let ws_message = WebSocketMessage {
+        message_type: "authentication_successful".to_string(),
+        episode_id: Some(episode_id),
+        authenticated: Some(true),
+        challenge: Some(challenge.to_string()),
+        session_token: real_session_token,
+    };
+    
+    // Send to all connected WebSocket clients
+    let _ = state.websocket_tx.send(ws_message);
+    
+    Json(json!({
+        "status": "success",
+        "episode_id": episode_id,
+        "message": "Authentication notification sent"
+    }))
+}
+
+async fn session_revoked(
+    State(state): State<PeerState>,
+    Json(payload): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let episode_id = payload["episode_id"].as_u64().unwrap_or(0);
+    let session_token = payload["session_token"].as_str().unwrap_or("");
+    
+    println!("🔔 Received session revocation notification for episode {}, token: {}", episode_id, session_token);
+    
+    // Broadcast WebSocket message for session revocation success
+    let ws_message = WebSocketMessage {
+        message_type: "session_revoked".to_string(),
+        episode_id: Some(episode_id),
+        authenticated: Some(false),
+        challenge: None,
+        session_token: Some(session_token.to_string()),
+    };
+    
+    // Send to all connected WebSocket clients
+    match state.websocket_tx.send(ws_message) {
+        Ok(_) => {
+            println!("✅ Session revocation WebSocket message sent for episode {}", episode_id);
+        }
+        Err(e) => {
+            println!("❌ Failed to send session revocation WebSocket message: {}", e);
+        }
+    }
+    
+    Json(json!({
+        "status": "success",
+        "episode_id": episode_id,
+        "session_token": session_token,
+        "message": "Session revocation notification sent"
+    }))
+}
+
 pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let wallet = get_wallet_for_command("http-peer", provided_private_key)?;
     let keypair = wallet.keypair;
@@ -188,7 +262,15 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
     
     // Create the AuthHttpPeer with kdapp engine
     let auth_peer = Arc::new(AuthHttpPeer::new(keypair, websocket_tx.clone()).await?);
-    let peer_state = auth_peer.peer_state.clone();
+    let peer_state = PeerState {
+        episodes: auth_peer.peer_state.episodes.clone(),
+        blockchain_episodes: auth_peer.peer_state.blockchain_episodes.clone(),
+        websocket_tx: auth_peer.peer_state.websocket_tx.clone(),
+        peer_keypair: auth_peer.peer_state.peer_keypair,
+        transaction_generator: auth_peer.peer_state.transaction_generator.clone(),
+        kaspad_client: auth_peer.peer_state.kaspad_client.clone(),
+        auth_http_peer: Some(auth_peer.clone()), // Pass the Arc<AuthHttpPeer> here
+    };
     
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -206,7 +288,10 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
         .route("/auth/request-challenge", post(request_challenge))
         .route("/auth/sign-challenge", post(sign_challenge))
         .route("/auth/verify", post(verify_auth))
+        .route("/auth/revoke-session", post(revoke_session))
         .route("/auth/status/{episode_id}", get(get_status))
+        .route("/internal/episode-authenticated", post(episode_authenticated))
+        .route("/internal/session-revoked", post(session_revoked))
         .fallback_service(ServeDir::new("public"))
         .with_state(peer_state)
         .layer(cors);
@@ -223,7 +308,7 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
             let participant_addr = Address::new(
                 Prefix::Testnet,
                 Version::PubKey,
-                &wallet.keypair.x_only_public_key().0.serialize()
+                &wallet.keypair.public_key().serialize()[1..]
             );
             println!();
             println!("💰 PARTICIPANT WALLET FUNDING REQUIRED:");

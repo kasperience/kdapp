@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>COMMENT IT - Episode-Based Thoughts on the Kaspa Blockchain</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Matrix rain background -->
+    <div class="matrix-bg" id="matrixBg"></div>
+    
+    <!-- Scanline effect -->
+    <div class="scanlines"></div>
+    
+    <!-- Main container -->
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="logo">COMMENT IT</h1>
+            <p class="tagline">Episode-Based Thoughts on the Kaspa Blockchain</p>
+        </header>
+        
+        <!-- Status bar -->
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-dot"></div>
+                <span class="status-label">Network</span>
+                <span class="status-value">ONLINE</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Participant</span>
+                <span class="status-value" id="walletAddress">kaspa:qrxx...v8wz</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Block</span>
+                <span class="status-value" id="blockHeight">7,531,843</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Episode</span>
+                <span class="status-value" id="episodeId">--</span>
+            </div>
+        </div>
+        
+        <!-- Wallet Management Panel -->
+        <div class="auth-panel" id="walletPanel">
+            <h2 class="panel-title">KASPA WALLET SETUP</h2>
+            <div style="margin-bottom: 20px; padding: 15px; background: var(--bg-black); border: 1px solid rgba(20, 184, 166, 0.3); border-radius: 4px;">
+                <p style="font-size: 0.8rem; color: var(--primary-teal); margin-bottom: 10px;">🔐 CRYPTOGRAPHIC IDENTITY REQUIRED</p>
+                <p style="font-size: 0.7rem; color: rgba(255,255,255,0.6); line-height: 1.4;">
+                    To participate in authenticated episodes, you need a Kaspa wallet. Choose to create a new wallet or import an existing one.
+                </p>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                <button class="connect-button" id="createWalletBtn" style="flex: 1;">
+                    [ CREATE NEW WALLET ]
+                </button>
+                <button class="connect-button" id="importWalletBtn" style="flex: 1;">
+                    [ IMPORT WALLET ]
+                </button>
+            </div>
+            
+            <!-- Create Wallet Section -->
+            <div id="createWalletSection" style="display: none;">
+                <h3 style="color: var(--bright-teal); font-size: 1rem; margin-bottom: 15px;">🆕 CREATE NEW WALLET</h3>
+                <div style="background: var(--bg-black); padding: 15px; border: 1px solid var(--warning); border-radius: 4px; margin-bottom: 15px;">
+                    <p style="color: var(--warning); font-size: 0.8rem; margin-bottom: 10px;">⚠️ CRITICAL: BACKUP YOUR PRIVATE KEY</p>
+                    <p style="color: rgba(255,255,255,0.8); font-size: 0.7rem; line-height: 1.4;">
+                        Your private key is the ONLY way to access your wallet. If you lose it, you lose access forever. 
+                        Copy it to a secure location immediately.
+                    </p>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; color: var(--primary-teal); font-size: 0.8rem; margin-bottom: 5px;">
+                        🔑 Your Private Key (COPY THIS IMMEDIATELY):
+                    </label>
+                    <textarea id="generatedPrivateKey" readonly 
+                        style="width: 100%; height: 80px; background: var(--bg-black); border: 1px solid var(--bright-cyan); color: var(--bright-cyan); padding: 10px; font-family: monospace; font-size: 0.8rem; resize: none;"
+                        placeholder="Click 'Generate New Wallet' to create your private key..."></textarea>
+                    <button onclick="copyPrivateKey()" id="copyKeyButton" 
+                        style="margin-top: 5px; padding: 5px 15px; background: var(--primary-teal); border: none; color: var(--bg-black); border-radius: 3px; cursor: pointer; font-size: 0.7rem;" 
+                        disabled>
+                        📋 COPY KEY
+                    </button>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="saveToFileCheck" style="width: 16px; height: 16px; accent-color: var(--primary-teal);">
+                        <span style="color: var(--bright-cyan); font-size: 0.8rem;">Save private key to local file (.kaspa-auth/web-participant-peer-wallet.key)</span>
+                    </label>
+                    <small style="color: var(--primary-teal); margin-left: 26px; font-size: 0.7rem;">
+                        Convenient but less secure. Only enable on trusted devices.
+                    </small>
+                </div>
+                
+                <button class="connect-button" onclick="generateNewWallet()" id="generateButton">
+                    [ GENERATE NEW WALLET ]
+                </button>
+                <button class="connect-button" onclick="proceedWithWallet()" id="proceedNewButton" 
+                    style="margin-top: 10px; background: var(--success); border-color: var(--success); display: none;">
+                    [ USE THIS WALLET & CONTINUE ]
+                </button>
+            </div>
+            
+            <!-- Import Wallet Section -->
+            <div id="importWalletSection" style="display: none;">
+                <h3 style="color: var(--bright-teal); font-size: 1rem; margin-bottom: 15px;">📥 IMPORT EXISTING WALLET</h3>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; color: var(--primary-teal); font-size: 0.8rem; margin-bottom: 5px;">
+                        🔑 Paste Your Private Key:
+                    </label>
+                    <textarea id="importPrivateKey" 
+                        style="width: 100%; height: 80px; background: var(--bg-black); border: 1px solid var(--primary-teal); color: var(--bright-cyan); padding: 10px; font-family: monospace; font-size: 0.8rem; resize: none;"
+                        placeholder="Paste your 64-character hexadecimal private key here..."></textarea>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="saveImportedToFileCheck" style="width: 16px; height: 16px; accent-color: var(--primary-teal);">
+                        <span style="color: var(--bright-cyan); font-size: 0.8rem;">Save imported key to local file (.kaspa-auth/web-participant-peer-wallet.key)</span>
+                    </label>
+                    <small style="color: var(--primary-teal); margin-left: 26px; font-size: 0.7rem;">
+                        Convenient for future sessions. Only enable on trusted devices.
+                    </small>
+                </div>
+                
+                <button class="connect-button" onclick="validateAndImportWallet()" id="importButton">
+                    [ VALIDATE & IMPORT WALLET ]
+                </button>
+            </div>
+        </div>
+
+        <!-- Auth panel (hidden initially) -->
+        <div class="auth-panel" id="authPanel" style="display: none;">
+            <h2 class="panel-title">JOIN COMMENT ROOM</h2>
+            <div style="margin-bottom: 20px; padding: 15px; background: var(--bg-black); border: 1px solid rgba(20, 184, 166, 0.3); border-radius: 4px;">
+                <p style="font-size: 0.8rem; color: var(--primary-teal); margin-bottom: 10px;">POWERED BY KDAPP FRAMEWORK</p>
+                <p style="font-size: 0.7rem; color: rgba(255,255,255,0.6); line-height: 1.4;">
+                    Shared comment rooms on Kaspa blockchain. Multiple participants can authenticate and comment together in the same episode.
+                </p>
+            </div>
+            
+            <div style="margin-bottom: 15px; padding: 10px; background: rgba(20, 184, 166, 0.1); border: 1px solid var(--primary-teal); border-radius: 4px;">
+                <p style="color: var(--bright-cyan); font-size: 0.8rem; margin-bottom: 5px;">🔑 Active Wallet:</p>
+                <p style="color: rgba(255,255,255,0.8); font-size: 0.7rem; font-family: monospace;" id="activeWalletAddress">
+                    Loading...
+                </p>
+                <button onclick="changeWallet()" style="margin-top: 8px; padding: 4px 12px; background: transparent; border: 1px solid var(--primary-teal); color: var(--primary-teal); border-radius: 3px; cursor: pointer; font-size: 0.7rem;">
+                    Change Wallet
+                </button>
+            </div>
+            
+            <!-- Active Rooms Panel -->
+            <div id="activeRoomsPanel" style="margin-bottom: 20px; display: none;">
+                <h3 style="color: var(--bright-teal); font-size: 1rem; margin-bottom: 15px; border-bottom: 1px solid var(--primary-teal); padding-bottom: 5px;">JOIN EXISTING COMMENT ROOM</h3>
+                <div id="activeRoomsList" style="max-height: 150px; overflow-y: auto; padding-right: 10px;">
+                    <!-- JS will populate this -->
+                    <p style="color: var(--primary-teal);">Fetching active rooms...</p>
+                </div>
+            </div>
+
+            <button class="connect-button" id="authButton" onclick="connectWallet()">
+                [ OR CREATE NEW COMMENT ROOM ]
+            </button>
+            <button class="connect-button" id="logoutButton" onclick="logout()" style="display: none; margin-top: 10px; background: #f7931a; border-color: #f7931a;">
+                [ LOGOUT ]
+            </button>
+            <div style="margin-top: 20px;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                    <input type="checkbox" id="anonMode" style="width: 20px; height: 20px; accent-color: var(--primary-teal);">
+                    <span style="color: var(--bright-cyan); font-size: 0.9rem;">EPISODE ANONYMOUS MODE</span>
+                </label>
+                <small style="color: var(--primary-teal); margin-top: 5px; display: block; line-height: 1.4;">
+                    Anonymous: Shorter comments, no replies, temporary identity<br>
+                    Authenticated: Full features, persistent identity, blockchain verification
+                </small>
+            </div>
+        </div>
+        
+        <!-- Comment form -->
+        <div class="comment-form" id="commentForm" style="display: none;">
+            <h2 class="panel-title">SUBMIT EPISODE MESSAGE</h2>
+            <div style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
+                <div style="font-size: 0.8rem; color: var(--primary-teal);">
+                    COMMENT ROOM: <span style="color: var(--bright-cyan);" id="authEpisodeDisplay">--</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--primary-teal);">
+                    SESSION: <span style="color: var(--success);">ACTIVE</span>
+                </div>
+            </div>
+            <div class="terminal-prefix">participant@kaspa:~$</div>
+            <textarea class="terminal-input" placeholder="Enter your episode message..." id="commentInput" maxlength="1000"></textarea>
+            <div class="form-footer">
+                <div class="char-counter">
+                    BYTES REMAINING: <span id="charCount">1000</span>
+                </div>
+                <button class="connect-button" style="width: auto; padding: 10px 30px;" id="submitCommentBtn">
+                    [ SUBMIT TO EPISODE ]
+                </button>
+            </div>
+        </div>
+        
+        <!-- Comments section -->
+        <div class="comments-section">
+            <h2 class="panel-title" style="margin-bottom: 30px;">EPISODE TRANSMISSION LOG</h2>
+            <div id="commentsContainer">
+                <!-- Example comment -->
+                <div class="comment-card">
+                    <div class="comment-header">
+                        <span class="comment-author">kaspa:qryy...x3nz</span>
+                        <div class="comment-meta">
+                            <span>EPISODE: 847293</span>
+                            <span>BLOCK: 7,531,840</span>
+                        </div>
+                    </div>
+                    <div class="comment-body">
+                        The Kaspa blockchain never forgets. Our episode messages are immutable now.
+                    </div>
+                    <a href="https://explorer-tn10.kaspa.org/addresses/kaspatest:qzf2gqefp9xsws75380uwzgnah4mttmavgkqv8kx6kam688rwc6wjar5dzz7u" target="_blank" class="verify-link">[ VERIFY ON KASPA EXPLORER → ]</a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Network stats sidebar -->
+        <div class="stats-panel">
+            <h3 class="stats-title">KDAPP Network Stats</h3>
+            <div class="stat-item">
+                <span class="stat-label">Organizer Peers</span>
+                <span class="stat-value" id="organizerPeers">1</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Auth Episodes</span>
+                <span class="stat-value" id="authEpisodes">3,847</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Comment Episodes</span>
+                <span class="stat-value" id="commentEpisodes">15,234</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">DAA Score</span>
+                <span class="stat-value" id="daaScore">28,847,293</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Kaspa TPS</span>
+                <span class="stat-value">10 BPS</span>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <footer class="footer">
+            <p>RUNNING ON KASPA TESTNET-10 • POWERED BY KDAPP FRAMEWORK</p>
+            <p>
+                <a href="#">[ JOIN THE P2P NETWORK ]</a>
+                <span style="color: var(--primary-teal);">•</span>
+                <a href="#">[ VIEW ON GITHUB ]</a>
+                <span style="color: var(--primary-teal);">•</span>
+                <span>CONNECTED TO <span id="peerCount">7</span> KASPA NODES</span>
+            </p>
+            <p style="margin-top: 15px; font-size: 0.7rem; opacity: 0.7;">
+                TX PREFIX: 0x41555448 (AUTH) • 0x434F4D4D (COMM) • EPISODE-BASED P2P ARCHITECTURE
+            </p>
+            <p style="margin-top: 10px; font-size: 0.6rem; opacity: 0.6;">
+                MULTI-ORGANIZER RESILIENCE • AUTOMATIC FAILOVER • CENSORSHIP RESISTANT
+            </p>
+        </footer>
+    </div>
+    
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>

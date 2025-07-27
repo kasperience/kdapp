@@ -1,51 +1,57 @@
-Perfect! Now I can see the exact issue you're frustrated about. Let me compare the CLI authentication methods between master and dev branches:
+## 🚨 **CRITICAL: MAIN.RS SIZE RULES - NEVER IGNORE!**
 
-  🔍 CLI Authentication Methods Comparison:
+### ❌ **ABSOLUTE FORBIDDEN: Large main.rs Files**
+- **HARD LIMIT**: main.rs must NEVER exceed 40KB
+- **LINE LIMIT**: main.rs must NEVER exceed 800 lines
+- **RESPONSIBILITY**: main.rs is ONLY for CLI entry point and command routing
 
-  On DEV Branch (Today's Working Version):
+### ✅ **REQUIRED MODULAR ARCHITECTURE**
+```
+src/
+├── main.rs              # CLI entry point ONLY (50-100 lines max)
+├── cli/
+│   ├── parser.rs        # Command definitions
+│   ├── auth_commands.rs # Auth command handlers
+│   └── server_commands.rs # Server command handlers
+├── auth/
+│   ├── flow.rs         # Authentication logic
+│   └── session.rs      # Session management
+├── utils/
+│   ├── crypto.rs       # Crypto utilities
+│   └── validation.rs   # Input validation
+└── coordination/
+    └── http_fallback.rs # HTTP coordination
+```
 
-  - authenticate command → run_automatic_authentication() → Pure HTTP coordination (reqwest/hyper)
-  - participant-peer --auth command → run_client_authentication() → Real kdapp engine (blockchain transactions)
+### 🔥 **ENFORCEMENT RULES FOR CLAUDE & GEMINI**
+1. **Before adding ANY code to main.rs**: Check file size with `du -h main.rs`
+2. **If main.rs > 40KB**: MUST extract to appropriate module first
+3. **If main.rs > 800 lines**: MUST extract to appropriate module first
+4. **NEVER add functions to main.rs**: Create dedicated modules
+5. **NEVER add large match blocks to main.rs**: Use command handlers
 
-  On MASTER Branch (Current):
+### 💡 **WHERE TO PUT CODE INSTEAD OF MAIN.RS**
+- **Authentication logic** → `src/auth/flow.rs`
+- **Session management** → `src/auth/session.rs`
+- **Command handlers** → `src/cli/*_commands.rs`
+- **Crypto utilities** → `src/utils/crypto.rs`
+- **HTTP coordination** → `src/coordination/http_fallback.rs`
+- **Validation logic** → `src/utils/validation.rs`
 
-  - authenticate command → run_automatic_authentication() → Same HTTP coordination (reqwest/hyper)
-  - participant-peer --auth command → run_kaspa_participant_peer() → Real kdapp engine (blockchain transactions)
+### 🎯 **MAIN.RS SHOULD ONLY CONTAIN**
+```rust
+// GOOD main.rs (50-100 lines max)
+use kaspa_auth::cli::{build_cli, handle_command};
 
-  🚨 The Problem You're Pointing Out:
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt::init();
+    let matches = build_cli().get_matches();
+    handle_command(matches).await
+}
+```
 
-  Both branches have the SAME issue: The authenticate command uses HTTP coordination only, NOT kdapp engine!
-
-  From dev branch main.rs:
-
-  // Line 820: run_automatic_authentication - HTTP ONLY
-  async fn run_automatic_authentication(peer_url: String, keypair: Keypair) -> Result<(), Box<dyn Error>> {
-      let client = reqwest::Client::new();  // ❌ HTTP client, not kdapp engine
-
-      // HTTP calls to /auth/start, /auth/request-challenge, etc.
-      // No blockchain transactions, no kdapp engine
-  }
-
-  From dev branch main.rs:
-
-  // Line 544: run_client_authentication - REAL KDAPP ENGINE
-  async fn run_client_authentication(kaspa_signer: Keypair, auth_signer: Keypair) -> Result<(), Box<dyn Error>> {
-      // Real kdapp engine setup
-      let engines = [(AUTH_PREFIX, (AUTH_PATTERN, tx))].into();
-      proxy::run_listener(kaspad, engines, exit_signal).await;  // ✅ Real kdapp!
-  }
-
-  🎯 Your Point Is Valid:
-
-  BOTH methods should use kdapp engine, but currently:
-  - ❌ authenticate = HTTP coordination (fake)
-  - ✅ participant-peer --auth = Real kdapp engine (correct)
-
-  The authenticate command should be rewritten to use real kdapp engine architecture instead of HTTP coordination!
-
-  You're absolutely right to be frustrated - the system is inconsistent and confusing.
-
-
+**NEVER FORGET**: Large main.rs files cause "going in circles" and dramatically reduce development efficiency!
 
 # 🌐 FUNDAMENTAL: kdapp is Peer-to-Peer, NOT Client-Server
 
@@ -71,16 +77,152 @@ Perfect! Now I can see the exact issue you're frustrated about. Let me compare t
 
 **Why This Matters**: When we use "server/client" language, we unconsciously default to hierarchical thinking patterns that are fundamentally wrong for kdapp architecture. This causes implementation bugs, security issues, and architectural confusion.
 
-# 🎉 FINAL ACHIEVEMENT: True Peer-to-Peer Authentication System
+## 🚨 CRITICAL: WORKING DIRECTORY RULE
+
+### ❌ WRONG: Running from Root Directory
+```bash
+# DON'T RUN FROM HERE:
+/kdapp/$ cargo run --bin kaspa-auth -- http-peer
+# ERROR: Can't find kaspa-auth binary!
+```
+
+### ✅ CORRECT: Always Run from examples/kaspa-auth/
+```bash
+# ALWAYS RUN FROM HERE:
+/kdapp/examples/kaspa-auth/$ cargo run --bin kaspa-auth -- http-peer
+# SUCCESS: HTTP peer starts correctly!
+```
+
+### 🔥 THE #1 CONFUSION SOURCE
+**RULE**: ALL kaspa-auth commands MUST be run from the `examples/kaspa-auth/` directory!
+
+**Why This Happens**:
+- Root `/kdapp/` contains the framework
+- `/kdapp/examples/kaspa-auth/` contains the auth implementation
+- Cargo looks for `kaspa-auth` binary in current workspace
+- Wrong directory = "binary not found" errors
+
+### 🎯 Quick Directory Check
+```bash
+# Verify you're in the right place:
+pwd
+# Should show: .../kdapp/examples/kaspa-auth
+
+# If in wrong directory:
+cd examples/kaspa-auth/  # From kdapp root
+# OR
+cd /path/to/kdapp/examples/kaspa-auth/  # From anywhere
+```
+
+### 💡 Working Commands (from examples/kaspa-auth/)
+```bash
+# ✅ These work from examples/kaspa-auth/ directory:
+cargo run --bin kaspa-auth -- wallet-status
+cargo run --bin kaspa-auth -- http-peer --port 8080  
+cargo run --bin kaspa-auth -- authenticate
+cargo run --bin kaspa-auth -- revoke-session --episode-id 123 --session-token sess_xyz
+
+# ❌ These FAIL from kdapp/ root directory:
+# "error: no bin target named `kaspa-auth`"
+```
+
+### 🔧 Pro Tip: Terminal Management
+```bash
+# Set up dedicated terminal for kaspa-auth:
+cd /path/to/kdapp/examples/kaspa-auth/
+# Pin this terminal tab for all kaspa-auth work!
+```
+
+## 🚫 NO PREMATURE CELEBRATION RULE
+
+### ❌ WRONG: Celebrating Before Commit
+- "🎉 SUCCESS!" before git commit
+- "✅ COMPLETE!" before testing
+- "🏆 ACHIEVEMENT!" before verification
+- Excessive celebration language wastes tokens
+
+### ✅ CORRECT: Professional Development Workflow
+- Test functionality
+- Fix any issues  
+- Commit changes
+- Brief acknowledgment only
+
+**RULE**: No celebration emojis or extensive success language until work is committed and verified. Keep responses focused and token-efficient.
+
+## 🔑 CRITICAL WALLET PERSISTENCE RULE
+
+### ❌ WRONG: Recreating Wallets Every Feature Addition
+```rust
+// This creates NEW wallets every time:
+let wallet = generate_new_keypair(); // WRONG!
+```
+
+### ✅ CORRECT: Persistent Wallet Architecture
+```rust
+// This reuses existing wallets:
+let wallet = get_wallet_for_command("organizer-peer", None)?; // CORRECT!
+```
+
+### 🚨 THE PERSISTENT WALLET PRINCIPLE
+**RULE**: Once a wallet is created for a role, it MUST be reused across ALL feature additions and sessions.
+
+**File Structure**:
+```
+.kaspa-auth/
+├── organizer-peer-wallet.key     # HTTP Organizer Peer wallet
+└── participant-peer-wallet.key   # CLI/Web Participant wallet
+```
+
+**Implementation Requirements**:
+1. **Separate wallet files** per peer role (organizer vs participant)
+2. **Persistent storage** in `.kaspa-auth/` directory  
+3. **Clear messaging** about wallet reuse vs creation
+4. **First-run detection** with appropriate user guidance
+5. **Funding status tracking** for newly created wallets
+
+### 🎯 Why This Matters for kdapp
+- **Identity Consistency**: Same peer = same public key across sessions
+- **Address Stability**: Kaspa addresses don't change between runs
+- **Episode Continuity**: Blockchain recognizes the same participant
+- **User Experience**: No confusion about multiple identities
+- **Economic Model**: UTXOs accumulate in consistent addresses
+
+### 🔧 Implementation Pattern
+```rust
+pub fn get_wallet_for_command(command: &str, private_key: Option<&str>) -> Result<KaspaAuthWallet> {
+    match private_key {
+        Some(key_hex) => KaspaAuthWallet::from_private_key(key_hex), // Override
+        None => KaspaAuthWallet::load_for_command(command) // Persistent reuse
+    }
+}
+```
+
+**NEVER** create new wallets unless:
+1. User explicitly requests it (`--new-wallet` flag)
+2. Wallet file is corrupted and cannot be loaded
+3. User provides explicit private key override
+
+### 💡 User Messaging Best Practices
+```rust
+// GOOD: Clear about reuse
+println!("🔑 Using existing organizer-peer wallet (address: kaspatest:...)");
+
+// BAD: Ambiguous about creation vs reuse  
+println!("🔑 Wallet loaded");
+```
+
+# 🎉 ACHIEVEMENT: Complete P2P Authentication System (Session Management Ready)
 
 ## ✅ COMPLETED: Revolutionary P2P Authentication
 - ✅ **True P2P Architecture**: Participants fund their own transactions
 - ✅ **Real Blockchain Integration**: All events recorded on Kaspa blockchain
 - ✅ **Live User Experience**: Real-time WebSocket updates from blockchain
 - ✅ **Production Security**: Genuine secp256k1 signatures and cryptographic challenges
+- ✅ **Session Management UI**: Login/logout cycle with local session voiding
 - ✅ **Developer Friendly**: Complete API and CLI interfaces
+- ✅ **Unified Wallet System**: No separation between CLI and web participant wallets
 
-**Result**: A revolutionary authentication system that redefines P2P protocols!
+**Result**: A production-ready authentication system that demonstrates kdapp architecture!
 
 ## ✅ CLI Works Because It's Real kdapp Architecture
 The CLI (`cargo run -- authenticate`) works because it:
@@ -89,187 +231,152 @@ The CLI (`cargo run -- authenticate`) works because it:
 3. **Listens for blockchain state** via `proxy::run_listener(kaspad, engines)`
 4. **Uses blockchain as source of truth** - not memory
 
-## 🎯 URGENT ROADMAP: Fix HTTP to Use Real kdapp Architecture
+## 🎯 NEXT: The Cherry on Top - Blockchain Session Revocation
 
-### Phase 1: HTTP Organizer Peer Must Run kdapp Engine (1-2 days)
+## 🚨 CRITICAL: Deterministic Challenge & Session Token Generation
 
-**Goal**: HTTP organizer peer runs the same kdapp engine as CLI
+### The Problem: Non-Deterministic Randomness
 
-#### Step 1.1: Add kdapp Engine to HTTP Organizer Peer
+Previously, challenges and session tokens were generated using `rand::thread_rng()`. While cryptographically secure, this method is **non-deterministic**. This means that even with the same input parameters, different instances of the `kdapp` engine (or the same instance at different times) would produce different "random" outputs.
+
+This led to critical issues:
+- **Challenge Mismatch**: The challenge generated by the organizer peer (and stored on the blockchain) would not match the challenge the participant peer expected when trying to sign it, resulting in `Invalid or expired challenge` errors.
+- **Session Token Mismatch**: The session token generated during authentication would not match the token expected during session revocation, leading to `Invalid or malformed session token` errors.
+
+### The Solution: Deterministic Seeding
+
+To ensure consistency and verifiability across all peers, challenges and session tokens must be deterministically generated. This is achieved by:
+- Using `rand_chacha::ChaCha8Rng`, a cryptographically secure pseudorandom number generator.
+- Seeding the `ChaCha8Rng` with a **blockchain-derived timestamp** (`metadata.accepting_time`). This timestamp is part of the transaction metadata and is consistent across all peers processing the same transaction.
+
+**This ensures that given the same blockchain transaction (and thus the same `metadata.accepting_time`), every `kdapp` engine will deterministically generate the exact same challenge and session token.**
+
+### Key Principles:
+- **Blockchain is the Seed**: All randomness for critical protocol elements (challenges, session tokens) must be derived from deterministic, blockchain-verified data.
+- **Reproducibility**: Any peer, by replaying the blockchain history, must be able to reproduce the exact same challenge and session token at any point in time.
+- **No `thread_rng()` for Protocol Elements**: Avoid `thread_rng()` for any data that needs to be consistent across the distributed system.
+
+### Example (Fixed):
 ```rust
-// src/api/http/blockchain_engine.rs (NEW FILE)
-pub struct AuthHttpOrganizer {
-    pub engine: Engine<SimpleAuth, AuthHandler>,
-    pub kaspad: Arc<KaspadClient>,
-    pub organizer_state: OrganizerState,
+// src/crypto/challenges.rs
+pub fn generate_with_provided_timestamp(timestamp: u64) -> String {
+    use rand_chacha::ChaCha8Rng;
+    use rand::SeedableRng;
+    use rand::Rng; // Required for .gen()
+    let mut rng = ChaCha8Rng::seed_from_u64(timestamp);
+    format!("auth_{}_{}", timestamp, rng.gen::<u64>())
 }
 
-impl AuthHttpOrganizer {
-    pub async fn start_blockchain_listener(&self) -> Result<()> {
-        // Same code as CLI: proxy::run_listener(kaspad, engines, exit_signal)
-        // This makes HTTP organizer peer a REAL kdapp node!
+// src/core/episode.rs
+fn generate_session_token(&self) -> String {
+    use rand_chacha::ChaCha8Rng;
+    use rand::SeedableRng;
+    use rand::Rng; // Required for .gen()
+    let mut rng = ChaCha8Rng::seed_from_u64(self.challenge_timestamp);
+    format!("sess_{}", rng.gen::<u64>())
+}
+```
+
+This deterministic approach is fundamental to the `kdapp` philosophy, ensuring that all critical state transitions are verifiable and consistent across the entire peer-to-peer network.
+
+
+
+### Phase 1: True Blockchain Session Voiding (Day 7 - Fresh Mind)
+
+**Goal**: Complete the authentication lifecycle with blockchain-based session revocation
+
+**The Perfect Addition**: Currently logout only voids session locally. Let's make it **truly P2P** by recording session revocation on blockchain!
+
+#### Step 1.1: Add RevokeSession Command to Episode
+```rust
+// src/core/commands.rs - Add new command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AuthCommand {
+    RequestChallenge,
+    SubmitResponse { signature: String, nonce: String },
+    RevokeSession { session_token: String, signature: String }, // NEW!
+}
+
+// src/core/episode.rs - Handle revocation
+AuthCommand::RevokeSession { session_token, signature } => {
+    // Verify participant owns the session
+    // Mark session as revoked in blockchain state
+    // Generate session revocation rollback
+}
+```
+
+#### Step 1.2: Update Frontend Logout to Submit Blockchain Transaction
+```rust
+// Frontend: public/index.html - Update logout function
+async function logout() {
+    try {
+        // Step 1: Call backend to submit RevokeSession transaction
+        const response = await fetch('/auth/revoke-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                episode_id: window.currentEpisodeId,
+                session_token: window.currentSessionToken
+            })
+        });
+        
+        // Step 2: Wait for blockchain confirmation via WebSocket
+        // Step 3: Reset UI when revocation confirmed
+    } catch (error) {
+        console.error('Blockchain logout failed:', error);
     }
 }
 ```
 
-#### Step 1.2: HTTP Handlers Submit Real Transactions
+#### Step 1.3: Add Revoke Session HTTP Endpoint
 ```rust
-// src/api/http/handlers/auth.rs (REWRITE)
-pub async fn start_auth(request: StartAuthRequest) -> Result<Json<StartAuthResponse>> {
-    // ❌ OLD: episodes.insert(episode_id, fake_episode)
-    // ✅ NEW: Submit NewEpisode transaction to blockchain
-    let tx = generator.build_command_transaction(utxo, &addr, &new_episode, 5000);
+// src/api/http/handlers/revoke.rs (NEW FILE)
+pub async fn revoke_session(
+    State(state): State<PeerState>,
+    Json(request): Json<RevokeSessionRequest>,
+) -> Result<Json<RevokeSessionResponse>> {
+    // Submit RevokeSession command to blockchain
+    let revoke_command = AuthCommand::RevokeSession {
+        session_token: request.session_token,
+        signature: "signed_revocation_proof".to_string(),
+    };
+    
+    // Submit transaction to blockchain (participant pays)
+    let tx = generator.build_command_transaction(utxo, &addr, &revoke_command, 5000);
     kaspad.submit_transaction(tx.as_ref().into(), false).await?;
     
-    // Return transaction ID, not fake data
-    Ok(Json(StartAuthResponse { 
-        episode_id, 
+    Ok(Json(RevokeSessionResponse {
         transaction_id: tx.id(),
-        status: "submitted_to_blockchain" 
+        status: "session_revocation_submitted"
     }))
 }
 ```
 
-#### Step 1.3: Episode State Comes from kdapp Engine
-```rust
-// src/api/http/handlers/status.rs (REWRITE)
-pub async fn get_status(episode_id: u64) -> Result<Json<EpisodeStatus>> {
-    // ❌ OLD: episodes.lock().unwrap().get(&episode_id)
-    // ✅ NEW: Query episode state from kdapp engine
-    let episode_state = auth_organizer.engine.get_episode_state(episode_id)?;
-    
-    Ok(Json(EpisodeStatus {
-        episode_id,
-        authenticated: episode_state.is_authenticated,
-        challenge: episode_state.challenge,
-        session_token: episode_state.session_token,
-        blockchain_confirmed: true  // Always true since it comes from blockchain!
-    }))
-}
-```
+### Success Criteria: The Perfect Authentication Lifecycle
 
-### Phase 2: WebSocket Gets Updates from Blockchain (Day 3)
+#### ✅ Complete P2P Session Management
+- [ ] **Login**: Real blockchain authentication with celebration  
+- [ ] **Session Active**: Token valid across all peers
+- [ ] **Logout**: Blockchain transaction revokes session globally
+- [ ] **Session Invalid**: No peer accepts revoked session
 
-#### Step 2.1: Engine Handler Broadcasts to WebSocket
-```rust
-// src/episode_runner.rs (MODIFY EXISTING)
-impl EpisodeEventHandler<SimpleAuth> for AuthHandler {
-    fn on_command(&self, episode_id: EpisodeId, episode: &SimpleAuth, ...) {
-        // ✅ When blockchain confirms episode update, broadcast via WebSocket
-        let ws_message = WebSocketMessage {
-            type: "authentication_successful",
-            episode_id,
-            session_token: episode.session_token.clone(),
-        };
-        
-        // Send to ALL connected web participant peers
-        let _ = self.websocket_tx.send(ws_message);
-    }
-}
-```
+#### 🎯 The Cherry on Top Benefits:
+- **Unphishable Logout**: Can't fake session revocation  
+- **Global Session State**: All peers see revoked sessions immediately
+- **Audit Trail**: Complete authentication lifecycle on blockchain
+- **True P2P**: No central session store - blockchain is truth
 
-#### Step 2.2: Real-Time Blockchain → WebSocket → Dashboard
-```
-┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌──────────────┐
-│   Browser   │───▶│ HTTP Org.    │───▶│ Kaspa       │───▶│ kdapp Engine │
-│ (Dashboard) │    │ Peer (TX)    │    │ Blockchain  │    │ (Detect TX)  │
-└─────────────┘    └──────────────┘    └─────────────┘    └──────────────┘
-       ▲                                                          │
-       │                                                          ▼
-       │            ┌──────────────┐                    ┌─────────────────┐
-       └────────────│ WebSocket    │◀───────────────────│ Episode Handler │
-                    │ (Real-time)  │                    │ (Broadcast)     │
-                    └──────────────┘                    └─────────────────┘
-```
+## 💭 **Implementation Notes for Tomorrow:**
 
-### Phase 3: Integration Testing (Day 4)
+**Quote to Remember**: *"We build on $KAS an unphishable authentication system that's sophisticated by design. The HTTP/WebSocket coordination is the secret sauce: the blockchain doesn't chat back to you directly—it's like a secure gold vault with lightning-fast stamps in a decentralized Fort Knox."*
 
-#### Step 3.1: End-to-End Test
-```bash
-# Terminal 1: Start HTTP organizer peer with kdapp engine
-cargo run -- http-peer --port 8080
+**Time Estimate**: 3-4 hours for complete blockchain session revocation
 
-# Terminal 2: Test via browser
-# Open http://localhost:8080
-# Click "Start Authentication Flow"
-# Should see REAL blockchain transactions on explorer!
-
-# Terminal 3: Test via CLI (should see same episodes)
-cargo run -- authenticate --peer http://127.0.0.1:8080
-```
-
-#### Step 3.2: Verify on Kaspa Explorer
-- HTTP dashboard creates episode → Real transaction on explorer
-- CLI joins same episode → Real transaction on explorer  
-- Both see same authentication state from blockchain
-
-### Phase 4: Remove All Fake Code (Day 5)
-
-#### Step 4.1: Delete Memory-Based Episode Storage
-```rust
-// ❌ DELETE: src/api/http/state.rs - episodes HashMap
-// ❌ DELETE: All episode.insert() calls
-// ❌ DELETE: All fake episode responses
-```
-
-#### Step 4.2: Verify Everything is Blockchain-Based
-```rust
-// ✅ VERIFY: All episode state comes from kdapp engine
-// ✅ VERIFY: All handlers submit real transactions
-// ✅ VERIFY: WebSocket updates come from blockchain events
-// ✅ VERIFY: No more fake data anywhere
-```
-
-## 🔥 SUCCESS METRICS
-
-### Phase 1 Success = HTTP Organizer Peer is Real kdapp Node
-- [ ] HTTP organizer peer runs kdapp engine in background
-- [ ] All endpoints submit real blockchain transactions
-- [ ] Episode state comes from blockchain, not memory
-- [ ] Transaction IDs returned to browser (verifiable on explorer)
-
-### Phase 2 Success = Real-Time Blockchain Updates
-- [ ] WebSocket receives updates from kdapp engine
-- [ ] Dashboard shows real-time blockchain confirmations
-- [ ] Multiple participant peers see same blockchain state
-
-### Phase 3 Success = HTTP + CLI Interoperability  
-- [ ] CLI can authenticate via HTTP-created episodes
-- [ ] HTTP dashboard shows CLI-created episodes
-- [ ] Both use same blockchain state
-
-### Phase 4 Success = Zero Fake Code
-- [ ] No HashMap episode storage
-- [ ] No simulated responses
-- [ ] All data comes from Kaspa blockchain
-- [ ] Impossible to create fake authentication
-
-## 🎯 The Architecture Fix
-
-**Before (BROKEN)**:
-```
-Browser → HTTP Organizer Peer → Memory HashMap → WebSocket → Browser
-          (Fake episodes, no blockchain)
-```
-
-**After (CORRECT)**:
-```
-Browser → HTTP Organizer Peer → Kaspa Blockchain → kdapp Engine → WebSocket → Browser
-          (Real transactions, real authentication)
-```
-
-## 🚀 Implementation Priority
-
-1. **URGENT**: Integrate kdapp engine into HTTP organizer peer
-2. **HIGH**: Rewrite handlers to submit real transactions  
-3. **MEDIUM**: Connect WebSocket to blockchain events
-4. **LOW**: Delete all fake code
-
-**Target**: Working blockchain-based HTTP authentication in 3-4 days.
+**Perfect Addition**: This would make kaspa-auth the **most complete P2P authentication example** in any blockchain framework!
 
 ---
 
-*"If it's not on the blockchain, it's not real authentication"* - kdapp philosophy
+*"The cherry on top would make this authentication system truly unphishable from login to logout"* - Tomorrow's Fresh Mind Goal 🍒
 
 ### 1. Split into focused modules (30-50 lines each):
 
@@ -459,4 +566,115 @@ Instead of adding more HTTP fallbacks:
 ---
 
 **Remember**: This is a **pragmatic exception**, not a **precedent**. Every other authentication component must use pure kdapp architecture.
-EOF < /dev/null
+
+## 🚨 CRITICAL SESSION TOKEN AND HTTP FAKING ISSUES
+
+### ❌ ABSOLUTE FORBIDDEN: Session Token Faking/Mismatch
+
+**NEVER create fake session tokens or multiple generation methods:**
+
+```rust
+// ❌ WRONG - Multiple session token generators in kaspa-auth
+fn generate_session_token() -> String {
+    format!("sess_{}", rng.gen::<u64>())  // Episode: sess_13464325652750888064
+}
+
+// ❌ WRONG - HTTP organizer_peer.rs creating fake tokens  
+session_token: Some(format!("sess_{}", episode_id)),  // HTTP: sess_144218627
+
+// ❌ WRONG - main.rs client fallback creating different tokens
+session_token = format!("sess_{}", episode_id);  // Client: sess_3775933173
+```
+
+**✅ CORRECT - Single source of truth (kaspa-auth specific):**
+
+```rust
+// ✅ core/episode.rs - ONLY session token generator
+fn generate_session_token() -> String {
+    format!("sess_{}", rng.gen::<u64>())  // Real random token
+}
+
+// ✅ api/http/organizer_peer.rs - Read from blockchain
+let real_session_token = if let Ok(episodes) = state.blockchain_episodes.lock() {
+    episodes.get(&episode_id)?.session_token.clone()
+} else { None };
+
+// ✅ main.rs client - Read from blockchain listener
+if let Some(token) = &episode_state.session_token {
+    session_token = token.clone();  // Use episode's REAL token
+}
+```
+
+### 🔍 kaspa-auth Session Token Debug Checklist
+
+**Before committing kaspa-auth changes:**
+- [ ] `cargo run -- authenticate-full-flow` shows same token throughout
+- [ ] HTTP WebSocket `authentication_successful` has long token: `sess_<20-digits>`
+- [ ] HTTP WebSocket `session_revoked` references same token
+- [ ] CLI logs and web UI logs show identical session tokens
+- [ ] No "fallback" or "timeout" session token generation
+
+### ❌ kaspa-auth Specific Forbidden Patterns
+
+```rust
+// ❌ WRONG - src/api/http/organizer_peer.rs
+session_token: Some(format!("sess_{}", episode_id)),  // Fake!
+
+// ❌ WRONG - src/main.rs 
+session_token = format!("sess_{}", episode_id);  // Fallback fake!
+
+// ❌ WRONG - Any HTTP endpoint
+"session_token": "mock_token",  // Not from episode!
+
+// ❌ WRONG - Any timeout handler
+if timeout_reached {
+    return Ok("success");  // LIE!
+}
+```
+
+**✅ kaspa-auth Correct Patterns:**
+
+```rust
+// ✅ CORRECT - Read from blockchain_episodes
+if let Some(episode) = state.blockchain_episodes.lock()?.get(&episode_id) {
+    session_token = episode.session_token.clone()  // REAL token
+}
+
+// ✅ CORRECT - Honest timeout failures  
+if timeout_reached {
+    return Err("Authentication timeout - no session token available".into());
+}
+```
+
+### 💡 kaspa-auth Real Bug Example (Fixed)
+
+**The Production Bug (July 11, 2025):**
+```
+WebSocket: {session_token: 'sess_7761919764170048936'}  // HTTP fake (episode_id)
+CLI logs: sess_13464325652750888064                      // Episode real (random)
+Result: RevokeSession rejected - token mismatch ❌
+```
+
+**The Fix Applied:**
+```
+Episode generates: sess_13464325652750888064
+HTTP reads same:   sess_13464325652750888064  
+Client reads same: sess_13464325652750888064
+Revocation works:  Token match ✅
+```
+
+### 🎯 kaspa-auth Anti-Faking Enforcement
+
+**Files to check for faking:**
+- `src/core/episode.rs` - Only place generating session tokens
+- `src/api/http/organizer_peer.rs` - Must read from blockchain_episodes  
+- `src/main.rs` - Client must read from episode state
+- `src/api/http/blockchain_engine.rs` - WebSocket must use episode.session_token
+
+**Commit checklist:**
+1. All session tokens are 20-digit format: `sess_<20-digits>`
+2. No `format!("sess_{}", episode_id)` anywhere except episode.rs
+3. No fallback session token generation in timeouts
+4. HTTP coordination reads blockchain state, never creates state
+
+Remember: **In kaspa-auth, episode.rs is the ONLY source of session tokens**

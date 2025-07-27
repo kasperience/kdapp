@@ -26,6 +26,8 @@ pub struct ChallengeRequest {
 pub struct ChallengeResponse {
     pub episode_id: u64,
     pub nonce: String,
+    pub transaction_id: Option<String>,
+    pub status: String,
 }
 
 #[derive(Deserialize)]
@@ -40,11 +42,26 @@ pub struct VerifyResponse {
     pub episode_id: u64,
     pub authenticated: bool,
     pub status: String,
+    pub transaction_id: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct EpisodeStatus {
     pub episode_id: u64,
     pub authenticated: bool,
+    pub status: String,
+}
+
+#[derive(Deserialize)]
+pub struct RevokeSessionRequest {
+    pub episode_id: u64,
+    pub session_token: String,
+    pub signature: String,
+}
+
+#[derive(Serialize)]
+pub struct RevokeSessionResponse {
+    pub episode_id: u64,
+    pub transaction_id: String,
     pub status: String,
 }

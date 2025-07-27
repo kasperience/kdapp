@@ -339,7 +339,7 @@
                 <br><strong>💰 You need to fund YOUR participant address</strong> (shown in console) to authenticate.
                 <br><strong>🖥️ Organizer address above</strong> is only for coordination - you don't need to fund it.
             </div>
-            <button id="authButton" class="auth-button" onclick="startAuthentication()">
+            <button id="authButton" class="auth-button" onclick="handleAuthButton()">
                 🔑 Start Authentication Flow
             </button>
             
@@ -413,6 +413,9 @@
                         <span class="method post">POST</span> /auth/verify - Submit verification
                     </div>
                     <div class="endpoint-item">
+                        <span class="method post">POST</span> /auth/revoke-session - Revoke session
+                    </div>
+                    <div class="endpoint-item">
                         <span class="method get">GET</span> /auth/status/{id} - Episode status
                     </div>
                 </div>
@@ -424,6 +427,7 @@
                     <div class="endpoint-item">challenge_issued</div>
                     <div class="endpoint-item">authentication_successful</div>
                     <div class="endpoint-item">authentication_failed</div>
+                    <div class="endpoint-item">session_revoked</div>
                     <div class="endpoint-item">episode_updated</div>
                 </div>
             </div>
@@ -465,6 +469,16 @@
         // Utility function to convert bytes to hex string (since bytesToHex from noble-hashes is problematic via CDN)
         function bytesToHex(bytes) {
             return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+        }
+        
+        // Status display function for logout flow
+        function showStatus(message) {
+            console.log('STATUS:', message);
+            // Could also update a status element on the page if needed
+            const statusElement = document.getElementById('statusMessage');
+            if (statusElement) {
+                statusElement.textContent = message;
+            }
         }
         
         // WebSocket connection
@@ -515,6 +529,14 @@
                 case 'authentication_failed':
                     alert('Authentication failed: ' + message.reason);
                     resetUI();
+                    break;
+                    
+                case 'session_revoked':
+                    // Handle session revocation confirmation from blockchain
+                    if (message.episode_id === currentEpisodeId) {
+                        console.log('✅ Session revocation confirmed by blockchain');
+                        showSuccessfulLogout();
+                    }
                     break;
             }
         }
@@ -683,6 +705,56 @@
             document.getElementById('successExplorerLink').href = explorerUrl;
             
             document.getElementById('successCard').style.display = 'block';
+            
+            // Change button to logout mode
+            const button = document.getElementById('authButton');
+            const progress = document.getElementById('progressIndicator');
+            
+            button.disabled = false;
+            button.textContent = '🚪 Logout & Void Session';
+            button.style.background = 'linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)';
+            progress.style.display = 'none';
+            
+            // Store session info globally
+            window.currentSessionToken = sessionToken;
+            window.currentEpisodeId = episodeId;
+            window.isAuthenticated = true;
+        }
+        
+        function showSuccessfulLogout() {
+            const button = document.getElementById('authButton');
+            const success = document.getElementById('successCard');
+            
+            // Show successful logout status
+            showStatus('✅ Session revoked successfully on blockchain!');
+            console.log('✅ Session revocation confirmed by blockchain');
+            
+            // Update button to show successful logout status briefly
+            button.disabled = true;
+            button.textContent = '✅ Session Successfully Revoked!';
+            button.style.background = 'linear-gradient(135deg, #27ae60 0%, #2ecc71 100%)'; // Green success color
+            
+            // Hide the success card (logged out state)
+            success.style.display = 'none';
+            
+            // Clear session state
+            window.currentSessionToken = null;
+            window.currentEpisodeId = null;
+            window.isAuthenticated = false;
+            currentEpisodeId = null;
+            
+            // After 3 seconds, restore the green authenticate button
+            setTimeout(() => {
+                button.disabled = false;
+                button.textContent = '🔑 Start Authentication Flow';
+                button.style.background = 'linear-gradient(135deg, #70c7ba 0%, #5db3a8 100%)'; // Original green
+                showStatus('🔄 Ready for new authentication');
+                
+                // Reset progress steps
+                for (let i = 1; i <= 6; i++) {
+                    updateStep(i, 'pending');
+                }
+            }, 3000); // 3-second delay to show success status
         }
         
         function resetUI() {
@@ -692,6 +764,7 @@
             
             button.disabled = false;
             button.textContent = '🔑 Start Authentication Flow';
+            button.style.background = 'linear-gradient(135deg, #70c7ba 0%, #5db3a8 100%)'; // Reset to original color
             progress.style.display = 'none';
             success.style.display = 'none';
             
@@ -700,13 +773,105 @@
                 updateStep(i, 'pending');
             }
             
+            // Clear session state
             currentEpisodeId = null;
             privateKey = null;
             publicKeyHex = null;
+            window.currentSessionToken = null;
+            window.currentEpisodeId = null;
+            window.isAuthenticated = false;
+        }
+        
+        async function logout() {
+            if (!window.isAuthenticated || !window.currentSessionToken) {
+                resetUI();
+                return;
+            }
+            
+            try {
+                // Show logout progress
+                const button = document.getElementById('authButton');
+                button.disabled = true;
+                button.textContent = '🔄 Revoking Session on Blockchain...';
+                
+                // Sign the session token to prove ownership (using server-side signing)
+                const signResponse = await fetch('/auth/sign-challenge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        challenge: window.currentSessionToken,
+                        private_key: "use_client_wallet" // Use persistent client wallet
+                    })
+                });
+                
+                if (!signResponse.ok) {
+                    throw new Error(`Failed to sign session token: ${signResponse.status}`);
+                }
+                
+                const signData = await signResponse.json();
+                const signatureHex = signData.signature;
+                
+                // Submit session revocation to blockchain
+                showStatus('🔄 Submitting session revocation to blockchain...');
+                
+                console.log('DEBUG: About to call /auth/revoke-session with:', {
+                    episode_id: window.currentEpisodeId,
+                    session_token: window.currentSessionToken,
+                    signature_length: signatureHex.length
+                });
+                
+                const response = await fetch('/auth/revoke-session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        episode_id: window.currentEpisodeId,
+                        session_token: window.currentSessionToken,
+                        signature: signatureHex
+                    })
+                });
+                
+                console.log('DEBUG: Response status:', response.status);
+                console.log('DEBUG: Response ok:', response.ok);
+                
+                const result = await response.json();
+                console.log('DEBUG: Response body:', result);
+                
+                if (response.ok) {
+                    console.log('🔄 Session revocation transaction submitted:', result.transaction_id);
+                    showStatus('⏳ Waiting for blockchain confirmation...');
+                    
+                    // Wait for WebSocket notification of session revocation
+                    // The WebSocket will update the UI when the blockchain confirms
+                    console.log('🚪 Session revocation in progress:', window.currentSessionToken);
+                    
+                } else {
+                    throw new Error(result.error || `HTTP ${response.status}: Session revocation failed`);
+                }
+                
+            } catch (error) {
+                console.error('Blockchain logout error:', error);
+                const errorMessage = error.message || error.toString() || 'Unknown error';
+                alert(`Logout failed: ${errorMessage}`);
+                showStatus(`❌ Logout failed: ${errorMessage}`);
+                
+                // Reset button state on error
+                const button = document.getElementById('authButton');
+                button.disabled = false;
+                button.textContent = '🚪 Logout & Void Session';
+            }
         }
         
         function sleep(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
+        // Smart button handler - decides between authentication and logout
+        window.handleAuthButton = function() {
+            if (window.isAuthenticated) {
+                logout();
+            } else {
+                startAuthentication();
+            }
         }
 
         async function signChallenge(challenge) {

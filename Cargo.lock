@@ -578,6 +578,67 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
+name = "comment-board"
+version = "0.0.1"
+dependencies = [
+ "borsh",
+ "clap",
+ "env_logger",
+ "faster-hex",
+ "itertools 0.14.0",
+ "kaspa-addresses",
+ "kaspa-consensus-core",
+ "kaspa-core",
+ "kaspa-rpc-core",
+ "kaspa-txscript",
+ "kaspa-wrpc-client",
+ "kdapp",
+ "log",
+ "rand 0.8.5",
+ "secp256k1",
+ "serde",
+ "sha2",
+ "smallvec",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
+name = "comment-it"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "bincode",
+ "borsh",
+ "clap",
+ "env_logger",
+ "futures-util",
+ "hex",
+ "kaspa-addresses",
+ "kaspa-consensus-core",
+ "kaspa-hashes",
+ "kaspa-rpc-core",
+ "kaspa-wrpc-client",
+ "kdapp",
+ "log",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "reqwest",
+ "secp256k1",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "sha2",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-tungstenite 0.23.1",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1686,6 +1747,7 @@ dependencies = [
  "kdapp",
  "log",
  "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "reqwest",
  "secp256k1",
  "serde",
@@ -2146,12 +2208,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdapp-wallet"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "kaspa-addresses",
+ "kaspa-consensus-core",
+ "kaspa-core",
+ "kaspa-rpc-core",
+ "kaspa-wrpc-client",
+ "keyring",
+ "rand 0.8.5",
+ "secp256k1",
+ "tokio",
+ "workflow-rpc",
+]
+
+[[package]]
 name = "keccak"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
 dependencies = [
  "cpufeatures",
+]
+
+[[package]]
+name = "keyring"
+version = "3.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1961983669d57bdfe6c0f3ef8e4c229b5ef751afcc7d87e4271d2f71f6ccfa8b"
+dependencies = [
+ "byteorder",
+ "log",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3719,9 +3811,11 @@ checksum = "c6989540ced10490aaf14e6bad2e3d33728a2813310a0c71d1574304c49631cd"
 dependencies = [
  "futures-util",
  "log",
+ "native-tls",
  "rustls",
  "rustls-pki-types",
  "tokio",
+ "tokio-native-tls",
  "tokio-rustls",
  "tungstenite 0.23.0",
  "webpki-roots 0.26.11",
@@ -3955,6 +4049,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
+ "native-tls",
  "rand 0.8.5",
  "rustls",
  "rustls-pki-types",

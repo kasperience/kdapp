@@ -1,5 +1,60 @@
 # 🎉 Kaspa Authentication - True P2P System Success!
 
+## 🚨 **CRITICAL: MAIN.RS SIZE RULES - NEVER IGNORE!**
+
+### ❌ **ABSOLUTE FORBIDDEN: Large main.rs Files**
+- **HARD LIMIT**: main.rs must NEVER exceed 40KB
+- **LINE LIMIT**: main.rs must NEVER exceed 800 lines
+- **RESPONSIBILITY**: main.rs is ONLY for CLI entry point and command routing
+
+### ✅ **REQUIRED MODULAR ARCHITECTURE**
+```
+src/
+├── main.rs              # CLI entry point ONLY (50-100 lines max)
+├── cli/
+│   ├── parser.rs        # Command definitions
+│   ├── auth_commands.rs # Auth command handlers
+│   └── server_commands.rs # Server command handlers
+├── auth/
+│   ├── flow.rs         # Authentication logic
+│   └── session.rs      # Session management
+├── utils/
+│   ├── crypto.rs       # Crypto utilities
+│   └── validation.rs   # Input validation
+└── coordination/
+    └── http_fallback.rs # HTTP coordination
+```
+
+### 🔥 **ENFORCEMENT RULES FOR CLAUDE & GEMINI**
+1. **Before adding ANY code to main.rs**: Check file size with `du -h main.rs`
+2. **If main.rs > 40KB**: MUST extract to appropriate module first
+3. **If main.rs > 800 lines**: MUST extract to appropriate module first
+4. **NEVER add functions to main.rs**: Create dedicated modules
+5. **NEVER add large match blocks to main.rs**: Use command handlers
+
+### 💡 **WHERE TO PUT CODE INSTEAD OF MAIN.RS**
+- **Authentication logic** → `src/auth/flow.rs`
+- **Session management** → `src/auth/session.rs`
+- **Command handlers** → `src/cli/*_commands.rs`
+- **Crypto utilities** → `src/utils/crypto.rs`
+- **HTTP coordination** → `src/coordination/http_fallback.rs`
+- **Validation logic** → `src/utils/validation.rs`
+
+### 🎯 **MAIN.RS SHOULD ONLY CONTAIN**
+```rust
+// GOOD main.rs (50-100 lines max)
+use kaspa_auth::cli::{build_cli, handle_command};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt::init();
+    let matches = build_cli().get_matches();
+    handle_command(matches).await
+}
+```
+
+**NEVER FORGET**: Large main.rs files cause "going in circles" and dramatically reduce development efficiency!
+
 ## 🏆 REVOLUTIONARY ACHIEVEMENT
 
 We have successfully built a **true peer-to-peer authentication system** that represents a paradigm shift in how authentication works. This is not just another authentication service - it's a complete reimagining of P2P protocols.
@@ -23,6 +78,110 @@ We have successfully built a **true peer-to-peer authentication system** that re
 - **Transaction confirmations** visible on Kaspa explorer
 - **Episode state synchronization** across all participants
 - **Immediate feedback** on authentication status
+
+## 🚨 CRITICAL: Working Directory Rule - #1 Confusion Source!
+
+### ❌ WRONG: Running from Root Directory
+```bash
+# DON'T RUN FROM HERE:
+/kdapp/$ cargo run --bin kaspa-auth -- http-peer
+# ERROR: "no bin target named kaspa-auth"
+```
+
+### ✅ CORRECT: Always Run from examples/kaspa-auth/
+```bash
+# ALWAYS RUN FROM HERE:
+/kdapp/examples/kaspa-auth/$ cargo run --bin kaspa-auth -- http-peer
+# SUCCESS: HTTP peer starts correctly!
+```
+
+### 🔥 Why This is THE #1 Issue
+**FUNDAMENTAL RULE**: ALL kaspa-auth commands MUST be run from the `examples/kaspa-auth/` directory!
+
+**The Problem**:
+- **kdapp root** contains the framework workspace
+- **examples/kaspa-auth/** contains the auth implementation binary
+- Cargo searches current workspace for binaries
+- Wrong directory = confusing "binary not found" errors
+
+### 🎯 Quick Fix
+```bash
+# 1. Check where you are:
+pwd
+
+# 2. If NOT in examples/kaspa-auth/, navigate there:
+cd examples/kaspa-auth/  # From kdapp root
+# OR
+cd /full/path/to/kdapp/examples/kaspa-auth/  # From anywhere
+
+# 3. Now all commands work:
+cargo run --bin kaspa-auth -- wallet-status ✅
+cargo run --bin kaspa-auth -- http-peer --port 8080 ✅
+```
+
+### 💡 Pro Tips
+1. **Pin a terminal tab** to `examples/kaspa-auth/` directory
+2. **Always verify** with `pwd` before running commands
+3. **Bookmark** the correct directory in your file manager
+
+## 🚫 NO PREMATURE CELEBRATION RULE
+
+### ❌ WRONG: Celebrating Before Commit
+- "🎉 SUCCESS!" before git commit
+- "✅ COMPLETE!" before testing
+- "🏆 ACHIEVEMENT!" before verification
+- Excessive celebration language wastes tokens
+
+### ✅ CORRECT: Professional Development Workflow
+- Test functionality
+- Fix any issues  
+- Commit changes
+- Brief acknowledgment only
+
+**RULE**: No celebration emojis or extensive success language until work is committed and verified. Keep responses focused and token-efficient.
+
+## 🔑 CRITICAL: Wallet Persistence Architecture
+
+### 🚨 THE PERSISTENT WALLET PRINCIPLE
+**FUNDAMENTAL RULE**: Once a wallet is created for a peer role, it MUST be reused across ALL sessions and feature additions.
+
+**Why This Matters**:
+- **Identity Consistency**: Same peer = same public key across all sessions
+- **Address Stability**: Kaspa addresses never change between runs
+- **Episode Continuity**: Blockchain recognizes the same participant
+- **UTXO Accumulation**: Funds stay in consistent addresses
+- **User Experience**: No confusion about multiple identities
+
+### 📁 Required File Structure
+```
+.kaspa-auth/
+├── organizer-peer-wallet.key     # HTTP Organizer Peer persistent identity
+└── participant-peer-wallet.key   # CLI/Web Participant persistent identity
+```
+
+### ✅ Implementation Requirements
+1. **Separate wallet files** per peer role (organizer vs participant)
+2. **Persistent storage** in `.kaspa-auth/` directory
+3. **Clear user messaging** about wallet reuse vs creation
+4. **First-run detection** with funding guidance
+5. **Address stability** across all feature additions
+
+### ❌ Common Mistake to Avoid
+```rust
+// WRONG: Creates new wallets every time
+let wallet = generate_random_keypair(); // DON'T DO THIS!
+
+// CORRECT: Reuses existing wallets
+let wallet = get_wallet_for_command("organizer-peer", None)?; // DO THIS!
+```
+
+### 💡 Best Practice Messaging
+```
+✅ GOOD: "🔑 Using existing organizer-peer wallet (kaspatest:xyz...)"
+❌ BAD:  "🔑 Wallet loaded" (ambiguous about reuse vs creation)
+```
+
+This wallet persistence rule is **critical for kdapp architecture** - breaking it causes identity confusion and breaks the P2P model!
 
 ## 🚀 Quick Start Guide
 
@@ -366,6 +525,54 @@ The CLI (`cargo run -- authenticate`) works because it:
 4. **Uses blockchain as source of truth** - not memory
 
 ## 🎯 URGENT ROADMAP: Fix HTTP to Use Real kdapp Architecture
+
+## 🚨 CRITICAL: Deterministic Challenge & Session Token Generation
+
+### The Problem: Non-Deterministic Randomness
+
+Previously, challenges and session tokens were generated using `rand::thread_rng()`. While cryptographically secure, this method is **non-deterministic**. This means that even with the same input parameters, different instances of the `kdapp` engine (or the same instance at different times) would produce different "random" outputs.
+
+This led to critical issues:
+- **Challenge Mismatch**: The challenge generated by the organizer peer (and stored on the blockchain) would not match the challenge the participant peer expected when trying to sign it, resulting in `Invalid or expired challenge` errors.
+- **Session Token Mismatch**: The session token generated during authentication would not match the token expected during session revocation, leading to `Invalid or malformed session token` errors.
+
+### The Solution: Deterministic Seeding
+
+To ensure consistency and verifiability across all peers, challenges and session tokens must be deterministically generated. This is achieved by:
+- Using `rand_chacha::ChaCha8Rng`, a cryptographically secure pseudorandom number generator.
+- Seeding the `ChaCha8Rng` with a **blockchain-derived timestamp** (`metadata.accepting_time`). This timestamp is part of the transaction metadata and is consistent across all peers processing the same transaction.
+
+**This ensures that given the same blockchain transaction (and thus the same `metadata.accepting_time`), every `kdapp` engine will deterministically generate the exact same challenge and session token.**
+
+### Key Principles:
+- **Blockchain is the Seed**: All randomness for critical protocol elements (challenges, session tokens) must be derived from deterministic, blockchain-verified data.
+- **Reproducibility**: Any peer, by replaying the blockchain history, must be able to reproduce the exact same challenge and session token at any point in time.
+- **No `thread_rng()` for Protocol Elements**: Avoid `thread_rng()` for any data that needs to be consistent across the distributed system.
+
+### Example (Fixed):
+```rust
+// src/crypto/challenges.rs
+pub fn generate_with_provided_timestamp(timestamp: u64) -> String {
+    use rand_chacha::ChaCha8Rng;
+    use rand::SeedableRng;
+    use rand::Rng; // Required for .gen()
+    let mut rng = ChaCha8Rng::seed_from_u64(timestamp);
+    format!("auth_{}_{}", timestamp, rng.gen::<u64>())
+}
+
+// src/core/episode.rs
+fn generate_session_token(&self) -> String {
+    use rand_chacha::ChaCha8Rng;
+    use rand::SeedableRng;
+    use rand::Rng; // Required for .gen()
+    let mut rng = ChaCha8Rng::seed_from_u64(self.challenge_timestamp);
+    format!("sess_{}", rng.gen::<u64>())
+}
+```
+
+This deterministic approach is fundamental to the `kdapp` philosophy, ensuring that all critical state transitions are verifiable and consistent across the entire peer-to-peer network.
+
+
 
 ### Phase 1: HTTP Organizer Peer Must Run kdapp Engine (1-2 days)
 
