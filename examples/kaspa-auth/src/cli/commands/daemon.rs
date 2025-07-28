@@ -112,6 +112,8 @@ pub enum DaemonClientCommand {
     },
     /// List available identities
     List,
+    /// List active sessions
+    Sessions,
 }
 
 impl DaemonCommand {
@@ -227,6 +229,7 @@ impl DaemonSendCommand {
                 DaemonRequest::Authenticate { server_url: server, username }
             }
             DaemonClientCommand::List => DaemonRequest::ListIdentities,
+            DaemonClientCommand::Sessions => DaemonRequest::ListSessions,
         };
         
         match send_daemon_request(&self.socket_path, request).await {
@@ -262,6 +265,22 @@ impl DaemonSendCommand {
                         println!("👥 Available identities:");
                         for username in usernames {
                             println!("   - {}", username);
+                        }
+                    }
+                    DaemonResponse::Sessions { sessions } => {
+                        println!("🔗 Active sessions: {}", sessions.len());
+                        if sessions.is_empty() {
+                            println!("   (No active sessions)");
+                        } else {
+                            for session in sessions {
+                                println!("   - Episode {}: {} @ {} ({}s ago)", 
+                                       session.episode_id, 
+                                       session.username, 
+                                       session.server_url,
+                                       session.created_at_seconds);
+                                println!("     Token: {}...", 
+                                       &session.session_token[..std::cmp::min(16, session.session_token.len())]);
+                            }
                         }
                     }
                     _ => {

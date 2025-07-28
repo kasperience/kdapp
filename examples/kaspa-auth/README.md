@@ -213,6 +213,7 @@ cargo run -- daemon send lock
 cargo run -- daemon send ping                             # Health check
 cargo run -- daemon send auth --username alice --server http://localhost:8080
 cargo run -- daemon send sign --username alice --challenge auth_12345
+cargo run -- daemon send sessions                         # List active sessions
 
 # Keychain operations
 cargo run -- --keychain wallet-status                     # Check keychain wallets

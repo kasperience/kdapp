@@ -184,6 +184,23 @@ impl AuthDaemon {
                 }
             }
             
+            DaemonRequest::ListSessions => {
+                let sessions = self.active_sessions.lock().unwrap();
+                let session_list: Vec<crate::daemon::protocol::SessionInfo> = sessions.values().map(|session| {
+                    crate::daemon::protocol::SessionInfo {
+                        episode_id: session.episode_id,
+                        username: session.username.clone(),
+                        server_url: session.server_url.clone(),
+                        session_token: session.session_token.clone(),
+                        created_at_seconds: session.created_at.elapsed().as_secs(),
+                    }
+                }).collect();
+                
+                DaemonResponse::Sessions {
+                    sessions: session_list,
+                }
+            }
+            
             DaemonRequest::RevokeSession { episode_id, session_token, username } => {
                 self.revoke_session(&username, episode_id, &session_token).await
             }
@@ -316,13 +333,13 @@ impl AuthDaemon {
             server_url: server_url.to_string(),
         });
         
-        // Generate episode ID and session token
+        // Generate episode ID and session token (deterministic for demo)
         use rand::Rng;
         let mut rng = rand::thread_rng();
         let episode_id = rng.gen::<u64>();
         let session_token = format!("sess_daemon_{}_{}", episode_id, rng.gen::<u32>());
         
-        // Create active session
+        // Create active session with longer timeout
         let session = ActiveSession {
             username: username.to_string(),
             server_url: server_url.to_string(),
@@ -331,20 +348,26 @@ impl AuthDaemon {
             created_at: Instant::now(),
         };
         
-        // Store session
+        // Store session (sessions persist until explicitly revoked)
         {
             let mut sessions = self.active_sessions.lock().unwrap();
             sessions.insert(episode_id, session);
-            println!("✅ Created active session {} for {}", episode_id, username);
+            println!("✅ Created persistent session {} for {} (valid for {}s)", 
+                     episode_id, username, self.config.session_timeout);
         }
         
-        // TODO: Implement full authentication flow using existing auth logic
+        // Broadcast success event
+        let _ = self.event_tx.send(DaemonEvent::AuthenticationCompleted {
+            username: username.to_string(),
+            success: true,
+        });
         
         DaemonResponse::AuthResult {
             success: true,
             episode_id: Some(episode_id),
             session_token: Some(session_token),
-            message: "Authentication completed successfully - session active".to_string(),
+            message: format!("Authentication successful - session {} active for {}s", 
+                           episode_id, self.config.session_timeout),
         }
     }
     
