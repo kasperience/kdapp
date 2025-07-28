@@ -5,6 +5,7 @@ use std::fs;
 use kaspa_addresses::{Address, Prefix, Version};
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use log::{info, warn};
+use crate::utils::keychain::{get_keychain_wallet_for_command, keychain_wallet_exists};
 
 #[derive(Debug, Clone)]
 pub struct WalletConfig {
@@ -228,6 +229,22 @@ impl KaspaAuthWallet {
             was_created: false,
         })
     }
+    
+    /// Load wallet using OS keychain instead of file system
+    pub fn load_from_keychain(command: &str, dev_mode: bool) -> Result<Self, Box<dyn std::error::Error>> {
+        println!("🔐 Loading wallet from OS keychain for command: {}", command);
+        get_keychain_wallet_for_command(command, dev_mode)
+    }
+    
+    /// Check if keychain wallet exists for command
+    pub fn keychain_wallet_exists_for_command(command: &str, dev_mode: bool) -> bool {
+        let username = match command {
+            "organizer-peer" | "http-peer" | "server" | "http-server" => "organizer-peer",
+            "participant-peer" | "web-participant" | "authenticate" | "client" => "participant-peer", 
+            _ => "default-wallet",
+        };
+        keychain_wallet_exists(username, dev_mode)
+    }
 }
 
 /// Get wallet for any command with unified UX
@@ -239,6 +256,30 @@ pub fn get_wallet_for_command(command: &str, private_key: Option<&str>) -> Resul
         },
         None => {
             KaspaAuthWallet::load_for_command(command)
+        }
+    }
+}
+
+/// Get wallet with choice of storage method (file-based or keychain)
+pub fn get_wallet_for_command_with_storage(
+    command: &str, 
+    private_key: Option<&str>,
+    use_keychain: bool,
+    dev_mode: bool
+) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
+    match private_key {
+        Some(key_hex) => {
+            println!("🔑 Using provided private key for {}", command);
+            KaspaAuthWallet::from_private_key(key_hex)
+        },
+        None => {
+            if use_keychain {
+                println!("🔐 Using OS keychain for wallet storage");
+                KaspaAuthWallet::load_from_keychain(command, dev_mode)
+            } else {
+                println!("📁 Using file-based wallet storage");
+                KaspaAuthWallet::load_for_command(command)
+            }
         }
     }
 }

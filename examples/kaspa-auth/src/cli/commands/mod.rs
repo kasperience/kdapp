@@ -8,3 +8,5 @@ pub mod http_organizer_peer;
 pub mod list_endpoints;
 pub mod test_api_flow;
 pub mod test_api;
+pub mod wallet_status;
+pub mod daemon;

@@ -11,12 +11,31 @@ pub struct AuthenticateCommand {
     
     #[arg(short, long)]
     pub keyfile: Option<String>,
+    
+    // Storage options (set by CLI flags)
+    #[arg(skip)]
+    pub use_keychain: bool,
+    
+    #[arg(skip)]
+    pub dev_mode: bool,
 }
 
 impl AuthenticateCommand {
+    pub fn set_storage_options(&mut self, use_keychain: bool, dev_mode: bool) {
+        self.use_keychain = use_keychain;
+        self.dev_mode = dev_mode;
+    }
+    
     pub async fn execute(self) -> Result<(), Box<dyn Error>> {
         println!("Running authenticate command with server: {}", self.server);
-        // Implementation would go here
+        
+        if self.use_keychain {
+            println!("🔐 Will use OS keychain for wallet storage");
+        }
+        
+        // Implementation would use self.use_keychain and self.dev_mode
+        // when calling wallet functions
+        
         Ok(())
     }
 }

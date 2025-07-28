@@ -8,6 +8,8 @@ pub mod api;
 pub mod cli;
 pub mod wallet;
 pub mod auth;
+pub mod utils;
+pub mod daemon;
 
 // Future modules (moved to future examples)
 // pub mod commitments;     // → kaspa-poker-tournament

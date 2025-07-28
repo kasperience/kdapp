@@ -19,9 +19,21 @@ pub struct AuthenticateFullFlowCommand {
     
     #[arg(short, long)]
     pub key: Option<String>,
+    
+    // Storage options (set by CLI flags)
+    #[arg(skip)]
+    pub use_keychain: bool,
+    
+    #[arg(skip)]
+    pub dev_mode: bool,
 }
 
 impl AuthenticateFullFlowCommand {
+    pub fn set_storage_options(&mut self, use_keychain: bool, dev_mode: bool) {
+        self.use_keychain = use_keychain;
+        self.dev_mode = dev_mode;
+    }
+    
     pub async fn execute(self) -> Result<(), Box<dyn Error>> {
         println!("🔄 Starting complete authentication lifecycle test");
         println!("⏱️  Auth timeout: {}s, Session duration: {}s", self.auth_timeout, self.session_duration);

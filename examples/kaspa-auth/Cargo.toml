@@ -28,6 +28,7 @@ tokio-tungstenite = "0.23"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 bincode = "1.3"
+keyring = { version = "3.0.0", features = ["windows-native"] }
 
 # Kaspa crypto dependencies
 kaspa-consensus-core = { workspace = true }
