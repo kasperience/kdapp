@@ -2,12 +2,169 @@ use std::error::Error;
 use secp256k1::Keypair;
 use crate::core::{commands::AuthCommand, episode::SimpleAuth};
 use hex;
+use reqwest;
+use serde_json;
 
 #[derive(Debug, Clone)]
 pub struct AuthenticationResult {
     pub episode_id: u64,
     pub session_token: String,
     pub authenticated: bool,
+}
+
+/// 🚀 Working endpoint authentication - uses WORKING web UI pattern
+/// This function follows the exact same pattern as the working web UI endpoints
+pub async fn run_working_endpoint_authentication(kaspa_signer: Keypair, auth_signer: Keypair, peer_url: String) -> Result<AuthenticationResult, Box<dyn Error>> {
+    let client = reqwest::Client::new();
+    let public_key_hex = hex::encode(auth_signer.public_key().serialize());
+    
+    println!("🔑 Using public key: {}", public_key_hex);
+    
+    // Step 1: Create episode using WORKING /auth/start endpoint
+    println!("🚀 Step 1: Creating episode via /auth/start...");
+    let start_response = client
+        .post(&format!("{}/auth/start", peer_url))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "public_key": public_key_hex
+        }))
+        .send()
+        .await?;
+    
+    if !start_response.status().is_success() {
+        return Err(format!("Failed to start auth: HTTP {}", start_response.status()).into());
+    }
+    
+    let start_data: serde_json::Value = start_response.json().await?;
+    let episode_id = start_data["episode_id"].as_u64()
+        .ok_or("Server did not return valid episode_id")?;
+    
+    println!("✅ Episode {} created by organizer peer", episode_id);
+    
+    // Step 2: Request challenge using WORKING /auth/request-challenge endpoint
+    println!("📨 Step 2: Requesting challenge via /auth/request-challenge...");
+    let challenge_response = client
+        .post(&format!("{}/auth/request-challenge", peer_url))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "episode_id": episode_id,
+            "public_key": public_key_hex
+        }))
+        .send()
+        .await?;
+    
+    if !challenge_response.status().is_success() {
+        return Err(format!("Failed to request challenge: HTTP {}", challenge_response.status()).into());
+    }
+    
+    println!("✅ Challenge request submitted");
+    
+    // Step 3: Poll for challenge using WORKING /auth/status/{id} endpoint
+    println!("⏳ Step 3: Polling for challenge via /auth/status/{}...", episode_id);
+    let mut challenge = String::new();
+    
+    for attempt in 1..=10 {
+        println!("🔄 Polling attempt {} of 10...", attempt);
+        
+        let status_response = client
+            .get(&format!("{}/auth/status/{}", peer_url, episode_id))
+            .send()
+            .await?;
+        
+        if status_response.status().is_success() {
+            let status_data: serde_json::Value = status_response.json().await?;
+            if let Some(server_challenge) = status_data["challenge"].as_str() {
+                challenge = server_challenge.to_string();
+                println!("🎯 Challenge retrieved from server: {}", challenge);
+                break;
+            }
+        }
+        
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+    }
+    
+    if challenge.is_empty() {
+        return Err("❌ Could not retrieve challenge from server".into());
+    }
+    
+    // Step 4: Sign challenge using server-side signing (like web UI)
+    println!("✍️ Step 4: Signing challenge via /auth/sign-challenge...");
+    let private_key_hex = hex::encode(auth_signer.secret_key().as_ref());
+    let sign_response = client
+        .post(&format!("{}/auth/sign-challenge", peer_url))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "challenge": challenge,
+            "private_key": private_key_hex
+        }))
+        .send()
+        .await?;
+    
+    if !sign_response.status().is_success() {
+        return Err(format!("Failed to sign challenge: HTTP {}", sign_response.status()).into());
+    }
+    
+    let sign_data: serde_json::Value = sign_response.json().await?;
+    let signature = sign_data["signature"].as_str()
+        .ok_or("Server did not return signature")?;
+    
+    println!("✅ Challenge signed successfully");
+    
+    // Step 5: Submit verification using WORKING /auth/verify endpoint
+    println!("📤 Step 5: Submitting verification via /auth/verify...");
+    let verify_response = client
+        .post(&format!("{}/auth/verify", peer_url))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "episode_id": episode_id,
+            "signature": signature,
+            "nonce": challenge
+        }))
+        .send()
+        .await?;
+    
+    if !verify_response.status().is_success() {
+        return Err(format!("Failed to verify: HTTP {}", verify_response.status()).into());
+    }
+    
+    println!("✅ Verification submitted");
+    
+    // Step 6: Wait for authentication completion using WORKING polling
+    println!("⏳ Step 6: Waiting for authentication completion...");
+    let mut session_token = String::new();
+    
+    for attempt in 1..=50 {
+        let status_response = client
+            .get(&format!("{}/auth/status/{}", peer_url, episode_id))
+            .send()
+            .await?;
+        
+        if status_response.status().is_success() {
+            let status_data: serde_json::Value = status_response.json().await?;
+            if let (Some(authenticated), Some(token)) = (
+                status_data["authenticated"].as_bool(),
+                status_data["session_token"].as_str()
+            ) {
+                if authenticated && !token.is_empty() {
+                    session_token = token.to_string();
+                    println!("✅ REAL session token retrieved: {}", session_token);
+                    break;
+                }
+            }
+        }
+        
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+    
+    if session_token.is_empty() {
+        return Err("❌ Could not retrieve session token from server".into());
+    }
+    
+    Ok(AuthenticationResult {
+        episode_id,
+        session_token,
+        authenticated: true,
+    })
 }
 
 /// 🚀 HTTP Coordinated authentication - hybrid kdapp + HTTP coordination  

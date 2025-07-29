@@ -2,7 +2,16 @@
 
 use clap::Args;
 use std::error::Error;
+#[cfg(unix)]
 use tokio::net::UnixStream;
+#[cfg(windows)]
+use tokio::net::TcpStream;
+
+// Platform-specific type alias
+#[cfg(unix)]
+type PlatformStream = UnixStream;
+#[cfg(windows)]
+type PlatformStream = TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::daemon::{DaemonConfig, AuthDaemon, protocol::*};
@@ -303,7 +312,7 @@ async fn send_daemon_request(
     request: DaemonRequest,
 ) -> Result<DaemonResponse, Box<dyn Error>> {
     // Connect to daemon socket
-    let mut stream = UnixStream::connect(socket_path).await?;
+    let mut stream = create_client_connection(socket_path).await?;
     
     // Send request
     let request_msg = IpcMessage::new(request);
@@ -318,4 +327,18 @@ async fn send_daemon_request(
     let response_msg: IpcMessage<DaemonResponse> = deserialize_message(&buffer[..bytes_read])?;
     
     Ok(response_msg.payload)
+}
+
+/// Create platform-specific client connection
+#[cfg(unix)]
+async fn create_client_connection(socket_path: &str) -> Result<PlatformStream, Box<dyn Error>> {
+    Ok(UnixStream::connect(socket_path).await?)
+}
+
+#[cfg(windows)]
+async fn create_client_connection(_socket_path: &str) -> Result<PlatformStream, Box<dyn Error>> {
+    // On Windows, connect to TCP socket on localhost
+    let port = 8901; // Must match the port used in service.rs
+    let addr = format!("127.0.0.1:{}", port);
+    Ok(TcpStream::connect(addr).await?)
 }

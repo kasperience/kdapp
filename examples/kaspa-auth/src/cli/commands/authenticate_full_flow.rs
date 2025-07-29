@@ -4,7 +4,7 @@ use secp256k1::Keypair;
 use crate::wallet::get_wallet_for_command;
 
 // Import the auth functions from the auth module
-use crate::auth::{run_http_coordinated_authentication, run_session_revocation, AuthenticationResult};
+use crate::auth::{run_working_endpoint_authentication, run_session_revocation, AuthenticationResult};
 
 #[derive(Args)]
 pub struct AuthenticateFullFlowCommand {
@@ -66,9 +66,9 @@ async fn run_full_authentication_cycle(
     println!("🔄 Starting complete authentication lifecycle test");
     println!("⏱️  Phase 1: Login ({}s timeout)", auth_timeout);
     
-    // Phase 1: Authenticate with timeout
+    // Phase 1: Authenticate using WORKING endpoint pattern
     let auth_timeout_duration = tokio::time::Duration::from_secs(auth_timeout);
-    let auth_future = run_http_coordinated_authentication(funding_keypair, auth_keypair, peer_url.clone());
+    let auth_future = run_working_endpoint_authentication(funding_keypair, auth_keypair, peer_url.clone());
     
     let auth_result = tokio::time::timeout(auth_timeout_duration, auth_future).await;
     

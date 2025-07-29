@@ -103,25 +103,16 @@ pub async fn start_auth(
     println!("🎯 Episode ID: {}", episode_id);
     println!("👤 Participant PubKey: {}", participant_pubkey);
     
-    // ✅ Submit transaction to blockchain via AuthHttpPeer (centralized submission)
-    println!("📤 Submitting transaction to Kaspa blockchain via AuthHttpPeer...");
-    let submission_result = match state.auth_http_peer.as_ref().unwrap().submit_episode_message_transaction(
-        new_episode,
-        participant_wallet.keypair,
-        participant_funding_addr.clone(),
-        utxo,
-    ).await {
-        Ok(tx_id) => {
-            println!("✅ Transaction {} submitted successfully to blockchain via AuthHttpPeer!", tx_id);
-            println!("🎬 Episode {} initialized on blockchain", episode_id);
-            (tx_id, "submitted_to_blockchain".to_string())
-        }
-        Err(e) => {
-            println!("❌ Transaction submission failed via AuthHttpPeer: {}", e);
-            println!("💡 Make sure participant wallet is funded: {}", participant_funding_addr);
-            ("error".to_string(), "transaction_submission_failed".to_string())
-        }
-    };
+    // ✅ PURE P2P: Organizer does NOT submit transactions - only coordinates
+    println!("📋 Episode created for participant to fund with their own transaction");
+    println!("💸 Organizer pays: 0.00000 KAS (coordination only)");
+    println!("💰 Participant will submit their own NewEpisode transaction");
+    
+    // Return episode info for participant to submit their own transaction
+    let submission_result = (
+        "organizer_coordination_only".to_string(),
+        "participant_must_submit_transaction".to_string()
+    );
     
     let (transaction_id, status) = submission_result;
     

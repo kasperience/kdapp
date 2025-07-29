@@ -3,9 +3,25 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+#[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
+#[cfg(windows)]
+use tokio::net::{TcpListener, TcpStream};
+
+// Platform-specific type aliases
+#[cfg(unix)]
+type PlatformListener = UnixListener;
+#[cfg(unix)]
+type PlatformStream = UnixStream;
+
+#[cfg(windows)]
+type PlatformListener = TcpListener;
+#[cfg(windows)]
+type PlatformStream = TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::broadcast;
+use reqwest;
+use serde_json;
 
 use crate::daemon::{DaemonConfig, protocol::*};
 use crate::utils::keychain::{KeychainManager, KeychainConfig};
@@ -52,7 +68,7 @@ pub enum DaemonEvent {
 impl AuthDaemon {
     /// Create new daemon instance
     pub fn new(config: DaemonConfig) -> Self {
-        let keychain_config = KeychainConfig::new("kaspa-auth-daemon", config.dev_mode);
+        let keychain_config = KeychainConfig::new("kaspa-auth", config.dev_mode);
         let keychain_manager = KeychainManager::new(keychain_config);
         let (event_tx, _) = broadcast::channel(100);
         
@@ -75,8 +91,8 @@ impl AuthDaemon {
         // Remove existing socket file
         let _ = std::fs::remove_file(&self.config.socket_path);
         
-        // Create Unix socket listener
-        let listener = UnixListener::bind(&self.config.socket_path)?;
+        // Create platform-specific listener
+        let listener = self.create_listener().await?;
         println!("✅ Daemon listening on {}", self.config.socket_path);
         
         // Auto-unlock if configured
@@ -103,8 +119,22 @@ impl AuthDaemon {
         }
     }
     
+    /// Create platform-specific listener
+    #[cfg(unix)]
+    async fn create_listener(&self) -> Result<PlatformListener, Box<dyn std::error::Error>> {
+        Ok(UnixListener::bind(&self.config.socket_path)?)
+    }
+    
+    #[cfg(windows)]
+    async fn create_listener(&self) -> Result<PlatformListener, Box<dyn std::error::Error>> {
+        // On Windows, use TCP socket on localhost with a port derived from socket path
+        let port = 8901; // Default port for kaspa-auth daemon
+        let addr = format!("127.0.0.1:{}", port);
+        Ok(TcpListener::bind(addr).await?)
+    }
+    
     /// Handle individual client connection
-    async fn handle_client(&self, mut stream: UnixStream) -> Result<(), Box<dyn std::error::Error>> {
+    async fn handle_client(&self, mut stream: PlatformStream) -> Result<(), Box<dyn std::error::Error>> {
         let mut buffer = vec![0u8; 8192];
         
         loop {
@@ -318,14 +348,18 @@ impl AuthDaemon {
     async fn authenticate(&self, username: &str, server_url: &str) -> DaemonResponse {
         println!("🔐 Authenticating {} with {}", username, server_url);
         
-        // Check if identity is unlocked
-        let identities = self.unlocked_identities.lock().unwrap();
-        if !identities.contains_key(username) {
-            return DaemonResponse::Error {
-                error: format!("Identity '{}' not unlocked", username),
-            };
-        }
-        drop(identities);
+        // Check if identity is unlocked and clone wallet to avoid holding lock across await
+        let wallet = {
+            let identities = self.unlocked_identities.lock().unwrap();
+            match identities.get(username) {
+                Some(wallet) => wallet.clone(),
+                None => {
+                    return DaemonResponse::Error {
+                        error: format!("Identity '{}' not unlocked", username),
+                    };
+                }
+            }
+        }; // Lock is dropped here
         
         // Broadcast event
         let _ = self.event_tx.send(DaemonEvent::AuthenticationStarted {
@@ -333,42 +367,215 @@ impl AuthDaemon {
             server_url: server_url.to_string(),
         });
         
-        // Generate episode ID and session token (deterministic for demo)
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let episode_id = rng.gen::<u64>();
-        let session_token = format!("sess_daemon_{}_{}", episode_id, rng.gen::<u32>());
+        // REAL BLOCKCHAIN AUTHENTICATION - Use WORKING web UI pattern
+        println!("🌐 Starting REAL blockchain authentication using WORKING endpoint pattern...");
+        println!("💰 Participant will pay for ALL transactions");
+        println!("💸 Organizer pays 0.00000 KAS (coordination only)");
         
-        // Create active session with longer timeout
-        let session = ActiveSession {
-            username: username.to_string(),
-            server_url: server_url.to_string(),
+        match self.run_working_authentication_flow(&wallet, server_url).await {
+            Ok(auth_result) => {
+                println!("✅ BLOCKCHAIN AUTHENTICATION SUCCESS!");
+                println!("📧 Episode ID: {}", auth_result.episode_id);
+                println!("🎫 Session Token: {}", auth_result.session_token);
+                
+                // Create active session with REAL blockchain data
+                let session = ActiveSession {
+                    username: username.to_string(),
+                    server_url: server_url.to_string(),
+                    episode_id: auth_result.episode_id,
+                    session_token: auth_result.session_token.clone(),
+                    created_at: Instant::now(),
+                };
+                
+                // Store session
+                {
+                    let mut sessions = self.active_sessions.lock().unwrap();
+                    sessions.insert(auth_result.episode_id, session);
+                }
+                println!("✅ Created REAL blockchain session {} for {}", 
+                         auth_result.episode_id, username);
+                
+                // Broadcast success event
+                let _ = self.event_tx.send(DaemonEvent::AuthenticationCompleted {
+                    username: username.to_string(),
+                    success: true,
+                });
+                
+                DaemonResponse::AuthResult {
+                    success: true,
+                    episode_id: Some(auth_result.episode_id),
+                    session_token: Some(auth_result.session_token),
+                    message: format!("REAL blockchain authentication successful - episode {}", 
+                                   auth_result.episode_id),
+                }
+            }
+            Err(e) => {
+                println!("❌ BLOCKCHAIN AUTHENTICATION FAILED: {}", e);
+                
+                // Broadcast failure event
+                let _ = self.event_tx.send(DaemonEvent::AuthenticationCompleted {
+                    username: username.to_string(),
+                    success: false,
+                });
+                
+                DaemonResponse::Error {
+                    error: format!("Blockchain authentication failed: {}", e),
+                }
+            }
+        }
+    }
+    
+    /// Run authentication using WORKING web UI endpoint pattern
+    async fn run_working_authentication_flow(&self, wallet: &KaspaAuthWallet, server_url: &str) -> Result<crate::auth::authentication::AuthenticationResult, Box<dyn std::error::Error>> {
+        let client = reqwest::Client::new();
+        let public_key_hex = wallet.get_public_key_hex();
+        
+        println!("🔑 Using persistent wallet public key: {}", public_key_hex);
+        
+        // Step 1: Create episode using WORKING /auth/start endpoint
+        println!("🚀 Step 1: Creating episode via /auth/start...");
+        let start_response = client
+            .post(&format!("{}/auth/start", server_url))
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "public_key": public_key_hex
+            }))
+            .send()
+            .await?;
+        
+        if !start_response.status().is_success() {
+            return Err(format!("Failed to start auth: HTTP {}", start_response.status()).into());
+        }
+        
+        let start_data: serde_json::Value = start_response.json().await?;
+        let episode_id = start_data["episode_id"].as_u64()
+            .ok_or("Server did not return valid episode_id")?;
+        
+        println!("✅ Episode {} created by organizer peer", episode_id);
+        
+        // Step 2: Request challenge using WORKING /auth/request-challenge endpoint
+        println!("📨 Step 2: Requesting challenge via /auth/request-challenge...");
+        let challenge_response = client
+            .post(&format!("{}/auth/request-challenge", server_url))
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "episode_id": episode_id,
+                "public_key": public_key_hex
+            }))
+            .send()
+            .await?;
+        
+        if !challenge_response.status().is_success() {
+            return Err(format!("Failed to request challenge: HTTP {}", challenge_response.status()).into());
+        }
+        
+        println!("✅ Challenge request submitted");
+        
+        // Step 3: Poll for challenge using WORKING /auth/status/{id} endpoint
+        println!("⏳ Step 3: Polling for challenge via /auth/status/{}...", episode_id);
+        let mut challenge = String::new();
+        
+        for attempt in 1..=10 {
+            println!("🔄 Polling attempt {} of 10...", attempt);
+            
+            let status_response = client
+                .get(&format!("{}/auth/status/{}", server_url, episode_id))
+                .send()
+                .await?;
+            
+            if status_response.status().is_success() {
+                let status_data: serde_json::Value = status_response.json().await?;
+                if let Some(server_challenge) = status_data["challenge"].as_str() {
+                    challenge = server_challenge.to_string();
+                    println!("🎯 Challenge retrieved from server: {}", challenge);
+                    break;
+                }
+            }
+            
+            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        }
+        
+        if challenge.is_empty() {
+            return Err("❌ Could not retrieve challenge from server".into());
+        }
+        
+        // Step 4: Sign challenge using server-side signing (like web UI)
+        println!("✍️ Step 4: Signing challenge via /auth/sign-challenge...");
+        let sign_response = client
+            .post(&format!("{}/auth/sign-challenge", server_url))
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "challenge": challenge,
+                "private_key": wallet.get_private_key_hex() // Use wallet's private key
+            }))
+            .send()
+            .await?;
+        
+        if !sign_response.status().is_success() {
+            return Err(format!("Failed to sign challenge: HTTP {}", sign_response.status()).into());
+        }
+        
+        let sign_data: serde_json::Value = sign_response.json().await?;
+        let signature = sign_data["signature"].as_str()
+            .ok_or("Server did not return signature")?;
+        
+        println!("✅ Challenge signed successfully");
+        
+        // Step 5: Submit verification using WORKING /auth/verify endpoint
+        println!("📤 Step 5: Submitting verification via /auth/verify...");
+        let verify_response = client
+            .post(&format!("{}/auth/verify", server_url))
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "episode_id": episode_id,
+                "signature": signature,
+                "nonce": challenge
+            }))
+            .send()
+            .await?;
+        
+        if !verify_response.status().is_success() {
+            return Err(format!("Failed to verify: HTTP {}", verify_response.status()).into());
+        }
+        
+        println!("✅ Verification submitted");
+        
+        // Step 6: Wait for authentication completion using WORKING polling
+        println!("⏳ Step 6: Waiting for authentication completion...");
+        let mut session_token = String::new();
+        
+        for attempt in 1..=50 {
+            let status_response = client
+                .get(&format!("{}/auth/status/{}", server_url, episode_id))
+                .send()
+                .await?;
+            
+            if status_response.status().is_success() {
+                let status_data: serde_json::Value = status_response.json().await?;
+                if let (Some(authenticated), Some(token)) = (
+                    status_data["authenticated"].as_bool(),
+                    status_data["session_token"].as_str()
+                ) {
+                    if authenticated && !token.is_empty() {
+                        session_token = token.to_string();
+                        println!("✅ REAL session token retrieved: {}", session_token);
+                        break;
+                    }
+                }
+            }
+            
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+        
+        if session_token.is_empty() {
+            return Err("❌ Could not retrieve session token from server".into());
+        }
+        
+        Ok(crate::auth::authentication::AuthenticationResult {
             episode_id,
-            session_token: session_token.clone(),
-            created_at: Instant::now(),
-        };
-        
-        // Store session (sessions persist until explicitly revoked)
-        {
-            let mut sessions = self.active_sessions.lock().unwrap();
-            sessions.insert(episode_id, session);
-            println!("✅ Created persistent session {} for {} (valid for {}s)", 
-                     episode_id, username, self.config.session_timeout);
-        }
-        
-        // Broadcast success event
-        let _ = self.event_tx.send(DaemonEvent::AuthenticationCompleted {
-            username: username.to_string(),
-            success: true,
-        });
-        
-        DaemonResponse::AuthResult {
-            success: true,
-            episode_id: Some(episode_id),
-            session_token: Some(session_token),
-            message: format!("Authentication successful - session {} active for {}s", 
-                           episode_id, self.config.session_timeout),
-        }
+            session_token,
+            authenticated: true,
+        })
     }
     
     /// Revoke active session
@@ -416,7 +623,7 @@ impl Clone for AuthDaemon {
             unlocked_identities: Arc::clone(&self.unlocked_identities),
             active_sessions: Arc::clone(&self.active_sessions),
             keychain_manager: KeychainManager::new(
-                KeychainConfig::new("kaspa-auth-daemon", self.config.dev_mode)
+                KeychainConfig::new("kaspa-auth", self.config.dev_mode)
             ),
             event_tx: self.event_tx.clone(),
         }

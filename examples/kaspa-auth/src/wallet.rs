@@ -147,6 +147,11 @@ impl KaspaAuthWallet {
         hex::encode(self.keypair.public_key().serialize())
     }
     
+    /// Get private key as hex string (for server-side signing)
+    pub fn get_private_key_hex(&self) -> String {
+        hex::encode(self.keypair.secret_key().as_ref())
+    }
+    
     /// Check if wallet needs funding - currently returns true for new wallets
     /// Future enhancement: integrate with Kaspa RPC to check actual balance
     pub fn check_funding_status(&self) -> bool {
