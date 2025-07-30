@@ -1,11 +1,21 @@
-feat: Capture current state with persistent UTF-8 key handling issue
+fix: Acknowledge and document architectural deviation in HTTP Organizer Peer
 
-This commit captures the current development state, including all modifications and newly added files.
+This commit documents a critical architectural deviation from the kdapp P2P philosophy:
 
-**Current Constraint:**
-- The `daemon send create` command, when in `--dev-mode`, writes the private key to `.kaspa-auth/testuser.key` as raw binary data.
-- The `daemon send unlock` command, when in `--dev-mode`, attempts to read this key file as a UTF-8 string, leading to a `stream did not contain valid UTF-8` error.
-- This indicates a mismatch in key storage/retrieval logic within `src/utils/keychain.rs` and `src/daemon/service.rs` when `dev_mode` is active.
+**Problem:**
+- The HTTP Organizer Peer (and the daemon's authentication flow) currently uses its own `participant-peer-wallet.key` to fund and submit all three blockchain transactions (`NewEpisode`, `RequestChallenge`, `SubmitResponse`) on behalf of the authenticating participant.
+- This violates the core `kdapp` principle that participants should fund their own on-chain actions, and the Organizer Peer should only coordinate and verify, not pay for or submit participant transactions.
 
-**Next Steps:**
-- Address the key encoding/decoding mismatch to ensure `create` and `unlock` are compatible in `--dev-mode` (likely by ensuring hex encoding/decoding for file-based keys).
+**Impact:**
+- Leads to confusion regarding funding responsibilities.
+- Deviates from the true P2P model where peers are economically independent for their actions.
+- Causes the `HTTP 503 Service Unavailable` error when the Organizer's `participant-peer-wallet` is unfunded, as it attempts to submit transactions.
+
+**Current State:**
+- The daemon is now correctly creating and unlocking identities.
+- The `http-organizer-peer` is able to start and connect to the Kaspa node.
+- The authentication flow proceeds until the Organizer Peer attempts to submit transactions without sufficient funds in its *own* participant wallet.
+
+**Next Steps (Major Refactoring):**
+- Refactor the HTTP Organizer Peer and the daemon's authentication flow to ensure that participants are solely responsible for funding and submitting their own blockchain transactions.
+- The Organizer Peer's role should be strictly limited to coordination (e.g., providing challenges, verifying signatures, listening to blockchain events) and never involve transaction submission on behalf of participants.

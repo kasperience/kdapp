@@ -297,7 +297,7 @@ impl AuthDaemon {
         println!("🆕 Creating identity: {}", username);
 
         // This now correctly saves the wallet to disk.
-        match self.keychain_manager.create_and_save_wallet(username) {
+        match self.keychain_manager.create_wallet(username) {
             Ok(wallet) => {
                 // Also load it into memory for immediate use
                 {

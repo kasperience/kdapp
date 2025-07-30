@@ -35,6 +35,7 @@ pub struct KeychainManager {
 
 impl KeychainManager {
     pub fn new(config: KeychainConfig, data_dir: &str) -> Self {
+        println!("DEBUG: KeychainManager::new - dev_mode: {}", config.dev_mode);
         KeychainManager { config, data_dir: data_dir.to_string() }
     }
 
@@ -53,10 +54,15 @@ impl KeychainManager {
             println!("   DO NOT USE FOR REAL FUNDS!\n");
             
             // Create .kaspa-auth directory if it doesn't exist
-            std::fs::create_dir_all(&self.data_dir)?;
-            let dev_key_file = format!(".kaspa-auth/{}.key", username);
+            let wallet_dir = std::path::Path::new(&self.data_dir).join(".kaspa-auth");
+            println!("DEBUG: Attempting to create directory: {:?}", wallet_dir);
+            std::fs::create_dir_all(&wallet_dir)?;
+            println!("DEBUG: Directory created: {:?}", wallet_dir);
+            let dev_key_file = wallet_dir.join(format!("{}.key", username));
+            println!("DEBUG: Attempting to write key to file: {:?}", dev_key_file);
             std::fs::write(&dev_key_file, &private_key_hex)?;
-            println!("🔑 Wallet created and private key stored in '{}'.", dev_key_file);
+            println!("DEBUG: Key written to file: {:?}", dev_key_file);
+            println!(" Wallet created and private key stored in '{}'.", dev_key_file.display());
         } else {
             // Store in OS keychain securely
             let entry = Entry::new(&self.config.service, username)?;
