@@ -49,7 +49,7 @@ async fn funding_info(State(state): State<PeerState>) -> Json<serde_json::Value>
 
 async fn wallet_status() -> Json<serde_json::Value> {
     // Check if web-participant wallet exists
-    match get_wallet_for_command("web-participant", None) {
+    match get_wallet_for_command("web-participant", None, ".") {
         Ok(wallet) => {
             let kaspa_addr = Address::new(
                 Prefix::Testnet,
@@ -76,7 +76,7 @@ async fn wallet_status() -> Json<serde_json::Value> {
 
 async fn wallet_client() -> Json<serde_json::Value> {
     // Create a real participant wallet (like CLI does)
-    match get_wallet_for_command("web-participant", None) {
+    match get_wallet_for_command("web-participant", None, ".") {
         Ok(wallet) => {
             let public_key_hex = hex::encode(wallet.keypair.public_key().serialize());
             let kaspa_addr = Address::new(
@@ -111,7 +111,7 @@ async fn sign_challenge(Json(req): Json<serde_json::Value>) -> Json<serde_json::
     
     if private_key_hint == "use_client_wallet" || private_key_hint == "use_participant_wallet" {
         // Use the web-participant wallet to sign
-        match get_wallet_for_command("web-participant", None) {
+        match get_wallet_for_command("web-participant", None, ".") {
             Ok(wallet) => {
                 // Sign the challenge with the participant wallet
                 let message = kdapp::pki::to_message(&challenge.to_string());
@@ -151,7 +151,7 @@ async fn wallet_debug() -> Json<serde_json::Value> {
     ];
     
     for (command, expected_file) in wallet_types {
-        match get_wallet_for_command(command, None) {
+        match get_wallet_for_command(command, None, ".") {
             Ok(wallet) => {
                 let public_key_hex = hex::encode(wallet.keypair.public_key().serialize());
                 let kaspa_addr = Address::new(
@@ -253,7 +253,7 @@ async fn session_revoked(
 }
 
 pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    let wallet = get_wallet_for_command("http-peer", provided_private_key)?;
+    let wallet = get_wallet_for_command("http-peer", provided_private_key, ".")?;
     let keypair = wallet.keypair;
     
     println!("🚀 Starting HTTP coordination peer with REAL kdapp blockchain integration");
@@ -303,7 +303,7 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
     println!("🔗 Starting kdapp blockchain engine...");
     
     // Show participant wallet funding information
-    match get_wallet_for_command("web-participant", None) {
+    match get_wallet_for_command("web-participant", None, ".") {
         Ok(wallet) => {
             let participant_addr = Address::new(
                 Prefix::Testnet,

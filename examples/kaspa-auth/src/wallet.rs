@@ -14,9 +14,9 @@ pub struct WalletConfig {
     pub network_id: NetworkId,
 }
 
-impl Default for WalletConfig {
-    fn default() -> Self {
-        let wallet_dir = Path::new(".kaspa-auth").to_path_buf();
+impl WalletConfig {
+    pub fn new(data_dir: &str) -> Self {
+        let wallet_dir = Path::new(data_dir).join(".kaspa-auth").to_path_buf();
         let keypair_file = wallet_dir.join("wallet.key");
         let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
         
@@ -28,6 +28,25 @@ impl Default for WalletConfig {
     }
 }
 
+// impl WalletConfig {
+//     pub fn new(data_dir: &str) -> Self {
+//         let wallet_dir = Path::new(data_dir).join(".kaspa-auth").to_path_buf();
+//         let keypair_file = wallet_dir.join("wallet.key");
+//         let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
+        
+//         Self {
+//             wallet_dir,
+//             keypair_file,
+//             network_id,
+//         }
+//     }
+// }
+
+impl Default for WalletConfig {
+    fn default() -> Self {
+        Self::new(".")
+    }
+}
 #[derive(Debug, Clone)]
 pub struct KaspaAuthWallet {
     pub keypair: Keypair,
@@ -37,14 +56,14 @@ pub struct KaspaAuthWallet {
 
 impl KaspaAuthWallet {
     /// Load existing wallet or create new one with smooth UX
-    pub fn load_or_create() -> Result<Self, Box<dyn std::error::Error>> {
-        let config = WalletConfig::default();
+    pub fn load_or_create(data_dir: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let config = WalletConfig::new(data_dir);
         Self::load_or_create_with_config(config)
     }
     
     /// Load wallet for specific role (server/client) with separate wallet files
-    pub fn load_or_create_with_role(role: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut config = WalletConfig::default();
+    pub fn load_or_create_with_role(role: &str, data_dir: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut config = WalletConfig::new(data_dir);
         
         // Use separate wallet files for server vs client
         config.keypair_file = config.wallet_dir.join(format!("{}-wallet.key", role));
@@ -87,7 +106,7 @@ impl KaspaAuthWallet {
         
         // Generate Kaspa address
         let network_prefix = Prefix::from(config.network_id);
-        let kaspa_address = Address::new(network_prefix, Version::PubKey, &keypair.public_key().serialize()[1..]);
+        let kaspa_address = Address::new(network_prefix, Version::PubKey, &keypair.x_only_public_key().0.serialize());
         
         println!("💾 Wallet saved to: {}", config.keypair_file.display());
         println!("🔑 Public Key: {}", hex::encode(keypair.public_key().serialize()));
@@ -121,7 +140,7 @@ impl KaspaAuthWallet {
         
         // Generate Kaspa address for display
         let network_prefix = Prefix::from(config.network_id);
-        let kaspa_address = Address::new(network_prefix, Version::PubKey, &keypair.public_key().serialize()[1..]);
+        let kaspa_address = Address::new(network_prefix, Version::PubKey, &keypair.x_only_public_key().0.serialize());
         
         println!("✅ Wallet loaded successfully");
         println!("🔑 Public Key: {}", hex::encode(keypair.public_key().serialize()));
@@ -139,7 +158,7 @@ impl KaspaAuthWallet {
     /// Get the Kaspa address for this wallet
     pub fn get_kaspa_address(&self) -> Address {
         let network_prefix = Prefix::from(self.config.network_id);
-        Address::new(network_prefix, Version::PubKey, &self.keypair.public_key().serialize()[1..])
+        Address::new(network_prefix, Version::PubKey, &self.keypair.x_only_public_key().0.serialize())
     }
     
     /// Get public key as hex string
@@ -171,15 +190,15 @@ impl KaspaAuthWallet {
     }
     
     /// Load wallet for specific command with appropriate messaging
-    pub fn load_for_command(command: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load_for_command(command: &str, data_dir: &str) -> Result<Self, Box<dyn std::error::Error>> {
         // Use separate wallet files for organizer vs participant peers
         let wallet = match command {
-            "organizer-peer" | "http-peer" => Self::load_or_create_with_role("organizer-peer")?,
-            "participant-peer" | "web-participant" | "authenticate" => Self::load_or_create_with_role("participant-peer")?,
+            "organizer-peer" | "http-peer" => Self::load_or_create_with_role("organizer-peer", data_dir)?,
+            "participant-peer" | "web-participant" | "authenticate" => Self::load_or_create_with_role("participant-peer", data_dir)?,
             // Legacy compatibility
-            "server" | "http-server" => Self::load_or_create_with_role("organizer-peer")?,
-            "client" => Self::load_or_create_with_role("participant-peer")?,
-            _ => Self::load_or_create()?,
+            "server" | "http-server" => Self::load_or_create_with_role("organizer-peer", data_dir)?,
+            "client" => Self::load_or_create_with_role("participant-peer", data_dir)?,
+            _ => Self::load_or_create(data_dir)?,
         };
         
         match command {
@@ -217,7 +236,7 @@ impl KaspaAuthWallet {
     }
     
     /// Create wallet from provided private key (for --key option)
-    pub fn from_private_key(private_key_hex: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_private_key(private_key_hex: &str, data_dir: &str) -> Result<Self, Box<dyn std::error::Error>> {
         use secp256k1::{Secp256k1, SecretKey};
         
         let secp = Secp256k1::new();
@@ -230,37 +249,37 @@ impl KaspaAuthWallet {
         
         Ok(Self {
             keypair,
-            config: WalletConfig::default(),
+            config: WalletConfig::new(data_dir),
             was_created: false,
         })
     }
     
     /// Load wallet using OS keychain instead of file system
-    pub fn load_from_keychain(command: &str, dev_mode: bool) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load_from_keychain(command: &str, dev_mode: bool, data_dir: &str) -> Result<Self, Box<dyn std::error::Error>> {
         println!("🔐 Loading wallet from OS keychain for command: {}", command);
-        get_keychain_wallet_for_command(command, dev_mode)
+        get_keychain_wallet_for_command(command, dev_mode, data_dir)
     }
     
     /// Check if keychain wallet exists for command
-    pub fn keychain_wallet_exists_for_command(command: &str, dev_mode: bool) -> bool {
+    pub fn keychain_wallet_exists_for_command(command: &str, dev_mode: bool, data_dir: &str) -> bool {
         let username = match command {
             "organizer-peer" | "http-peer" | "server" | "http-server" => "organizer-peer",
             "participant-peer" | "web-participant" | "authenticate" | "client" => "participant-peer", 
             _ => "default-wallet",
         };
-        keychain_wallet_exists(username, dev_mode)
+        keychain_wallet_exists(username, dev_mode, data_dir)
     }
 }
 
 /// Get wallet for any command with unified UX
-pub fn get_wallet_for_command(command: &str, private_key: Option<&str>) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
+pub fn get_wallet_for_command(command: &str, private_key: Option<&str>, data_dir: &str) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
     match private_key {
         Some(key_hex) => {
             println!("🔑 Using provided private key for {}", command);
-            KaspaAuthWallet::from_private_key(key_hex)
+            KaspaAuthWallet::from_private_key(key_hex, data_dir)
         },
         None => {
-            KaspaAuthWallet::load_for_command(command)
+            KaspaAuthWallet::load_for_command(command, data_dir)
         }
     }
 }
@@ -270,20 +289,21 @@ pub fn get_wallet_for_command_with_storage(
     command: &str, 
     private_key: Option<&str>,
     use_keychain: bool,
-    dev_mode: bool
+    dev_mode: bool,
+    data_dir: &str
 ) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
     match private_key {
         Some(key_hex) => {
             println!("🔑 Using provided private key for {}", command);
-            KaspaAuthWallet::from_private_key(key_hex)
+            KaspaAuthWallet::from_private_key(key_hex, data_dir)
         },
         None => {
             if use_keychain {
                 println!("🔐 Using OS keychain for wallet storage");
-                KaspaAuthWallet::load_from_keychain(command, dev_mode)
+                KaspaAuthWallet::load_from_keychain(command, dev_mode, data_dir)
             } else {
                 println!("📁 Using file-based wallet storage");
-                KaspaAuthWallet::load_for_command(command)
+                KaspaAuthWallet::load_for_command(command, data_dir)
             }
         }
     }

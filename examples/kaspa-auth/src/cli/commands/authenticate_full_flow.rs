@@ -40,8 +40,8 @@ impl AuthenticateFullFlowCommand {
         println!("🎯 Organizer peer: {}", self.peer);
         
         // Get wallets for both funding and auth
-        let funding_wallet = get_wallet_for_command("participant-peer", self.key.as_deref())?;
-        let auth_wallet = get_wallet_for_command("authenticate", None)?;
+        let funding_wallet = get_wallet_for_command("participant-peer", self.key.as_deref(), ".")?;
+        let auth_wallet = get_wallet_for_command("authenticate", None, ".")?;
         
         run_full_authentication_cycle(
             funding_wallet.keypair, 

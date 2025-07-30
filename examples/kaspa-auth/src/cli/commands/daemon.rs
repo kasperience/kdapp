@@ -39,6 +39,10 @@ pub struct DaemonStartCommand {
     /// Socket path for IPC communication
     #[arg(long, default_value = "/tmp/kaspa-auth.sock")]
     pub socket_path: String,
+
+    /// Directory to store wallet and other data
+    #[arg(long, default_value = ".")]
+    pub data_dir: String,
     
     /// Auto-unlock identities on startup
     #[arg(long)]
@@ -151,6 +155,7 @@ impl DaemonStartCommand {
         println!("🚀 Starting kaspa-auth daemon");
         
         let config = DaemonConfig {
+            data_dir: self.data_dir.clone(),
             socket_path: self.socket_path.clone(),
             auto_unlock: self.auto_unlock,
             session_timeout: self.session_timeout,

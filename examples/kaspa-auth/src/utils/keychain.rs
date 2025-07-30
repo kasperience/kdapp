@@ -1,4 +1,5 @@
 // src/utils/keychain.rs - OS Keychain Integration for Kaspa Auth
+use std::fs;
 use keyring::Entry;
 use secp256k1::{Secp256k1, SecretKey, Keypair};
 use rand::rngs::OsRng;
@@ -29,11 +30,12 @@ impl KeychainConfig {
 
 pub struct KeychainManager {
     config: KeychainConfig,
+    data_dir: String,
 }
 
 impl KeychainManager {
-    pub fn new(config: KeychainConfig) -> Self {
-        KeychainManager { config }
+    pub fn new(config: KeychainConfig, data_dir: &str) -> Self {
+        KeychainManager { config, data_dir: data_dir.to_string() }
     }
 
     /// Create new wallet and store in OS keychain
@@ -51,7 +53,7 @@ impl KeychainManager {
             println!("   DO NOT USE FOR REAL FUNDS!\n");
             
             // Create .kaspa-auth directory if it doesn't exist
-            std::fs::create_dir_all(".kaspa-auth")?;
+            std::fs::create_dir_all(&self.data_dir)?;
             let dev_key_file = format!(".kaspa-auth/{}.key", username);
             std::fs::write(&dev_key_file, &private_key_hex)?;
             println!("🔑 Wallet created and private key stored in '{}'.", dev_key_file);
@@ -64,7 +66,7 @@ impl KeychainManager {
         
         // Create KaspaAuthWallet from the generated keypair
         let keypair = Keypair::from_secret_key(&secp, &secret_key);
-        let wallet_config = WalletConfig::default();
+        let wallet_config = WalletConfig::new(&self.data_dir);
         let wallet = KaspaAuthWallet {
             keypair,
             config: wallet_config,
@@ -79,6 +81,29 @@ impl KeychainManager {
         println!("✅ Keychain wallet setup complete!\n");
         
         Ok(wallet)
+    }
+
+    /// Create new wallet and save it to the filesystem.
+    pub fn create_and_save_wallet(&self, username: &str) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
+        let mut config = WalletConfig::new(&self.data_dir);
+        config.keypair_file = config.wallet_dir.join(format!("{}.key", username));
+
+        // Generate new keypair
+        use secp256k1::{Secp256k1, SecretKey};
+        use rand::rngs::OsRng;
+        let secp = Secp256k1::new();
+        let (secret_key, _) = secp.generate_keypair(&mut OsRng);
+        let keypair = Keypair::from_secret_key(&secp, &secret_key);
+
+        // Save the secret key
+        fs::create_dir_all(&config.wallet_dir)?;
+        fs::write(&config.keypair_file, secret_key.as_ref())?;
+
+        Ok(KaspaAuthWallet {
+            keypair,
+            config,
+            was_created: true,
+        })
     }
     
     /// Load existing wallet from OS keychain
@@ -102,7 +127,7 @@ impl KeychainManager {
         let secret_key = SecretKey::from_slice(&private_key_bytes)?;
         let keypair = Keypair::from_secret_key(&secp, &secret_key);
         
-        let wallet_config = WalletConfig::default();
+        let wallet_config = WalletConfig::new(&self.data_dir);
         let wallet = KaspaAuthWallet {
             keypair,
             config: wallet_config,
@@ -197,9 +222,9 @@ impl KeychainManager {
 /// Helper functions for easy integration with existing kaspa-auth code
 
 /// Get wallet for command using keychain storage
-pub fn get_keychain_wallet_for_command(command: &str, dev_mode: bool) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
+pub fn get_keychain_wallet_for_command(command: &str, dev_mode: bool, data_dir: &str) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
     let keychain_config = KeychainConfig::new("kaspa-auth", dev_mode);
-    let keychain_manager = KeychainManager::new(keychain_config);
+    let keychain_manager = KeychainManager::new(keychain_config, data_dir);
     
     // Map commands to keychain usernames
     let username = match command {
@@ -213,22 +238,22 @@ pub fn get_keychain_wallet_for_command(command: &str, dev_mode: bool) -> Result<
 }
 
 /// Create specific wallet in keychain
-pub fn create_keychain_wallet(username: &str, dev_mode: bool) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
+pub fn create_keychain_wallet(username: &str, dev_mode: bool, data_dir: &str) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
     let keychain_config = KeychainConfig::new("kaspa-auth", dev_mode);
-    let keychain_manager = KeychainManager::new(keychain_config);
+    let keychain_manager = KeychainManager::new(keychain_config, data_dir);
     keychain_manager.create_wallet(username)
 }
 
 /// Load specific wallet from keychain
-pub fn load_keychain_wallet(username: &str, dev_mode: bool) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
+pub fn load_keychain_wallet(username: &str, dev_mode: bool, data_dir: &str) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
     let keychain_config = KeychainConfig::new("kaspa-auth", dev_mode);
-    let keychain_manager = KeychainManager::new(keychain_config);
+    let keychain_manager = KeychainManager::new(keychain_config, data_dir);
     keychain_manager.load_wallet(username)
 }
 
 /// Check if keychain wallet exists
-pub fn keychain_wallet_exists(username: &str, dev_mode: bool) -> bool {
+pub fn keychain_wallet_exists(username: &str, dev_mode: bool, data_dir: &str) -> bool {
     let keychain_config = KeychainConfig::new("kaspa-auth", dev_mode);
-    let keychain_manager = KeychainManager::new(keychain_config);
+    let keychain_manager = KeychainManager::new(keychain_config, data_dir);
     keychain_manager.wallet_exists(username)
 }

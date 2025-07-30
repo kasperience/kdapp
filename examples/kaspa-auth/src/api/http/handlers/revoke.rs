@@ -63,7 +63,7 @@ pub async fn revoke_session(
     }
     
     // 🎯 TRUE P2P: Participant funds their own session revocation transaction
-    let participant_wallet = crate::wallet::get_wallet_for_command("web-participant", None)
+    let participant_wallet = crate::wallet::get_wallet_for_command("web-participant", None, ".")
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let participant_secret_key = participant_wallet.keypair.secret_key();
     

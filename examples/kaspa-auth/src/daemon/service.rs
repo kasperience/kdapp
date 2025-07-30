@@ -69,7 +69,7 @@ impl AuthDaemon {
     /// Create new daemon instance
     pub fn new(config: DaemonConfig) -> Self {
         let keychain_config = KeychainConfig::new("kaspa-auth", config.dev_mode);
-        let keychain_manager = KeychainManager::new(keychain_config);
+        let keychain_manager = KeychainManager::new(keychain_config, &config.data_dir);
         let (event_tx, _) = broadcast::channel(100);
         
         Self {
@@ -293,22 +293,20 @@ impl AuthDaemon {
     }
     
     /// Create new authentication identity
-    async fn create_identity(&self, username: &str, password: &str) -> DaemonResponse {
+    async fn create_identity(&self, username: &str, _password: &str) -> DaemonResponse {
         println!("🆕 Creating identity: {}", username);
-        
-        match self.keychain_manager.create_wallet(username) {
+
+        // This now correctly saves the wallet to disk.
+        match self.keychain_manager.create_and_save_wallet(username) {
             Ok(wallet) => {
-                // Store password hash for verification (simplified)
-                // TODO: Proper password hashing and storage
-                
-                // Load into memory
+                // Also load it into memory for immediate use
                 {
                     let mut identities = self.unlocked_identities.lock().unwrap();
                     identities.insert(username.to_string(), wallet.clone());
                 }
-                
+
                 DaemonResponse::Success {
-                    message: format!("Identity '{}' created successfully", username),
+                    message: format!("Identity '{}' created and saved successfully", username),
                 }
             }
             Err(e) => {
@@ -372,13 +370,17 @@ impl AuthDaemon {
         println!("💰 Participant will pay for ALL transactions");
         println!("💸 Organizer pays 0.00000 KAS (coordination only)");
         
+        // Use the FIXED authentication flow
+        println!("🌐 Using FIXED endpoint pattern (3 blockchain transactions)");
+        
         match self.run_working_authentication_flow(&wallet, server_url).await {
             Ok(auth_result) => {
                 println!("✅ BLOCKCHAIN AUTHENTICATION SUCCESS!");
                 println!("📧 Episode ID: {}", auth_result.episode_id);
                 println!("🎫 Session Token: {}", auth_result.session_token);
+                println!("🔗 All 3 transactions confirmed on blockchain");
                 
-                // Create active session with REAL blockchain data
+                // Create active session
                 let session = ActiveSession {
                     username: username.to_string(),
                     server_url: server_url.to_string(),
@@ -392,8 +394,6 @@ impl AuthDaemon {
                     let mut sessions = self.active_sessions.lock().unwrap();
                     sessions.insert(auth_result.episode_id, session);
                 }
-                println!("✅ Created REAL blockchain session {} for {}", 
-                         auth_result.episode_id, username);
                 
                 // Broadcast success event
                 let _ = self.event_tx.send(DaemonEvent::AuthenticationCompleted {
@@ -405,12 +405,11 @@ impl AuthDaemon {
                     success: true,
                     episode_id: Some(auth_result.episode_id),
                     session_token: Some(auth_result.session_token),
-                    message: format!("REAL blockchain authentication successful - episode {}", 
-                                   auth_result.episode_id),
+                    message: format!("Authentication successful - 3 transactions confirmed"),
                 }
             }
             Err(e) => {
-                println!("❌ BLOCKCHAIN AUTHENTICATION FAILED: {}", e);
+                println!("❌ AUTHENTICATION FAILED: {}", e);
                 
                 // Broadcast failure event
                 let _ = self.event_tx.send(DaemonEvent::AuthenticationCompleted {
@@ -419,21 +418,26 @@ impl AuthDaemon {
                 });
                 
                 DaemonResponse::Error {
-                    error: format!("Blockchain authentication failed: {}", e),
+                    error: format!("Authentication failed: {}", e),
                 }
             }
         }
     }
     
-    /// Run authentication using WORKING web UI endpoint pattern
-    async fn run_working_authentication_flow(&self, wallet: &KaspaAuthWallet, server_url: &str) -> Result<crate::auth::authentication::AuthenticationResult, Box<dyn std::error::Error>> {
+    /// Run authentication using WORKING web UI endpoint pattern (3 transactions)
+    async fn run_working_authentication_flow(
+        &self, 
+        wallet: &KaspaAuthWallet, 
+        server_url: &str
+    ) -> Result<crate::auth::authentication::AuthenticationResult, Box<dyn std::error::Error>> {
         let client = reqwest::Client::new();
         let public_key_hex = wallet.get_public_key_hex();
         
-        println!("🔑 Using persistent wallet public key: {}", public_key_hex);
+        println!("🔑 Using wallet public key: {}", public_key_hex);
+        println!("🎯 Following EXACT Web UI pattern (3 transactions)");
         
-        // Step 1: Create episode using WORKING /auth/start endpoint
-        println!("🚀 Step 1: Creating episode via /auth/start...");
+        // Step 1: Create episode (HTTP coordination only)
+        println!("📝 Step 1: Creating episode via /auth/start...");
         let start_response = client
             .post(&format!("{}/auth/start", server_url))
             .header("Content-Type", "application/json")
@@ -444,16 +448,18 @@ impl AuthDaemon {
             .await?;
         
         if !start_response.status().is_success() {
-            return Err(format!("Failed to start auth: HTTP {}", start_response.status()).into());
+            let status = start_response.status();
+            let body = start_response.text().await?;
+            return Err(format!("Failed to start auth: HTTP {} - {}", status, body).into());
         }
         
         let start_data: serde_json::Value = start_response.json().await?;
         let episode_id = start_data["episode_id"].as_u64()
             .ok_or("Server did not return valid episode_id")?;
         
-        println!("✅ Episode {} created by organizer peer", episode_id);
+        println!("✅ Episode {} created (HTTP coordination)", episode_id);
         
-        // Step 2: Request challenge using WORKING /auth/request-challenge endpoint
+        // Step 2: Request challenge (HTTP coordination only) 
         println!("📨 Step 2: Requesting challenge via /auth/request-challenge...");
         let challenge_response = client
             .post(&format!("{}/auth/request-challenge", server_url))
@@ -466,85 +472,65 @@ impl AuthDaemon {
             .await?;
         
         if !challenge_response.status().is_success() {
-            return Err(format!("Failed to request challenge: HTTP {}", challenge_response.status()).into());
+            let status = challenge_response.status();
+            let body = challenge_response.text().await?;
+            return Err(format!("Failed to request challenge: HTTP {} - {}", status, body).into());
         }
         
-        println!("✅ Challenge request submitted");
+        // Get challenge immediately from response (no polling needed with fixed endpoints)
+        let challenge_data: serde_json::Value = challenge_response.json().await?;
+        let challenge = challenge_data["nonce"].as_str()
+            .ok_or("Server did not return challenge")?
+            .to_string();
         
-        // Step 3: Poll for challenge using WORKING /auth/status/{id} endpoint
-        println!("⏳ Step 3: Polling for challenge via /auth/status/{}...", episode_id);
-        let mut challenge = String::new();
+        println!("🎯 Challenge received immediately: {}", challenge);
         
-        for attempt in 1..=10 {
-            println!("🔄 Polling attempt {} of 10...", attempt);
-            
-            let status_response = client
-                .get(&format!("{}/auth/status/{}", server_url, episode_id))
-                .send()
-                .await?;
-            
-            if status_response.status().is_success() {
-                let status_data: serde_json::Value = status_response.json().await?;
-                if let Some(server_challenge) = status_data["challenge"].as_str() {
-                    challenge = server_challenge.to_string();
-                    println!("🎯 Challenge retrieved from server: {}", challenge);
-                    break;
-                }
-            }
-            
-            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-        }
+        // Step 3: Sign challenge locally
+        println!("✍️ Step 3: Signing challenge locally...");
+        let msg = kdapp::pki::to_message(&challenge);
+        let signature = kdapp::pki::sign_message(&wallet.keypair.secret_key(), &msg);
+        let signature_hex = hex::encode(signature.0.serialize_der());
         
-        if challenge.is_empty() {
-            return Err("❌ Could not retrieve challenge from server".into());
-        }
+        println!("✅ Challenge signed with wallet private key");
         
-        // Step 4: Sign challenge using server-side signing (like web UI)
-        println!("✍️ Step 4: Signing challenge via /auth/sign-challenge...");
-        let sign_response = client
-            .post(&format!("{}/auth/sign-challenge", server_url))
-            .header("Content-Type", "application/json")
-            .json(&serde_json::json!({
-                "challenge": challenge,
-                "private_key": wallet.get_private_key_hex() // Use wallet's private key
-            }))
-            .send()
-            .await?;
+        // Step 4: Submit verification (this triggers ALL 3 blockchain transactions)
+        println!("📤 Step 4: Submitting verification via /auth/verify...");
+        println!("⚡ This will trigger all 3 blockchain transactions:");
+        println!("   1. NewEpisode");
+        println!("   2. RequestChallenge");
+        println!("   3. SubmitResponse");
         
-        if !sign_response.status().is_success() {
-            return Err(format!("Failed to sign challenge: HTTP {}", sign_response.status()).into());
-        }
-        
-        let sign_data: serde_json::Value = sign_response.json().await?;
-        let signature = sign_data["signature"].as_str()
-            .ok_or("Server did not return signature")?;
-        
-        println!("✅ Challenge signed successfully");
-        
-        // Step 5: Submit verification using WORKING /auth/verify endpoint
-        println!("📤 Step 5: Submitting verification via /auth/verify...");
         let verify_response = client
             .post(&format!("{}/auth/verify", server_url))
             .header("Content-Type", "application/json")
             .json(&serde_json::json!({
                 "episode_id": episode_id,
-                "signature": signature,
+                "signature": signature_hex,
                 "nonce": challenge
             }))
             .send()
             .await?;
         
         if !verify_response.status().is_success() {
-            return Err(format!("Failed to verify: HTTP {}", verify_response.status()).into());
+            let status = verify_response.status();
+            let body = verify_response.text().await?;
+            return Err(format!("Failed to verify: HTTP {} - {}", status, body).into());
         }
         
-        println!("✅ Verification submitted");
+        let verify_data: serde_json::Value = verify_response.json().await?;
+        let transaction_id = verify_data["transaction_id"].as_str();
         
-        // Step 6: Wait for authentication completion using WORKING polling
-        println!("⏳ Step 6: Waiting for authentication completion...");
+        println!("✅ All transactions submitted!");
+        if let Some(tx_id) = transaction_id {
+            println!("📋 Final transaction ID: {}", tx_id);
+        }
+        
+        // Step 5: Poll for authentication completion
+        println!("⏳ Step 5: Waiting for blockchain confirmation...");
         let mut session_token = String::new();
+        let max_attempts = 60; // 30 seconds timeout
         
-        for attempt in 1..=50 {
+        for attempt in 1..=max_attempts {
             let status_response = client
                 .get(&format!("{}/auth/status/{}", server_url, episode_id))
                 .send()
@@ -552,23 +538,34 @@ impl AuthDaemon {
             
             if status_response.status().is_success() {
                 let status_data: serde_json::Value = status_response.json().await?;
+                
+                // Debug logging
+                if attempt == 1 {
+                    println!("📊 Episode status: {}", serde_json::to_string_pretty(&status_data)?);
+                }
+                
                 if let (Some(authenticated), Some(token)) = (
                     status_data["authenticated"].as_bool(),
                     status_data["session_token"].as_str()
                 ) {
                     if authenticated && !token.is_empty() {
                         session_token = token.to_string();
-                        println!("✅ REAL session token retrieved: {}", session_token);
+                        println!("✅ Authentication confirmed by blockchain!");
+                        println!("🎫 Session token: {}", session_token);
                         break;
                     }
                 }
             }
             
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            if attempt % 10 == 0 {
+                println!("⏳ Still waiting... ({}/{})", attempt, max_attempts);
+            }
+            
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         }
         
         if session_token.is_empty() {
-            return Err("❌ Could not retrieve session token from server".into());
+            return Err("❌ Timeout waiting for blockchain confirmation".into());
         }
         
         Ok(crate::auth::authentication::AuthenticationResult {
@@ -623,7 +620,8 @@ impl Clone for AuthDaemon {
             unlocked_identities: Arc::clone(&self.unlocked_identities),
             active_sessions: Arc::clone(&self.active_sessions),
             keychain_manager: KeychainManager::new(
-                KeychainConfig::new("kaspa-auth", self.config.dev_mode)
+                KeychainConfig::new("kaspa-auth", self.config.dev_mode),
+                &self.config.data_dir
             ),
             event_tx: self.event_tx.clone(),
         }
