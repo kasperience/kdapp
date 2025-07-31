@@ -22,7 +22,7 @@ async fn handle_socket(mut socket: WebSocket, state: PeerState) {
     
     loop {
         select! {
-            // Listen for broadcast messages from the server
+            // Listen for broadcast messages from the organizer peer
             msg = rx.recv() => {
                 match msg {
                     Ok(ws_message) => {
@@ -46,15 +46,15 @@ async fn handle_socket(mut socket: WebSocket, state: PeerState) {
                 }
             }
             
-            // Listen for incoming messages from client (optional)
+            // Listen for incoming messages from participant peer (optional)
             socket_msg = socket.recv() => {
                 match socket_msg {
                     Some(Ok(_)) => {
-                        // Handle client messages if needed
+                        // Handle participant peer messages if needed
                         // For now, just continue
                     }
                     _ => {
-                        info!("WebSocket connection closed by client");
+                        info!("WebSocket connection closed by participant peer");
                         break;
                     }
                 }

@@ -6,7 +6,7 @@ use kdapp::engine::EpisodeMessage;
 use crate::core::{episode::SimpleAuth, commands::AuthCommand};
 
 pub struct TxSubmitter<'a> {
-    pub server_keypair: &'a secp256k1::Keypair,
+    pub organizer_keypair: &'a secp256k1::Keypair,
     pub transaction_generator: &'a kdapp::generator::TransactionGenerator,
 }
 
@@ -16,12 +16,12 @@ impl<'a> TxSubmitter<'a> {
         episode_id: u64,
         signature: String,
         nonce: String,
-        client_pubkey: kdapp::pki::PubKey,
+        participant_pubkey: kdapp::pki::PubKey,
     ) -> Result<String, String> {
         // Create command
         let cmd = AuthCommand::SubmitResponse { signature, nonce };
         let msg = EpisodeMessage::<SimpleAuth>::new_signed_command(
-            episode_id as u32, cmd, self.server_keypair.secret_key(), client_pubkey
+            episode_id as u32, cmd, self.organizer_keypair.secret_key(), participant_pubkey
         );
         
         // Connect to Kaspa
@@ -29,9 +29,9 @@ impl<'a> TxSubmitter<'a> {
         let kaspad = kdapp::proxy::connect_client(network, None).await
             .map_err(|e| format!("Connect failed: {}", e))?;
         
-        // Get server address and UTXOs
+        // Get organizer peer address and UTXOs
         let addr = Address::new(Prefix::Testnet, Version::PubKey, 
-            &self.server_keypair.public_key().serialize()[1..]);
+            &self.organizer_keypair.public_key().serialize()[1..]);
         
         let entries = kaspad.get_utxos_by_addresses(vec![addr.clone()]).await
             .map_err(|e| format!("UTXO fetch failed: {}", e))?;

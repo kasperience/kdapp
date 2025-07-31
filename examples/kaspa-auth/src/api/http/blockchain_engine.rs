@@ -41,11 +41,11 @@ impl AuthHttpPeer {
         // Create shared episode state that both engine and HTTP coordination peer can access
         let blockchain_episodes = Arc::new(std::sync::Mutex::new(HashMap::new()));
         
-        // Create kaspad client for transaction submission
+        // Create kaspad participant_peer for transaction submission
         let kaspad_client = match connect_client(network, None).await {
-            Ok(client) => {
+            Ok(participant_peer) => {
                 println!("✅ Connected to Kaspa node for transaction submission");
-                Some(Arc::new(client))
+                Some(Arc::new(participant_peer))
             }
             Err(e) => {
                 println!("⚠️ Failed to connect to Kaspa node: {}", e);
@@ -186,12 +186,12 @@ impl AuthHttpPeer {
                 }
             }
         } else {
-            Err("Kaspad client not available for transaction submission.".into())
+            Err("Kaspad participant peer not available for transaction submission.".into())
         }
     }
 }
 
-/// Episode event handler that broadcasts updates to WebSocket clients
+/// Episode event handler that broadcasts updates to WebSocket participant peers
 pub struct HttpAuthHandler {
     pub websocket_tx: broadcast::Sender<WebSocketMessage>,
     pub blockchain_episodes: SharedEpisodeState,

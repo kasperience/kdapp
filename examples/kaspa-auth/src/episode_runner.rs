@@ -56,13 +56,13 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
                     info!("[{}] Episode {}: ✅ Authentication successful!", 
                           self.name, episode_id);
                     
-                    // Notify HTTP server about successful authentication
-                    let client = Client::new();
+                    // Notify HTTP organizer peer about successful authentication
+                    let participant_peer = Client::new();
                     let episode_id_clone = episode_id;
                     let challenge_clone = episode.challenge.clone().unwrap_or_default();
                     tokio::spawn(async move {
                         let url = "http://127.0.0.1:8080/internal/episode-authenticated"; // TODO: Make configurable
-                        let res = client.post(url)
+                        let res = participant_peer.post(url)
                             .json(&json!({
                                 "episode_id": episode_id_clone,
                                 "challenge": challenge_clone,
@@ -72,13 +72,13 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
                         
                         match res {
                             Ok(response) if response.status().is_success() => {
-                                info!("Successfully notified HTTP server for episode {}", episode_id_clone);
+                                info!("Successfully notified HTTP organizer peer for episode {}", episode_id_clone);
                             },
                             Ok(response) => {
-                                error!("Failed to notify HTTP server for episode {}: Status {}", episode_id_clone, response.status());
+                                error!("Failed to notify HTTP organizer peer for episode {}: Status {}", episode_id_clone, response.status());
                             },
                             Err(e) => {
-                                error!("Failed to notify HTTP server for episode {}: Error {}", episode_id_clone, e);
+                                error!("Failed to notify HTTP organizer peer for episode {}: Error {}", episode_id_clone, e);
                             }
                         }
                     });
@@ -94,14 +94,14 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
                     info!("[{}] Episode {}: ✅ Session successfully revoked!", 
                           self.name, episode_id);
                     
-                    // Notify HTTP server about successful session revocation
-                    let client = Client::new();
+                    // Notify HTTP organizer peer about successful session revocation
+                    let participant_peer = Client::new();
                     let episode_id_clone = episode_id;
                     let session_token_clone = session_token.clone();
                     tokio::spawn(async move {
                         let url = "http://127.0.0.1:8080/internal/session-revoked"; // TODO: Make configurable
-                        info!("Attempting to notify HTTP server of session revocation at {}", url);
-                        let res = client.post(url)
+                        info!("Attempting to notify HTTP organizer peer of session revocation at {}", url);
+                        let res = participant_peer.post(url)
                             .json(&json!({
                                 "episode_id": episode_id_clone,
                                 "session_token": session_token_clone,
@@ -111,13 +111,13 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
                         
                         match res {
                             Ok(response) if response.status().is_success() => {
-                                info!("✅ Successfully notified HTTP server of session revocation for episode {}", episode_id_clone);
+                                info!("✅ Successfully notified HTTP organizer peer of session revocation for episode {}", episode_id_clone);
                             },
                             Ok(response) => {
-                                error!("❌ Failed to notify HTTP server of session revocation for episode {}: Status {}", episode_id_clone, response.status());
+                                error!("❌ Failed to notify HTTP organizer peer of session revocation for episode {}: Status {}", episode_id_clone, response.status());
                             },
                             Err(e) => {
-                                error!("❌ Failed to notify HTTP server of session revocation for episode {}: Error {}", episode_id_clone, e);
+                                error!("❌ Failed to notify HTTP organizer peer of session revocation for episode {}: Error {}", episode_id_clone, e);
                             }
                         }
                     });
@@ -134,8 +134,8 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
     }
 }
 
-/// Configuration for the auth server
-pub struct AuthServerConfig {
+/// Configuration for the auth organizer peer
+pub struct AuthOrganizerConfig {
     pub signer: Keypair,
     pub network: NetworkId,
     pub rpc_url: Option<String>,
@@ -146,7 +146,7 @@ pub struct AuthServerConfig {
 /// Simple HTTP coordination structures
 #[derive(Serialize, Deserialize)]
 pub struct ChallengeRequest {
-    pub client_pubkey: String,
+    pub participant_pubkey: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -159,7 +159,7 @@ pub struct ChallengeResponse {
 pub struct AuthRequest {
     pub signature: String,
     pub nonce: String,
-    pub client_pubkey: String,
+    pub participant_pubkey: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -173,7 +173,7 @@ pub struct CoordinationState {
     pub challenges: Arc<Mutex<HashMap<String, String>>>,
 }
 
-impl AuthServerConfig {
+impl AuthOrganizerConfig {
     pub fn new(signer: Keypair, name: String, rpc_url: Option<String>) -> Self {
         Self {
             signer,
@@ -185,9 +185,9 @@ impl AuthServerConfig {
     }
 }
 
-/// Run the authentication server
-pub async fn run_auth_server(config: AuthServerConfig) -> Result<(), Box<dyn std::error::Error>> {
-    info!("🎯 Starting Kaspa Auth Server: {}", config.name);
+/// Run the authentication organizer peer
+pub async fn run_auth_organizer_peer(config: AuthOrganizerConfig) -> Result<(), Box<dyn std::error::Error>> {
+    info!("🎯 Starting Kaspa Auth Organizer Peer: {}", config.name);
     info!("📡 Connecting to network: {:?}", config.network);
 
     // 1. Connect to Kaspa network
@@ -231,7 +231,7 @@ pub async fn run_auth_server(config: AuthServerConfig) -> Result<(), Box<dyn std
     // Wait for engine to finish
     let _ = engine_task.await?;
     
-    info!("✅ Auth server shutdown gracefully");
+    info!("✅ Auth organizer peer shutdown gracefully");
 
     Ok(())
 }
@@ -261,8 +261,8 @@ mod tests {
 
     #[test]
     fn test_event_handler_creation() {
-        let handler = AuthEventHandler::new("test-server".to_string());
-        assert_eq!(handler.name, "test-server");
+        let handler = AuthEventHandler::new("test-organizer-peer".to_string());
+        assert_eq!(handler.name, "test-organizer-peer");
     }
 
     #[test]
@@ -271,7 +271,7 @@ mod tests {
         let secret_key = SecretKey::new(&mut rand::thread_rng());
         let keypair = Keypair::from_secret_key(&secp, &secret_key);
         
-        let config = AuthServerConfig::new(keypair, "test".to_string(), None);
+        let config = AuthOrganizerConfig::new(keypair, "test".to_string(), None);
         assert_eq!(config.name, "test");
         assert_eq!(config.network, NetworkId::with_suffix(NetworkType::Testnet, 10));
         assert!(config.rpc_url.is_none());

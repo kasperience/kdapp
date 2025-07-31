@@ -28,7 +28,7 @@ pub enum Commands {
     TestEpisode(test::TestEpisodeCommand),
     /// Run HTTP coordination organizer peer for authentication
     HttpOrganizerPeer(http_organizer_peer::HttpOrganizerPeerCommand),
-    /// 🚀 One-command authentication with HTTP server (EASY MODE)
+    /// 🚀 One-command authentication with HTTP organizer peer (EASY MODE)
     Authenticate(authenticate::AuthenticateCommand),
     /// 🔄 Complete login → session → logout cycle with timeouts
     AuthenticateFullFlow(authenticate_full_flow::AuthenticateFullFlowCommand),

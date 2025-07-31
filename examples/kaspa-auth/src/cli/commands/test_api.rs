@@ -26,7 +26,7 @@ struct ApiEndpoint {
 
 impl TestApiCommand {
     pub async fn execute(self) -> Result<(), Box<dyn Error>> {
-        let client = Client::new();
+        let participant_peer = Client::new();
         let base_url = self.peer.trim_end_matches('/');
         
         println!("🧪 Testing all API endpoints for: {}", base_url);
@@ -38,7 +38,7 @@ impl TestApiCommand {
         let mut episode_id: Option<u64> = None;
         
         for endpoint in endpoints {
-            let result = self.test_endpoint(&client, base_url, &endpoint, episode_id).await;
+            let result = self.test_endpoint(&participant_peer, base_url, &endpoint, episode_id).await;
             
             // Extract episode_id from successful POST /auth/start for later tests
             if endpoint.path == "/auth/start" && result.is_ok() {
@@ -95,7 +95,7 @@ impl TestApiCommand {
         if success_count == total_count {
             println!("🎉 All endpoints working perfectly!");
         } else {
-            println!("⚠️  Some endpoints failed - check server logs");
+            println!("⚠️  Some endpoints failed - check organizer peer logs");
         }
         
         Ok(())
@@ -106,7 +106,7 @@ impl TestApiCommand {
             ApiEndpoint {
                 method: "GET",
                 path: "/",
-                description: "Server info",
+                description: "Organizer peer info",
                 needs_data: false,
                 test_data: None,
             },
@@ -136,7 +136,7 @@ impl TestApiCommand {
             ApiEndpoint {
                 method: "POST",
                 path: "/auth/register-episode",
-                description: "Register blockchain episode with HTTP server",
+                description: "Register blockchain episode with HTTP organizer peer",
                 needs_data: true,
                 test_data: Some(serde_json::json!({
                     "episode_id": 12345,
@@ -193,7 +193,7 @@ impl TestApiCommand {
     
     async fn test_endpoint(
         &self, 
-        client: &Client, 
+        participant_peer: &Client, 
         base_url: &str, 
         endpoint: &ApiEndpoint,
         episode_id: Option<u64>
@@ -222,10 +222,10 @@ impl TestApiCommand {
         
         let response = match endpoint.method {
             "GET" => {
-                client.get(&url).send().await?
+                participant_peer.get(&url).send().await?
             },
             "POST" => {
-                let mut request = client.post(&url).header("Content-Type", "application/json");
+                let mut request = participant_peer.post(&url).header("Content-Type", "application/json");
                 if let Some(data) = test_data {
                     request = request.json(&data);
                 }

@@ -4,7 +4,7 @@ use crate::wallet::KaspaAuthWallet;
 use kdapp::{
     engine::{Engine, EpisodeMessage},
     generator::TransactionGenerator,
-    proxy::{self, connect_client},
+    proxy::{self, connect_participant_peer},
 };
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kaspa_addresses::{Address, Prefix, Version};
@@ -29,7 +29,7 @@ pub async fn submit_comment_command(
     
     // Connect to Kaspa network
     let network = NetworkId::with_suffix(NetworkType::Testnet, 10);
-    let kaspad = connect_client(network, None).await?;
+    let kaspad = connect_participant_peer(network, None).await?;
     
     // Get participant's address
     let participant_address = Address::new(

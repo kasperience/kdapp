@@ -21,7 +21,7 @@ use crate::episode_runner::{AUTH_PATTERN, AUTH_PREFIX};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum WsAuthMessage {
-    // Client -> Server
+    // Participant Peer -> Organizer Peer
     StartAuth {
         public_key: String,
     },
@@ -39,9 +39,9 @@ pub enum WsAuthMessage {
         episode_id: u64,
     },
     
-    // Server -> Client
+    // Organizer Peer -> Participant Peer
     Connected {
-        server_id: String,
+        organizer_id: String,
         network: String,
     },
     EpisodeCreated {
@@ -72,7 +72,7 @@ pub struct WsAuthState {
     pub episodes: Arc<tokio::sync::Mutex<HashMap<u64, SimpleAuth>>>,
     /// WebSocket broadcast channel
     pub broadcast_tx: broadcast::Sender<WsAuthMessage>,
-    /// Kaspa RPC client
+    /// Kaspa RPC participant_peer
     pub kaspad_client: Arc<kaspa_wrpc_client::KaspaRpcClient>,
     /// Transaction generator
     pub tx_generator: Arc<TransactionGenerator>,
@@ -102,7 +102,7 @@ impl WsAuthHandler {
     pub async fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Send welcome message
         let welcome = WsAuthMessage::Connected {
-            server_id: self.connection_id.clone(),
+            organizer_id: self.connection_id.clone(),
             network: "testnet-10".to_string(),
         };
         self.send_message(welcome).await?;
@@ -112,7 +112,7 @@ impl WsAuthHandler {
         
         loop {
             tokio::select! {
-                // Handle incoming messages from client
+                // Handle incoming messages from participant peer
                 Some(msg) = self.ws_stream.next() => {
                     match msg {
                         Ok(Message::Text(text)) => {
@@ -162,7 +162,7 @@ impl WsAuthHandler {
                     self.subscriptions.push(episode_id);
                 }
             }
-            _ => {} // Ignore client->server messages we don't handle
+            _ => {} // Ignore messages from participant peer we don't handle
         }
         
         Ok(())
@@ -289,7 +289,7 @@ impl WsAuthHandler {
         );
         
         // Get UTXOs
-        let entries = self.state.kaspad_client
+        let entries = self.state.kaspad_participant_peer
             .get_utxos_by_addresses(vec![participant_addr.clone()])
             .await?;
         
@@ -318,7 +318,7 @@ impl WsAuthHandler {
             utxo.clone(), &participant_addr, &new_episode, 5000
         );
         
-        self.state.kaspad_client
+        self.state.kaspad_participant_peer
             .submit_transaction(tx1.as_ref().into(), false)
             .await?;
         
@@ -342,7 +342,7 @@ impl WsAuthHandler {
             utxo.clone(), &participant_addr, &request_challenge, 5000
         );
         
-        self.state.kaspad_client
+        self.state.kaspad_participant_peer
             .submit_transaction(tx2.as_ref().into(), false)
             .await?;
         
@@ -366,7 +366,7 @@ impl WsAuthHandler {
             utxo, &participant_addr, &submit_response, 5000
         );
         
-        self.state.kaspad_client
+        self.state.kaspad_participant_peer
             .submit_transaction(tx3.as_ref().into(), false)
             .await?;
         
@@ -441,19 +441,19 @@ impl WsAuthHandler {
     }
 }
 
-/// Start WebSocket authentication server
-pub async fn start_ws_auth_server(
+/// Start WebSocket authentication organizer peer
+pub async fn start_ws_auth_organizer_peer(
     keypair: secp256k1::Keypair,
     port: u16,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("🚀 Starting Pure WebSocket Authentication Server on port {}", port);
+    println!("🚀 Starting Pure WebSocket Authentication Organizer Peer on port {}", port);
     
     // Connect to Kaspa
     let network = kaspa_consensus_core::network::NetworkId::with_suffix(
         kaspa_consensus_core::network::NetworkType::Testnet, 
         10
     );
-    let kaspad_client = Arc::new(kdapp::proxy::connect_client(network, None).await?);
+    let kaspad_participant_peer = Arc::new(kdapp::proxy::connect_participant_peer(network, None).await?);
     
     // Create transaction generator
     let tx_generator = Arc::new(TransactionGenerator::new(
@@ -469,15 +469,15 @@ pub async fn start_ws_auth_server(
     let state = Arc::new(WsAuthState {
         episodes: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         broadcast_tx,
-        kaspad_client,
+        kaspad_participant_peer,
         tx_generator,
     });
     
-    // Start WebSocket server
+    // Start WebSocket organizer peer
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     
-    println!("✅ WebSocket server listening on ws://{}", addr);
+    println!("✅ WebSocket organizer peer listening on ws://{}", addr);
     println!("🔗 Connected to Kaspa testnet-10");
     println!("💡 Pure P2P: Each participant funds their own transactions");
     

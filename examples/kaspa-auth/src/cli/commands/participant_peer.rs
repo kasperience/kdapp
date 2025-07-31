@@ -30,7 +30,7 @@ impl ParticipantPeerCommand {
     }
     
     pub async fn execute(self) -> Result<(), Box<dyn Error>> {
-        println!("Running Kaspa auth client");
+        println!("Running Kaspa auth participant peer");
         if self.use_keychain {
             println!("🔐 Using OS keychain for wallet storage");
         }

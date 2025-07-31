@@ -103,7 +103,7 @@ pub async fn revoke_session(
         println!("✅ Using UTXO: {}", utxo.0);
         utxo
     } else {
-        println!("❌ No kaspad client available");
+        println!("❌ No kaspad participant peer available");
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     };
     

@@ -1,5 +1,5 @@
 # 🎉 Kaspa Authentication - True P2P System Success!
-
+Gemini please follow the Session_roadmap.md file 
 ## 🚨 **CRITICAL: MAIN.RS SIZE RULES - NEVER IGNORE!**
 
 ### ❌ **ABSOLUTE FORBIDDEN: Large main.rs Files**

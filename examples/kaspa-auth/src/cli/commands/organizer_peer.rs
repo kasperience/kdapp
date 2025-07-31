@@ -27,7 +27,7 @@ impl OrganizerPeerCommand {
     }
     
     pub async fn execute(self) -> Result<(), Box<dyn Error>> {
-        println!("Running Kaspa auth server: {}", self.name);
+        println!("Running Kaspa auth organizer peer: {}", self.name);
         if self.use_keychain {
             println!("🔐 Using OS keychain for wallet storage");
         }

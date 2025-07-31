@@ -3,7 +3,7 @@ use kdapp::pki::PubKey;
 use secp256k1::{Message, Secp256k1, ecdsa::Signature};
 use sha2::{Sha256, Digest};
 
-pub fn parse_client_pubkey(pubkey_hex: &str) -> Result<PubKey, String> {
+pub fn parse_participant_pubkey(pubkey_hex: &str) -> Result<PubKey, String> {
     let bytes = hex::decode(pubkey_hex).map_err(|_| "Invalid hex")?;
     if bytes.len() != 33 { return Err("Invalid length".to_string()); }
     let pk = secp256k1::PublicKey::from_slice(&bytes)

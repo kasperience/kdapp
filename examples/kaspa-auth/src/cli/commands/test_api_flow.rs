@@ -13,19 +13,19 @@ pub struct TestApiFlowCommand {
 impl TestApiFlowCommand {
     pub async fn execute(self) -> Result<(), Box<dyn std::error::Error>> {
         println!("🚀 Starting API Flow Test against coordination peer: {}", self.peer);
-        let client = Client::new();
+        let participant_peer = Client::new();
         
         let secp = Secp256k1::new();
         let secret_key = SecretKey::new(&mut rand::thread_rng());
         let keypair = Keypair::from_secret_key(&secp, &secret_key);
         let public_key_hex = hex::encode(keypair.public_key().serialize());
 
-        println!("🔑 Generated temporary client keypair. Public key: {}", public_key_hex);
+        println!("🔑 Generated temporary participant peer keypair. Public key: {}", public_key_hex);
 
         // Step 1: Start Auth
         println!("
 [1/5] Calling POST /auth/start...");
-        let start_res = client
+        let start_res = participant_peer
             .post(format!("{}/auth/start", self.peer))
             .json(&serde_json::json!({ "public_key": public_key_hex }))
             .send()
@@ -41,7 +41,7 @@ impl TestApiFlowCommand {
         // Step 2: Request Challenge
         println!("
 [2/5] Calling POST /auth/request-challenge...");
-        let req_challenge_res = client
+        let req_challenge_res = participant_peer
             .post(format!("{}/auth/request-challenge", self.peer))
             .json(&serde_json::json!({ "episode_id": episode_id, "public_key": public_key_hex }))
             .send()
@@ -56,7 +56,7 @@ impl TestApiFlowCommand {
 [3/5] Polling GET /auth/status/{} for challenge...", episode_id);
         let mut challenge = String::new();
         for _ in 0..10 {
-            let status_res = client.get(format!("{}/auth/status/{}", self.peer, episode_id)).send().await?;
+            let status_res = participant_peer.get(format!("{}/auth/status/{}", self.peer, episode_id)).send().await?;
             let status_data: Value = status_res.json().await?;
             if let Some(c) = status_data["challenge"].as_str() {
                 challenge = c.to_string();
@@ -80,7 +80,7 @@ impl TestApiFlowCommand {
         // Step 5: Verify Auth
         println!("
 [5/5] Calling POST /auth/verify...");
-        let verify_res = client
+        let verify_res = participant_peer
             .post(format!("{}/auth/verify", self.peer))
             .json(&serde_json::json!({
                 "episode_id": episode_id,
@@ -98,7 +98,7 @@ impl TestApiFlowCommand {
         println!("
 🏁 Verification complete! Checking final status...");
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        let final_status_res = client.get(format!("{}/auth/status/{}", self.peer, episode_id)).send().await?;
+        let final_status_res = participant_peer.get(format!("{}/auth/status/{}", self.peer, episode_id)).send().await?;
         let final_status_data: Value = final_status_res.json().await?;
 
         println!("

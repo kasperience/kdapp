@@ -1,4 +1,4 @@
-// src/daemon/protocol.rs - IPC protocol between client and daemon
+// src/daemon/protocol.rs - IPC protocol between participant peer and daemon
 
 use serde::{Deserialize, Serialize};
 
@@ -7,12 +7,12 @@ use serde::{Deserialize, Serialize};
 pub struct SessionInfo {
     pub episode_id: u64,
     pub username: String,
-    pub server_url: String,
+    pub peer_url: String,
     pub session_token: String,
     pub created_at_seconds: u64,
 }
 
-/// Request sent from client to daemon
+/// Request sent from participant peer to daemon
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DaemonRequest {
     /// Check if daemon is running and responsive
@@ -50,7 +50,7 @@ pub enum DaemonRequest {
     
     /// Perform full authentication flow
     Authenticate {
-        server_url: String,
+        peer_url: String,
         username: String,
     },
     
@@ -65,7 +65,7 @@ pub enum DaemonRequest {
     Shutdown,
 }
 
-/// Response sent from daemon to client
+/// Response sent from daemon to participant peer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DaemonResponse {
     /// Simple success/failure response

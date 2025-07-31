@@ -86,11 +86,11 @@ pub struct DaemonSendCommand {
     
     /// Command to send
     #[command(subcommand)]
-    pub command: DaemonClientCommand,
+    pub command: DaemonParticipantPeerCommand,
 }
 
 #[derive(clap::Subcommand)]
-pub enum DaemonClientCommand {
+pub enum DaemonParticipantPeerCommand {
     /// Ping the daemon
     Ping,
     /// Unlock an identity
@@ -116,12 +116,12 @@ pub enum DaemonClientCommand {
         #[arg(short, long)]
         challenge: String,
     },
-    /// Authenticate with server
+    /// Authenticate with organizer peer
     Auth {
         #[arg(short, long)]
         username: String,
         #[arg(short, long)]
-        server: String,
+        peer_url: String,
     },
     /// List available identities
     List,
@@ -228,22 +228,22 @@ impl DaemonStatusCommand {
 impl DaemonSendCommand {
     pub async fn execute(self) -> Result<(), Box<dyn Error>> {
         let request = match self.command {
-            DaemonClientCommand::Ping => DaemonRequest::Ping,
-            DaemonClientCommand::Unlock { username, password } => {
+            DaemonParticipantPeerCommand::Ping => DaemonRequest::Ping,
+            DaemonParticipantPeerCommand::Unlock { username, password } => {
                 DaemonRequest::Unlock { password, username }
             }
-            DaemonClientCommand::Lock => DaemonRequest::Lock,
-            DaemonClientCommand::Create { username, password } => {
+            DaemonParticipantPeerCommand::Lock => DaemonRequest::Lock,
+            DaemonParticipantPeerCommand::Create { username, password } => {
                 DaemonRequest::CreateIdentity { username, password }
             }
-            DaemonClientCommand::Sign { username, challenge } => {
+            DaemonParticipantPeerCommand::Sign { username, challenge } => {
                 DaemonRequest::SignChallenge { challenge, username }
             }
-            DaemonClientCommand::Auth { username, server } => {
-                DaemonRequest::Authenticate { server_url: server, username }
+            DaemonParticipantPeerCommand::Auth { username, peer_url } => {
+                DaemonRequest::Authenticate { peer_url, username }
             }
-            DaemonClientCommand::List => DaemonRequest::ListIdentities,
-            DaemonClientCommand::Sessions => DaemonRequest::ListSessions,
+            DaemonParticipantPeerCommand::List => DaemonRequest::ListIdentities,
+            DaemonParticipantPeerCommand::Sessions => DaemonRequest::ListSessions,
         };
         
         match send_daemon_request(&self.socket_path, request).await {
@@ -290,7 +290,7 @@ impl DaemonSendCommand {
                                 println!("   - Episode {}: {} @ {} ({}s ago)", 
                                        session.episode_id, 
                                        session.username, 
-                                       session.server_url,
+                                       session.peer_url,
                                        session.created_at_seconds);
                                 println!("     Token: {}...", 
                                        &session.session_token[..std::cmp::min(16, session.session_token.len())]);
@@ -317,7 +317,7 @@ async fn send_daemon_request(
     request: DaemonRequest,
 ) -> Result<DaemonResponse, Box<dyn Error>> {
     // Connect to daemon socket
-    let mut stream = create_client_connection(socket_path).await?;
+    let mut stream = create_participant_peer_connection(socket_path).await?;
     
     // Send request
     let request_msg = IpcMessage::new(request);
@@ -334,14 +334,14 @@ async fn send_daemon_request(
     Ok(response_msg.payload)
 }
 
-/// Create platform-specific client connection
+/// Create platform-specific participant peer connection
 #[cfg(unix)]
-async fn create_client_connection(socket_path: &str) -> Result<PlatformStream, Box<dyn Error>> {
+async fn create_participant_peer_connection(socket_path: &str) -> Result<PlatformStream, Box<dyn Error>> {
     Ok(UnixStream::connect(socket_path).await?)
 }
 
 #[cfg(windows)]
-async fn create_client_connection(_socket_path: &str) -> Result<PlatformStream, Box<dyn Error>> {
+async fn create_participant_peer_connection(_socket_path: &str) -> Result<PlatformStream, Box<dyn Error>> {
     // On Windows, connect to TCP socket on localhost
     let port = 8901; // Must match the port used in service.rs
     let addr = format!("127.0.0.1:{}", port);

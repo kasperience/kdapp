@@ -1,4 +1,4 @@
-// src/api/http/server.rs
+// src/api/http/organizer_peer.rs
 use axum::{routing::{get, post}, Router, extract::State};
 use axum::serve;
 use std::sync::Arc;
@@ -47,105 +47,11 @@ async fn funding_info(State(state): State<PeerState>) -> Json<serde_json::Value>
     }))
 }
 
-async fn wallet_status() -> Json<serde_json::Value> {
-    // Check if web-participant wallet exists
-    match get_wallet_for_command("web-participant", None, ".") {
-        Ok(wallet) => {
-            let kaspa_addr = Address::new(
-                Prefix::Testnet,
-                Version::PubKey,
-                &wallet.keypair.public_key().serialize()[1..]
-            );
-            
-            Json(json!({
-                "exists": true,
-                "needs_funding": true,  // Always true for now - could check balance later
-                "kaspa_address": kaspa_addr.to_string(),
-                "was_created": wallet.was_created
-            }))
-        }
-        Err(_) => {
-            Json(json!({
-                "exists": false,
-                "needs_funding": true,
-                "kaspa_address": "Will be created on first authentication"
-            }))
-        }
-    }
-}
-
-async fn wallet_client() -> Json<serde_json::Value> {
-    // Create a real participant wallet (like CLI does)
-    match get_wallet_for_command("web-participant", None, ".") {
-        Ok(wallet) => {
-            let public_key_hex = hex::encode(wallet.keypair.public_key().serialize());
-            let kaspa_addr = Address::new(
-                Prefix::Testnet,
-                Version::PubKey,
-                &wallet.keypair.public_key().serialize()[1..]
-            );
-            
-            Json(json!({
-                "public_key": public_key_hex,
-                "kaspa_address": kaspa_addr.to_string(),
-                "was_created": wallet.was_created,
-                "needs_funding": true  // Always true for web participants for now
-            }))
-        }
-        Err(e) => {
-            Json(json!({
-                "error": format!("Failed to create participant wallet: {}", e),
-                "public_key": "error",
-                "kaspa_address": "error",
-                "was_created": false,
-                "needs_funding": true
-            }))
-        }
-    }
-}
-
-async fn sign_challenge(Json(req): Json<serde_json::Value>) -> Json<serde_json::Value> {
-    // Extract challenge and handle participant wallet signing
-    let challenge = req["challenge"].as_str().unwrap_or("");
-    let private_key_hint = req["private_key"].as_str().unwrap_or("");
-    
-    if private_key_hint == "use_client_wallet" || private_key_hint == "use_participant_wallet" {
-        // Use the web-participant wallet to sign
-        match get_wallet_for_command("web-participant", None, ".") {
-            Ok(wallet) => {
-                // Sign the challenge with the participant wallet
-                let message = kdapp::pki::to_message(&challenge.to_string());
-                let signature = kdapp::pki::sign_message(&wallet.keypair.secret_key(), &message);
-                let signature_hex = hex::encode(signature.0.serialize_der());
-                let public_key_hex = hex::encode(wallet.keypair.public_key().serialize());
-                
-                Json(json!({
-                    "challenge": challenge,
-                    "signature": signature_hex,
-                    "public_key": public_key_hex
-                }))
-            }
-            Err(e) => {
-                Json(json!({
-                    "error": format!("Failed to sign challenge: {}", e)
-                }))
-            }
-        }
-    } else {
-        Json(json!({
-            "error": "Invalid signing request"
-        }))
-    }
-}
-
 async fn wallet_debug() -> Json<serde_json::Value> {
     let mut debug_info = json!({});
     
     // Check all wallet types
     let wallet_types = vec![
-        ("web-participant", "participant-peer-wallet.key"),
-        ("authenticate", "participant-peer-wallet.key"),
-        ("participant-peer", "participant-peer-wallet.key"),
         ("organizer-peer", "organizer-peer-wallet.key"),
         ("http-peer", "organizer-peer-wallet.key"),
     ];
@@ -206,7 +112,7 @@ async fn episode_authenticated(
         session_token: real_session_token,
     };
     
-    // Send to all connected WebSocket clients
+    // Send to all connected WebSocket participant peers
     let _ = state.websocket_tx.send(ws_message);
     
     Json(json!({
@@ -234,7 +140,7 @@ async fn session_revoked(
         session_token: Some(session_token.to_string()),
     };
     
-    // Send to all connected WebSocket clients
+    // Send to all connected WebSocket participant peers
     match state.websocket_tx.send(ws_message) {
         Ok(_) => {
             println!("✅ Session revocation WebSocket message sent for episode {}", episode_id);
@@ -281,12 +187,9 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
         .route("/ws", get(websocket_handler))
         .route("/health", get(health))
         .route("/funding-info", get(funding_info))
-        .route("/wallet/status", get(wallet_status))
-        .route("/wallet/client", get(wallet_client))
         .route("/wallet/debug", get(wallet_debug))
         .route("/auth/start", post(start_auth))
         .route("/auth/request-challenge", post(request_challenge))
-        .route("/auth/sign-challenge", post(sign_challenge))
         .route("/auth/verify", post(verify_auth))
         .route("/auth/revoke-session", post(revoke_session))
         .route("/auth/status/{episode_id}", get(get_status))
@@ -301,27 +204,6 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
     
     println!("🚀 HTTP Authentication Coordination Peer starting on port {}", port);
     println!("🔗 Starting kdapp blockchain engine...");
-    
-    // Show participant wallet funding information
-    match get_wallet_for_command("web-participant", None, ".") {
-        Ok(wallet) => {
-            let participant_addr = Address::new(
-                Prefix::Testnet,
-                Version::PubKey,
-                &wallet.keypair.public_key().serialize()[1..]
-            );
-            println!();
-            println!("💰 PARTICIPANT WALLET FUNDING REQUIRED:");
-            println!("📍 Participant Address: {}", participant_addr);
-            println!("🚰 Get testnet funds: https://faucet.kaspanet.io/");
-            println!("💡 Participants must fund their own authentication transactions");
-            println!("🌐 Network: testnet-10");
-            println!();
-        }
-        Err(_e) => {
-            println!("⚠️  Participant wallet creation pending (will be created on first use)");
-        }
-    }
     
     // Start the blockchain listener in the background
     let auth_peer_clone = auth_peer.clone();

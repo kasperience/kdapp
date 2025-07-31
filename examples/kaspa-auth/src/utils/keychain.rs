@@ -234,8 +234,8 @@ pub fn get_keychain_wallet_for_command(command: &str, dev_mode: bool, data_dir: 
     
     // Map commands to keychain usernames
     let username = match command {
-        "organizer-peer" | "http-peer" | "server" | "http-server" => "organizer-peer",
-        "participant-peer" | "web-participant" | "authenticate" | "client" => "participant-peer", 
+        "organizer-peer" | "http-peer" => "organizer-peer",
+        "participant-peer" | "web-participant" | "authenticate" => "participant-peer", 
         _ => "default-wallet",
     };
     

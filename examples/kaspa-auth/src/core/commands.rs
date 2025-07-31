@@ -4,7 +4,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 /// Commands for the Kaspa authentication episode
 #[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum AuthCommand {
-    /// Request a challenge from the server
+    /// Request a challenge from the organizer peer
     RequestChallenge,
     /// Submit response with signature and nonce
     SubmitResponse {

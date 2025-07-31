@@ -166,7 +166,7 @@ impl KaspaAuthWallet {
         hex::encode(self.keypair.public_key().serialize())
     }
     
-    /// Get private key as hex string (for server-side signing)
+    /// Get private key as hex string (for organizer-side signing)
     pub fn get_private_key_hex(&self) -> String {
         hex::encode(self.keypair.secret_key().as_ref())
     }
@@ -195,14 +195,11 @@ impl KaspaAuthWallet {
         let wallet = match command {
             "organizer-peer" | "http-peer" => Self::load_or_create_with_role("organizer-peer", data_dir)?,
             "participant-peer" | "web-participant" | "authenticate" => Self::load_or_create_with_role("participant-peer", data_dir)?,
-            // Legacy compatibility
-            "server" | "http-server" => Self::load_or_create_with_role("organizer-peer", data_dir)?,
-            "client" => Self::load_or_create_with_role("participant-peer", data_dir)?,
             _ => Self::load_or_create(data_dir)?,
         };
         
         match command {
-            "organizer-peer" | "http-peer" | "server" | "http-server" => {
+            "organizer-peer" | "http-peer" => {
                 let kaspa_addr = wallet.get_kaspa_address();
                 if wallet.was_created {
                     println!("🆕 Creating NEW organizer-peer wallet");
@@ -215,7 +212,7 @@ impl KaspaAuthWallet {
                 }
                 wallet.show_funding_reminder();
             },
-            "participant-peer" | "web-participant" | "authenticate" | "client" => {
+            "participant-peer" | "web-participant" | "authenticate" => {
                 let kaspa_addr = wallet.get_kaspa_address();
                 if wallet.was_created {
                     println!("🆕 Creating NEW participant-peer wallet");
@@ -263,8 +260,8 @@ impl KaspaAuthWallet {
     /// Check if keychain wallet exists for command
     pub fn keychain_wallet_exists_for_command(command: &str, dev_mode: bool, data_dir: &str) -> bool {
         let username = match command {
-            "organizer-peer" | "http-peer" | "server" | "http-server" => "organizer-peer",
-            "participant-peer" | "web-participant" | "authenticate" | "client" => "participant-peer", 
+            "organizer-peer" | "http-peer" => "organizer-peer",
+            "participant-peer" | "web-participant" | "authenticate" => "participant-peer", 
             _ => "default-wallet",
         };
         keychain_wallet_exists(username, dev_mode, data_dir)
