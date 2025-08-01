@@ -43,9 +43,9 @@ impl AuthHttpPeer {
         
         // Create kaspad participant_peer for transaction submission
         let kaspad_client = match connect_client(network, None).await {
-            Ok(participant_peer) => {
+            Ok(kaspad_client) => {
                 println!("✅ Connected to Kaspa node for transaction submission");
-                Some(Arc::new(participant_peer))
+                Some(Arc::new(kaspad_client))
             }
             Err(e) => {
                 println!("⚠️ Failed to connect to Kaspa node: {}", e);
@@ -186,7 +186,7 @@ impl AuthHttpPeer {
                 }
             }
         } else {
-            Err("Kaspad participant peer not available for transaction submission.".into())
+            Err("Kaspad client not available for transaction submission.".into())
         }
     }
 }

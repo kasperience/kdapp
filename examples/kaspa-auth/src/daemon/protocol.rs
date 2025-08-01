@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Session information for listing active sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
-    pub episode_id: u64,
+    pub episode_id: kaspa_hashes::Hash,
     pub username: String,
     pub peer_url: String,
     pub session_token: String,

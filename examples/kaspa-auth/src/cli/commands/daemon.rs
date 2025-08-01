@@ -267,8 +267,8 @@ impl DaemonSendCommand {
                     }
                     DaemonResponse::AuthResult { success, episode_id, session_token, message } => {
                         println!("🔐 Authentication: {}", if success { "Success" } else { "Failed" });
-                        if let Some(episode_id) = episode_id {
-                            println!("📧 Episode ID: {}", episode_id);
+                        if let Some(id) = episode_id {
+                            println!("📧 Episode ID: {}", id);
                         }
                         if let Some(token) = session_token {
                             println!("🎫 Session token: {}", token);

@@ -9,11 +9,8 @@ pub struct AuthRequest {
 
 #[derive(Serialize)]
 pub struct AuthResponse {
-    pub episode_id: u64,
     pub organizer_public_key: String,
-    pub participant_kaspa_address: String,
-    pub transaction_id: Option<String>,
-    pub status: String,
+    pub message: String,
 }
 
 #[derive(Deserialize)]

@@ -20,8 +20,9 @@ type PlatformListener = TcpListener;
 type PlatformStream = TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::broadcast;
-use reqwest;
-use serde_json;
+use rand::Rng;
+use rand;
+
 
 use crate::daemon::{DaemonConfig, protocol::*};
 use crate::utils::keychain::{KeychainManager, KeychainConfig};
@@ -32,7 +33,7 @@ use crate::wallet::KaspaAuthWallet;
 pub struct ActiveSession {
     pub username: String,
     pub peer_url: String,
-    pub episode_id: u64,
+    pub episode_id: kaspa_hashes::Hash,
     pub session_token: String,
     pub created_at: Instant,
 }
@@ -62,7 +63,7 @@ pub enum DaemonEvent {
     IdentityLocked { username: String },
     AuthenticationStarted { username: String, peer_url: String },
     AuthenticationCompleted { username: String, success: bool },
-    SessionRevoked { username: String, episode_id: u64 },
+    SessionRevoked { username: String, episode_id: kaspa_hashes::Hash },
 }
 
 impl AuthDaemon {
@@ -379,10 +380,14 @@ impl AuthDaemon {
         println!("📧 Episode ID: {}", auth_result.episode_id);
         println!("🎫 Session Token: {}", auth_result.session_token);
 
+        let mut episode_id_bytes = [0u8; 32];
+        episode_id_bytes[..8].copy_from_slice(&auth_result.episode_id.to_le_bytes());
+        let episode_hash = kaspa_hashes::Hash::from_bytes(episode_id_bytes);
+
         let session = ActiveSession {
             username: username.to_string(),
             peer_url: peer_url.to_string(),
-            episode_id: auth_result.episode_id,
+            episode_id: episode_hash,
             session_token: auth_result.session_token.clone(),
             created_at: Instant::now(),
         };
@@ -408,16 +413,18 @@ impl AuthDaemon {
         wallet: &KaspaAuthWallet,
         peer_url: &str,
     ) -> Result<crate::auth::authentication::AuthenticationResult, Box<dyn std::error::Error>> {
-        use kdapp::{
-            generator::{TransactionGenerator},
-            proxy::connect_client,
-        };
-        use kaspa_addresses::{Address, Prefix, Version};
-        use kaspa_consensus_core::{network::NetworkId, tx::{TransactionOutpoint, UtxoEntry}};
-                use kaspa_wrpc_client::prelude::*;
-        use kaspa_rpc_core::api::rpc::RpcApi;
-        use crate::core::{commands::AuthCommand, episode::SimpleAuth};
-        use crate::episode_runner::{AUTH_PATTERN, AUTH_PREFIX};
+        
+use kdapp::engine::EpisodeMessage;
+use kdapp::pki::PubKey;
+use kdapp::generator::TransactionGenerator;
+use kdapp::proxy::connect_client;
+use kaspa_addresses::{Address, Prefix, Version};
+use kaspa_consensus_core::{network::NetworkId, tx::{TransactionOutpoint, UtxoEntry}};
+use kaspa_wrpc_client::prelude::*;
+use kaspa_rpc_core::api::rpc::RpcApi;
+use crate::core::{commands::AuthCommand, episode::SimpleAuth};
+use crate::episode_runner::{AUTH_PATTERN, AUTH_PREFIX};
+
 
         let participant_pubkey = kdapp::pki::PubKey(wallet.keypair.public_key());
         println!("🔑 Auth public key: {}", participant_pubkey);
@@ -442,30 +449,31 @@ impl AuthDaemon {
         }).unwrap();
         println!("✅ UTXO found: {}", utxo.0);
 
+        
+
+
+
+
+
         // Create real transaction generator
         let generator = TransactionGenerator::new(wallet.keypair, AUTH_PATTERN, AUTH_PREFIX);
 
-        // Step 1: Request organizer peer to create and manage the authentication episode
-        let participant_peer = reqwest::Client::new();
-        let public_key_hex = hex::encode(participant_pubkey.0.serialize());
-        let start_url = format!("{}/auth/start", peer_url);
-        let start_response = participant_peer
-            .post(&start_url)
-            .header("Content-Type", "application/json")
-            .json(&serde_json::json!({
-                "public_key": public_key_hex
-            }))
-            .send()
-            .await?;
-        let start_data: serde_json::Value = start_response.json().await?;
-        let episode_id = start_data["episode_id"].as_u64()
-            .ok_or("Organizer peer did not return valid episode_id")?;
-        println!("✅ Authentication episode {} created by organizer peer", episode_id);
+        // Step 1: Participant (daemon) creates and submits the NewEpisode transaction to the blockchain
+        let episode_id = rand::random::<u32>(); // Generate a random u32 for episode_id
+        let new_episode_msg = kdapp::engine::EpisodeMessage::<SimpleAuth>::NewEpisode {
+            episode_id,
+            participants: vec![participant_pubkey],
+        };
+        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &new_episode_msg, 5000);
+        println!("🚀 Submitting NewEpisode transaction: {}", tx.id());
+        let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await?;
+        utxo = kdapp::generator::get_first_output_utxo(&tx);
+        println!("✅ NewEpisode transaction submitted to blockchain. Episode ID: {}", episode_id);
 
         // Step 2: Send RequestChallenge command to blockchain
         let auth_command = AuthCommand::RequestChallenge;
         let step = kdapp::engine::EpisodeMessage::<SimpleAuth>::new_signed_command(
-            episode_id as u32, 
+            episode_id, 
             auth_command, 
             wallet.keypair.secret_key(), 
             participant_pubkey
@@ -476,12 +484,14 @@ impl AuthDaemon {
         utxo = kdapp::generator::get_first_output_utxo(&tx);
         println!("✅ RequestChallenge transaction submitted to blockchain!");
 
-        // Step 3: Poll for challenge
+        // Step 3: Poll for challenge (via organizer peer's kdapp engine state)
         println!("⏳ Waiting for challenge...");
         let mut challenge = String::new();
+        use reqwest;
+        use serde_json;
         for _ in 0..10 {
             let status_url = format!("{}/auth/status/{}", peer_url, episode_id);
-            if let Ok(res) = participant_peer.get(&status_url).send().await {
+            if let Ok(res) = reqwest::Client::new().get(&status_url).send().await {
                 if let Ok(status) = res.json::<serde_json::Value>().await {
                     if let Some(c) = status["challenge"].as_str() {
                         challenge = c.to_string();
@@ -505,7 +515,7 @@ impl AuthDaemon {
             nonce: challenge,
         };
         let step = kdapp::engine::EpisodeMessage::<SimpleAuth>::new_signed_command(
-            episode_id as u32, 
+            episode_id, 
             auth_command, 
             wallet.keypair.secret_key(), 
             participant_pubkey
@@ -515,12 +525,12 @@ impl AuthDaemon {
         let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await?;
         println!("✅ SubmitResponse transaction submitted to blockchain!");
 
-        // Step 5: Poll for session token
+        // Step 5: Poll for session token (via organizer peer's kdapp engine state)
         println!("⏳ Waiting for session token...");
         let mut session_token = String::new();
         for _ in 0..10 {
             let status_url = format!("{}/auth/status/{}", peer_url, episode_id);
-            if let Ok(res) = participant_peer.get(&status_url).send().await {
+            if let Ok(res) = reqwest::Client::new().get(&status_url).send().await {
                 if let Ok(status) = res.json::<serde_json::Value>().await {
                     if let Some(token) = status["session_token"].as_str() {
                         if !token.is_empty() {
@@ -538,7 +548,7 @@ impl AuthDaemon {
         println!("🎫 Session token received: {}", session_token);
 
         Ok(crate::auth::authentication::AuthenticationResult {
-            episode_id,
+            episode_id: episode_id as u64,
             session_token,
             authenticated: true,
         })
@@ -559,7 +569,7 @@ impl AuthDaemon {
                 // Broadcast event
                 let _ = self.event_tx.send(DaemonEvent::SessionRevoked {
                     username: username.to_string(),
-                    episode_id,
+                    episode_id: kaspa_hashes::Hash::from_le_u64([episode_id, 0, 0, 0]),
                 });
                 
                 DaemonResponse::Success {

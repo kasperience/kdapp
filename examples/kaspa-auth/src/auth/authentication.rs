@@ -4,6 +4,7 @@ use crate::core::{commands::AuthCommand, episode::SimpleAuth};
 use hex;
 use reqwest;
 use serde_json;
+use kaspa_hashes::Hash;
 
 #[derive(Debug, Clone)]
 pub struct AuthenticationResult {
