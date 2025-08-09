@@ -158,71 +158,20 @@ async fn run_comment_board(
     };
     info!("🏦 Wallet initialized with {:.6} KAS available", utxo_manager.get_available_balance() as f64 / 100_000_000.0);
 
-    // Auto-split large UTXOs to avoid transaction mass limit (mass ≈ UTXO sompi value!)
-    let max_safe_utxo = 50_000; // 0.0005 KAS - MUST be under 100,000 sompi for bonds!
-    if utxo_manager.available_utxos.iter().any(|(_, e)| e.amount > max_safe_utxo) {
-        println!("🔄 Splitting large UTXOs to avoid transaction mass limit...");
-        match utxo_manager.split_large_utxo(max_safe_utxo).await {
-            Ok(_) => {
-                println!("✅ UTXOs split successfully");
-                // Refresh after split and update our UTXO for transactions
-                match utxo_manager.refresh_utxos(&kaspad).await {
-                    Ok(_) => {
-                        // CRITICAL: Update utxo variable to use one of the new split UTXOs
-                        if let Some((new_outpoint, new_entry)) = utxo_manager.available_utxos.first() {
-                            utxo = (new_outpoint.clone(), new_entry.clone());
-                            println!("🔄 Updated to use new split UTXO: {:.6} KAS", new_entry.amount as f64 / 100_000_000.0);
-                            
-                            // Wait for blockchain state propagation and UTXO confirmation
-                            println!("⏳ Waiting for split transaction to confirm (3 seconds)...");
-                            tokio::time::sleep(tokio::time::Duration::from_millis(3000)).await;
-                            
-                            // Refresh UTXOs again to ensure we have confirmed UTXOs
-                            match utxo_manager.refresh_utxos(&kaspad).await {
-                                Ok(_) => {
-                                    if let Some((confirmed_outpoint, confirmed_entry)) = utxo_manager.available_utxos.first() {
-                                        utxo = (confirmed_outpoint.clone(), confirmed_entry.clone());
-                                        println!("✅ Using confirmed UTXO: {:.6} KAS", confirmed_entry.amount as f64 / 100_000_000.0);
-                                    }
-                                }
-                                Err(_) => {
-                                    println!("⚠️ Could not refresh UTXOs after wait");
-                                }
-                            }
-                        } else {
-                            println!("❌ No UTXOs available after split - this shouldn't happen!");
-                            return;
-                        }
-                    }
-                    Err(_) => {
-                        println!("⚠️ Warning: Could not refresh UTXOs after split");
-                        println!("💡 Try running the command again if you encounter issues");
-                    }
-                }
-            }
-            Err(e) => {
-                println!("⚠️ Warning: Could not split UTXOs: {}", e);
-                println!("💡 MANUAL UTXO MANAGEMENT REQUIRED:");
-                println!("   1️⃣ Send multiple smaller amounts (< 0.5 KAS each) to your wallet");
-                println!("   2️⃣ Avoid single large faucet requests (> 5 KAS)");
-                println!("   3️⃣ Current system will gracefully prevent mass limit failures");
-                
-                // Check if we have any massive UTXOs that will definitely fail
-                let massive_utxos: Vec<_> = utxo_manager.available_utxos.iter()
-                    .filter(|(_, e)| e.amount > 500_000_000) // > 5 KAS
-                    .collect();
-                
-                if !massive_utxos.is_empty() {
-                    println!("🚨 DETECTED {} MASSIVE UTXOs that will cause bond failures:", massive_utxos.len());
-                    for (_, entry) in &massive_utxos {
-                        println!("   💥 {:.6} KAS - guaranteed mass limit failure", entry.amount as f64 / 100_000_000.0);
-                    }
-                    println!("🔧 SOLUTION: Use this wallet for non-bond transactions only, or send smaller amounts to a new wallet");
-                }
-            }
-        }
-    } else {
-        println!("✅ All UTXOs are reasonably sized (under 1 KAS) - mass limit safe");
+    // Ensure micro-UTXOs for mass-safe operations
+    let max_safe_utxo = 100_000; // <= 0.001 KAS
+    let target_chunk_size = 50_000; // 0.0005 KAS per micro UTXO
+    println!("🔄 Ensuring mass-safe micro-UTXOs (this may take a few seconds)...");
+    if let Err(e) = utxo_manager.ensure_micro_utxos(&kaspad, 10, max_safe_utxo, target_chunk_size).await {
+        println!("⚠️ Warning: Could not prepare micro-UTXOs automatically: {}", e);
+        println!("💡 Manual workaround: send multiple small amounts (< 0.001 KAS each) to your wallet");
+    }
+    // Refresh and set our working UTXO to the first available
+    if let Err(e) = utxo_manager.refresh_utxos(&kaspad).await {
+        warn!("Failed to refresh UTXOs: {}", e);
+    }
+    if let Some((new_outpoint, new_entry)) = utxo_manager.available_utxos.first() {
+        utxo = (new_outpoint.clone(), new_entry.clone());
     }
 
     let generator = generator::TransactionGenerator::new(kaspa_signer, PATTERN, PREFIX);
@@ -759,25 +708,24 @@ async fn run_comment_board(
                             // 🔄 Refresh UTXO state after comment transaction
                             println!("🔄 Refreshing UTXO state after comment transaction...");
                             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await; // Small delay for transaction processing
-                            if let Err(e) = utxo_manager.refresh_utxos(&kaspad).await {
-                                println!("⚠️ Warning: Could not refresh UTXOs: {}", e);
-                            }
+                            let _ = utxo_manager.refresh_utxos(&kaspad).await;
                             
-                            match utxo_manager.lock_utxo_for_comment(
-                                latest_comment.id, 
-                                bond_amount, 
-                                600 // 10 minutes lock period for testing
+                            // Phase 2.0: Create script-based bond that truly locks funds
+                            match utxo_manager.create_script_based_bond(
+                                latest_comment.id,
+                                bond_amount,
+                                600, // 10 minutes lock period for testing
+                                None,
+                                None,
                             ).await {
                                 Ok(bond_tx_id) => {
-                                    println!("🔒 Created REAL bond transaction {} for comment {} ({:.6} KAS)", 
-                                             bond_tx_id, 
-                                             latest_comment.id, 
-                                             bond_amount as f64 / 100_000_000.0);
-                                    println!("⏳ Bond transaction submitted to Kaspa blockchain - awaiting confirmation");
-                                    println!("⏰ Bond will unlock in 10 minutes after confirmation (if no disputes)");
-                                },
+                                    println!("🔐 Phase 2.0 bond created {} for comment {} ({:.6} KAS locked)",
+                                        bond_tx_id,
+                                        latest_comment.id,
+                                        bond_amount as f64 / 100_000_000.0);
+                                }
                                 Err(e) => {
-                                    warn!("Failed to create bond transaction: {}", e);
+                                    warn!("Failed to create script-based bond: {}", e);
                                 }
                             }
                             

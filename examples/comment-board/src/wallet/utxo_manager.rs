@@ -286,9 +286,22 @@ impl UtxoLockManager {
         
         info!("🔐 Script public key created: {} bytes", script_pubkey.script().len());
         
-        // Find a suitable UTXO to spend for the bond
-        if let Some((outpoint, entry)) = self.available_utxos.first().cloned() {
-            if entry.amount >= bond_amount + 1000 { // Need extra for fees
+        // Find the smallest UTXO that can cover bond + fee
+        let required = bond_amount + FEE;
+        let mut candidate: Option<(TransactionOutpoint, UtxoEntry)> = None;
+        for (op, e) in &self.available_utxos {
+            if e.amount >= required {
+                match &candidate {
+                    None => candidate = Some((op.clone(), e.clone())),
+                    Some((_, best_e)) => {
+                        if e.amount < best_e.amount { candidate = Some((op.clone(), e.clone())); }
+                    }
+                }
+            }
+        }
+
+        if let Some((outpoint, entry)) = candidate {
+            if entry.amount >= required { // Need extra for fees
                 // Phase 2.0: Create REAL script-based transaction that locks funds
                 match self.create_script_bond_transaction(comment_id, bond_amount, &outpoint, &entry, &script_pubkey, &script_condition).await {
                     Ok(bond_tx_id) => {
@@ -346,10 +359,11 @@ impl UtxoLockManager {
         info!("💰 Bond amount: {:.6} KAS", bond_amount as f64 / 100_000_000.0);
         info!("🔒 Script enforcement: TRUE blockchain-level locking");
         
-        use crate::utils::{PATTERN, PREFIX, FEE};
-        use kdapp::generator::TransactionGenerator;
-        use kaspa_consensus_core::tx::{Transaction, TransactionInput, TransactionOutput, UtxoEntry as CoreUtxoEntry};
+        use crate::utils::FEE;
+        use kaspa_consensus_core::tx::{Transaction, TransactionInput, TransactionOutput, MutableTransaction};
         use kaspa_consensus_core::subnets::SubnetworkId;
+        use kaspa_consensus_core::sign::sign;
+        use kaspa_txscript::pay_to_address_script;
         
         // Create bond payload with script information
         let bond_payload = format!("SCRIPT_BOND:{}:{}:{}", 
@@ -398,14 +412,14 @@ impl UtxoLockManager {
         };
         
         // Create change output back to user
-        let change_script_pubkey = ScriptPublicKey::new(0, vec![].into()); // Standard P2PK script for user
+        let change_script_pubkey = pay_to_address_script(&self.kaspa_address);
         let change_output = TransactionOutput {
             value: change_amount,
             script_public_key: change_script_pubkey,
         };
         
         // Build the transaction
-        let mut tx = Transaction::new(
+        let unsigned_tx = Transaction::new(
             0, // version
             vec![tx_input],
             if change_amount > 0 { 
@@ -419,13 +433,16 @@ impl UtxoLockManager {
             bond_payload.into_bytes(),
         );
         
-        let tx_id = tx.id().to_string();
+        // Sign the transaction
+        let mutable_tx = MutableTransaction::with_entries(unsigned_tx, vec![source_entry.clone()]);
+        let signed_tx = sign(mutable_tx, self.keypair).tx;
+        let tx_id = signed_tx.id().to_string();
         
-        info!("🔗 Phase 2.0 script transaction created: {}", tx_id);
+        info!("🔗 Phase 2.0 script transaction created and signed: {}", tx_id);
         info!("✅ Bond UTXO will be TRULY locked by blockchain script");
         
         // Submit the transaction to Kaspa network
-        match self.kaspad_client.submit_transaction((&tx).into(), false).await {
+        match self.kaspad_client.submit_transaction((&signed_tx).into(), false).await {
             Ok(_) => {
                 info!("✅ Script-based bond transaction {} submitted successfully", tx_id);
                 info!("🔒 Funds are now locked by blockchain script - trustless enforcement active");
@@ -531,104 +548,132 @@ impl UtxoLockManager {
         }
     }
     
-    /// Split large UTXOs to avoid transaction mass limit issues  
-    /// Uses conservative approach: 2-output splits to minimize mass
-    pub async fn split_large_utxo(&mut self, max_utxo_size: u64) -> Result<(), String> {
+    /// Split large UTXOs to avoid transaction mass limit issues
+    /// Staged approach: single-input, two-output split (micro + change)
+    pub async fn split_large_utxo(&mut self, max_utxo_size: u64, target_chunk_size: u64) -> Result<(), String> {
         // Find the first large UTXO
-        let large_utxo = self.available_utxos.iter().find(|(_, entry)| entry.amount > max_utxo_size);
-        
-        if let Some((outpoint, entry)) = large_utxo.cloned() {
+        let large_utxo = self
+            .available_utxos
+            .iter()
+            .find(|(_, entry)| entry.amount > max_utxo_size)
+            .cloned();
+
+        if let Some((outpoint, entry)) = large_utxo {
             use crate::utils::FEE;
-            
-            // AGGRESSIVE MICRO-UTXO SPLITTING: Create many tiny UTXOs for bond compatibility
-            let target_chunk_size = 25_000; // 0.00025 KAS per chunk (well under mass limit)
-            let available_amount = entry.amount - FEE;
-            let num_outputs = std::cmp::min(available_amount / target_chunk_size, 100); // Max 100 outputs per transaction
-            let chunk_size = available_amount / num_outputs;
-            
-            info!("🔄 MICRO-SPLITTING large UTXO: {:.6} KAS -> {} tiny chunks (mass limit solution)", 
-                  entry.amount as f64 / 100_000_000.0, num_outputs);
-            
-            if chunk_size < 10_000 { // Less than 0.0001 KAS per chunk
-                return Err("UTXO too small to split into micro-UTXOs".to_string());
-            }
-            
-            info!("📦 Creating {} UTXOs of ~{:.6} KAS each (minimizing transaction mass)", 
-                  num_outputs, chunk_size as f64 / 100_000_000.0);
-            
-            // Use NATIVE Kaspa transactions for wallet operations (no episode overhead)
             use kaspa_consensus_core::{
-                tx::{Transaction, TransactionInput, TransactionOutput, TransactionOutpoint as CoreOutpoint, MutableTransaction},
-                subnets::SubnetworkId,
                 sign::sign,
+                subnets::SubnetworkId,
+                tx::{MutableTransaction, Transaction, TransactionInput, TransactionOutpoint as CoreOutpoint, TransactionOutput},
             };
-            
-            // Create transaction input
+
+            // Ensure we have enough to create one micro output plus change and fee
+            let available_amount = entry.amount.saturating_sub(FEE);
+            if available_amount <= target_chunk_size + 1000 {
+                return Err("UTXO too small to split further".to_string());
+            }
+
+            let micro_amount = target_chunk_size;
+            let change_amount = available_amount - micro_amount;
+
+            info!(
+                "🔄 Splitting large UTXO: input {:.6} KAS -> micro {:.6} KAS + change {:.6} KAS",
+                entry.amount as f64 / 100_000_000.0,
+                micro_amount as f64 / 100_000_000.0,
+                change_amount as f64 / 100_000_000.0
+            );
+
+            // Build native wallet transaction (no payload)
             let tx_input = TransactionInput {
                 previous_outpoint: CoreOutpoint::new(outpoint.transaction_id, outpoint.index),
                 signature_script: vec![],
                 sequence: 0,
                 sig_op_count: 1,
             };
-            
-            // Create multiple micro-UTXO outputs
+
             let script = kaspa_txscript::pay_to_address_script(&self.kaspa_address);
-            
-            let mut outputs = Vec::new();
-            for _ in 0..num_outputs {
-                outputs.push(TransactionOutput {
-                    value: chunk_size,
-                    script_public_key: script.clone(),
-                });
-            }
-            
-            info!("🔬 Creating {} micro-UTXOs of {:.6} KAS each (total: {:.6} KAS)", 
-                  outputs.len(), chunk_size as f64 / 100_000_000.0, 
-                  (chunk_size * num_outputs) as f64 / 100_000_000.0);
-            
-            // Build native wallet transaction (NO pattern matching!)
+            let outputs = vec![
+                TransactionOutput { value: micro_amount, script_public_key: script.clone() },
+                TransactionOutput { value: change_amount, script_public_key: script },
+            ];
+
             let unsigned_tx = Transaction::new(
-                0,                              // version
-                vec![tx_input],                 // inputs
-                outputs,                        // multiple micro-outputs
-                0,                              // lock_time
-                SubnetworkId::from_bytes([0; 20]), // subnetwork_id
-                0,                              // gas
-                vec![],                         // NO payload - pure wallet operation
+                0,
+                vec![tx_input],
+                outputs,
+                0,
+                SubnetworkId::from_bytes([0; 20]),
+                0,
+                vec![],
             );
-            
-            // Sign the transaction
-            let mutable_tx = MutableTransaction::with_entries(
-                unsigned_tx,
-                vec![entry.clone()],
-            );
-            
+
+            let mutable_tx = MutableTransaction::with_entries(unsigned_tx, vec![entry.clone()]);
             let split_tx = sign(mutable_tx, self.keypair).tx;
-            
+
             match self.kaspad_client.submit_transaction((&split_tx).into(), false).await {
                 Ok(_) => {
-                    info!("✅ Conservative UTXO split transaction {} submitted successfully", split_tx.id());
-                    info!("🔄 Refreshing UTXO set after split...");
-                    
-                    // Remove the old large UTXO
+                    info!("✅ Split transaction {} submitted successfully", split_tx.id());
+                    // Remove the old large UTXO; new ones will appear on refresh
                     self.available_utxos.retain(|(op, _)| op != &outpoint);
-                    
-                    // The new UTXOs will be picked up on next refresh
-                    info!("💡 If still too large, run split again for further division");
                     Ok(())
                 }
                 Err(e) => {
                     error!("❌ Failed to submit UTXO split transaction: {}", e);
-                    if e.to_string().contains("transaction storage mass") {
-                        error!("💡 Even 2-output split exceeded mass limit. Manual wallet management required.");
-                        error!("🔧 Solution: Send smaller amounts (< 0.5 KAS) to your wallet from external source");
-                    }
                     Err(format!("UTXO split failed: {}", e))
                 }
             }
         } else {
-            info!("✅ No large UTXOs found (all under {:.6} KAS)", max_utxo_size as f64 / 100_000_000.0);
+            info!(
+                "✅ No large UTXOs found (all under {:.6} KAS)",
+                max_utxo_size as f64 / 100_000_000.0
+            );
             Ok(())
+        }
+    }
+
+    /// Ensure we have at least `min_count` micro-UTXOs (<= max_utxo_size), performing staged splits
+    pub async fn ensure_micro_utxos(
+        &mut self,
+        kaspad: &KaspaRpcClient,
+        min_count: usize,
+        max_utxo_size: u64,
+        target_chunk_size: u64,
+    ) -> Result<(), String> {
+        use tokio::time::{sleep, Duration};
+
+        let mut attempts: usize = 0;
+        loop {
+            let small_count = self
+                .available_utxos
+                .iter()
+                .filter(|(_, e)| e.amount <= max_utxo_size)
+                .count();
+
+            if small_count >= min_count {
+                info!(
+                    "✅ Micro-UTXOs ready: {} at or under {:.6} KAS",
+                    small_count,
+                    max_utxo_size as f64 / 100_000_000.0
+                );
+                return Ok(());
+            }
+
+            if attempts >= 30 {
+                return Err(format!(
+                    "Unable to reach desired micro-UTXOs after {} attempts (have {} <= threshold)",
+                    attempts, small_count
+                ));
+            }
+
+            match self.split_large_utxo(max_utxo_size, target_chunk_size).await {
+                Ok(_) => {
+                    // Allow propagation, then refresh
+                    sleep(Duration::from_millis(1500)).await;
+                    let _ = self.refresh_utxos(kaspad).await;
+                }
+                Err(e) => return Err(e),
+            }
+
+            attempts += 1;
         }
     }
 
