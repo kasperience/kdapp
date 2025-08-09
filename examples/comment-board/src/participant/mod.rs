@@ -238,7 +238,7 @@ async fn run_comment_board(
             episode_id: room_id, 
             participants: vec![] // Empty - engine registers episode_id but doesn't call initialize()
         };
-        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &register_episode, FEE);
+        let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &register_episode, FEE);
         info!("Submitting episode registration for room {}: {}", room_id, tx.id());
         match kaspad.submit_transaction(tx.as_ref().into(), false).await {
             Ok(_) => {
@@ -269,7 +269,7 @@ async fn run_comment_board(
             episode_id: new_episode_id, 
             participants: vec![] // Empty - anyone can join by sending commands!
         };
-        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &new_episode, FEE);
+        let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &new_episode, FEE);
         info!("Submitting room creation: {}", tx.id());
         match kaspad.submit_transaction(tx.as_ref().into(), false).await {
             Ok(_) => {
@@ -293,7 +293,14 @@ async fn run_comment_board(
         }
     };
 
-    let (received_episode_id, mut state) = response_receiver.recv().await.unwrap();
+    let (received_episode_id, mut state) = match response_receiver.recv().await {
+        Some(value) => value,
+        None => {
+            println!("❌ Failed to receive initial episode state");
+            println!("💡 This might be due to episode engine problems");
+            return;
+        }
+    };
     println!("📺 Connected to room: Episode {}", received_episode_id);
     
     // Display simple comment board
@@ -321,7 +328,7 @@ async fn run_comment_board(
         let forbidden_cmd = CommentCommand::SetForbiddenWords { words: forbidden_words };
         let step = EpisodeMessage::<CommentBoard>::new_signed_command(episode_id, forbidden_cmd, participant_sk, participant_pk);
 
-        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
+        let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &step, FEE);
         info!("💰 Submitting forbidden words (you pay): {}", tx.id());
         let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
         utxo = generator::get_first_output_utxo(&tx);
@@ -349,19 +356,35 @@ async fn run_comment_board(
         }
         let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::JoinRoom { bond_amount }, participant_sk, participant_pk);
 
-        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
+        let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &step, FEE);
         info!("💰 Submitting join room (you pay): {}", tx.id());
-        let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
-        utxo = generator::get_first_output_utxo(&tx);
+        match kaspad.submit_transaction(tx.as_ref().into(), false).await {
+            Ok(_) => {
+                utxo = generator::get_first_output_utxo(&tx);
+            }
+            Err(e) => {
+                println!("❌ Failed to submit join room transaction: {}", e);
+                println!("💡 This might be due to network issues or transaction mass limits");
+                return;
+            }
+        }
 
         // Wait for join confirmation
         loop {
-            let (received_id, new_state) = response_receiver.recv().await.unwrap();
-            if received_id == episode_id {
-                state = new_state;
-                if state.room_members.contains(&format!("{}", participant_pk)) {
-                    println!("✅ Successfully joined the room!");
-                    break;
+            match response_receiver.recv().await {
+                Some((new_received_id, new_state)) => {
+                    if new_received_id == episode_id {
+                        state = new_state;
+                        if state.room_members.contains(&format!("{}", participant_pk)) {
+                            println!("✅ Successfully joined the room!");
+                            break;
+                        }
+                    }
+                }
+                None => {
+                    println!("❌ Failed to receive join confirmation: Channel closed");
+                    println!("💡 This might be due to episode engine problems");
+                    return;
                 }
             }
         }
@@ -378,20 +401,38 @@ async fn run_comment_board(
         let request_challenge_cmd = CommentCommand::RequestChallenge;
         let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::RequestChallenge, participant_sk, participant_pk);
 
-        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
+        let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &step, FEE);
         info!("💰 Submitting RequestChallenge (you pay): {}", tx.id());
-        let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
-        utxo = generator::get_first_output_utxo(&tx);
+        match kaspad.submit_transaction(tx.as_ref().into(), false).await {
+            Ok(_) => {
+                utxo = generator::get_first_output_utxo(&tx);
+            }
+            Err(e) => {
+                println!("❌ Failed to submit RequestChallenge transaction: {}", e);
+                println!("💡 This might be due to network issues or transaction mass limits");
+                return;
+            }
+        }
 
         // Wait for challenge
         let mut challenge: Option<String> = None;
         loop {
-            (received_id, state) = response_receiver.recv().await.unwrap();
-            if received_id == episode_id {
-                if let Some(c) = &state.current_challenge {
-                    challenge = Some(c.clone());
-                    println!("✅ Received challenge: {}", c);
-                    break;
+            match response_receiver.recv().await {
+                Some((new_received_id, new_state)) => {
+                    received_id = new_received_id;
+                    state = new_state;
+                    if received_id == episode_id {
+                        if let Some(c) = &state.current_challenge {
+                            challenge = Some(c.clone());
+                            println!("✅ Received challenge: {}", c);
+                            break;
+                        }
+                    }
+                }
+                None => {
+                    println!("❌ Failed to receive challenge: Channel closed");
+                    println!("💡 This might be due to episode engine problems");
+                    return;
                 }
             }
         }
@@ -411,18 +452,36 @@ async fn run_comment_board(
             };
             let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::SubmitResponse { signature: signature.to_string(), nonce: challenge_text }, participant_sk, participant_pk);
 
-            let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
+            let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &step, FEE);
             info!("💰 Submitting SubmitResponse (you pay): {}", tx.id());
-            let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
-            utxo = generator::get_first_output_utxo(&tx);
+            match kaspad.submit_transaction(tx.as_ref().into(), false).await {
+                Ok(_) => {
+                    utxo = generator::get_first_output_utxo(&tx);
+                }
+                Err(e) => {
+                    println!("❌ Failed to submit SubmitResponse transaction: {}", e);
+                    println!("💡 This might be due to network issues or transaction mass limits");
+                    return;
+                }
+            }
 
             // Wait for authentication confirmation
             loop {
-                (received_id, state) = response_receiver.recv().await.unwrap();
-                if received_id == episode_id {
-                    if state.authenticated_users.contains(&format!("{}", participant_pk)) {
-                        println!("✅ Successfully authenticated!");
-                        break;
+                match response_receiver.recv().await {
+                    Some((new_received_id, new_state)) => {
+                        received_id = new_received_id;
+                        state = new_state;
+                        if received_id == episode_id {
+                            if state.authenticated_users.contains(&format!("{}", participant_pk)) {
+                                println!("✅ Successfully authenticated!");
+                                break;
+                            }
+                        }
+                    }
+                    None => {
+                        println!("❌ Failed to receive authentication confirmation: Channel closed");
+                        println!("💡 This might be due to episode engine problems");
+                        return;
                     }
                 }
             }
@@ -662,14 +721,33 @@ async fn run_comment_board(
         };
         let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, cmd, participant_sk, participant_pk);
 
-        let tx = generator.build_command_transaction(utxo, &kaspa_addr, &step, FEE);
+        let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &step, FEE);
         info!("💰 Submitting comment (you pay): {}", tx.id());
-        let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await.unwrap();
-        utxo = generator::get_first_output_utxo(&tx);
+        match kaspad.submit_transaction(tx.as_ref().into(), false).await {
+            Ok(_) => {
+                utxo = generator::get_first_output_utxo(&tx);
+            }
+            Err(e) => {
+                println!("❌ Failed to submit comment transaction: {}", e);
+                println!("💡 This might be due to network issues or transaction mass limits");
+                println!("💡 Try again or check your wallet funding");
+                continue;
+            }
+        }
 
         // Wait for comment to be processed
         loop {
-            (received_id, state) = response_receiver.recv().await.unwrap();
+            match response_receiver.recv().await {
+                Some((new_received_id, new_state)) => {
+                    received_id = new_received_id;
+                    state = new_state;
+                }
+                None => {
+                    println!("❌ Failed to receive response from episode engine: Channel closed");
+                    println!("💡 This might be due to episode engine problems");
+                    break;
+                }
+            }
             if received_id == episode_id {
                 // Check if our comment was added
                 if let Some(latest_comment) = state.comments.last() {
