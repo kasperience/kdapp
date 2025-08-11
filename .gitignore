@@ -1,3 +1,29 @@
+# Rust build artifacts (ignore in all workspace members)
+**/target/
+**/*.rlib
+**/*.rmeta
+**/*.d
+**/*.dSYM/
+**/*.pdb
+**/*.o
+**/*.so
+**/*.dylib
+**/*.dll
+**/*.exe
+
+# Node/build artifacts (common in examples)
+**/dist/
+**/build/
+**/.parcel-cache/
+**/.vite/
+
+# OS/editor junk
+**/.DS_Store
+**/Thumbs.db
+**/*.swp
+**/.idea/
+**/.vscode/
+
 target
 web-root
 **/.idea/
