@@ -2209,6 +2209,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdapp-mcp-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "chrono",
+ "env_logger",
+ "faster-hex",
+ "hex",
+ "itertools 0.14.0",
+ "kaspa-addresses",
+ "kaspa-consensus-core",
+ "kaspa-rpc-core",
+ "kaspa-txscript",
+ "kaspa-wrpc-client",
+ "kdapp",
+ "log",
+ "rand 0.8.5",
+ "secp256k1",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "kdapp-wallet"
 version = "0.0.1"
 dependencies = [
