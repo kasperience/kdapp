@@ -44,9 +44,10 @@ Our latest update adds genuine wallet management capabilities:
 
 1. **Rust Toolchain**: Install Rust using [rustup](https://rustup.rs/)
 2. **Python 3.7+**: For running the game coordinator
-3. **Two AI Agents**:
-   - LM Studio with Gemma model running on `http://127.0.0.1:1234`
-   - Ollama with Gemma3 model: `ollama run gemma3`
+3. **Two AI Agents** (local, small models OK):
+   - LM Studio chat server on `http://127.0.0.1:1234`
+   - Ollama with `gemma3:270m` on `http://127.0.0.1:11434`
+   - See Local Agents guide: AI_AGENTS.md
 
 ## 🛠️ Setup Instructions
 
@@ -54,7 +55,7 @@ Our latest update adds genuine wallet management capabilities:
 
 ```bash
 # Navigate to the project directory
-cd /path/to/kdapp/examples/kaspa-mcp-server
+cd /path/to/kdapp/examples/kdapp-mcp-server
 
 # Build the project
 cargo build --release
@@ -68,8 +69,10 @@ pip install requests
 
 ### 3. Start AI Agents
 
-- **LM Studio**: Start server with Gemma model on port 1234
-- **Ollama**: `ollama run gemma3` (ensure Ollama service is running on port 11434)
+- LM Studio: enable local server (port 1234) and load a small instruct chat model
+- Ollama: `ollama pull gemma3:270m` then `ollama run gemma3:270m`
+  
+Details and troubleshooting: AI_AGENTS.md
 
 ## ▶️ Running the TicTacToe Demo
 
@@ -138,18 +141,22 @@ Generates blockchain transactions from game commands.
 ## 📁 Project Structure
 
 ```
-kaspa-mcp-server/
+kdapp-mcp-server/
 ├── src/                    # Rust source code
-│   ├── main.rs            # Entry point
-│   ├── jsonrpc.rs         # JSON-RPC implementation
-│   ├── state.rs           # Server state management
-│   ├── tools.rs           # MCP tool implementations
+│   ├── main.rs             # Minimal entrypoint (calls app::run)
+│   ├── app.rs              # Startup + JSON-RPC loop
+│   ├── rpc_handlers.rs     # MCP tool dispatch
+│   ├── jsonrpc.rs          # JSON-RPC types
+│   ├── state.rs            # Engine + episode state and persistence
+│   ├── tools.rs            # MCP tool implementations
 │   ├── wallet.rs           # Wallet management
 │   └── bin/
-│       └── test_wallet.rs # Wallet test utility
-├── kdapp-modules/         # Local copy of kdapp library modules
+│       ├── test_wallet.rs  # Wallet test utility
+│       └── test_node.rs    # Node connectivity test
 ├── agent_keys/            # Wallet storage directory
+├── episodes/              # Local episode snapshots (git-ignored)
 ├── Cargo.toml             # Rust package manifest
+├── AI_AGENTS.md           # Local AI agents setup guide
 ├── tictactoe_coordinator.py # Game coordinator script
 ├── run_tictactoe_game.sh  # Linux/Mac runner script
 ├── run_tictactoe_game.bat # Windows runner script
@@ -200,7 +207,7 @@ To update the kdapp modules to a newer version:
 
 When running from WSL with Windows-based agents:
 1. Find Windows host IP: `cat /etc/resolv.conf | grep nameserver`
-2. Update coordinator script to use host IP instead of 127.0.0.1
+2. Coordinator auto-detects host IP; if needed, set the Windows host IP manually or use 127.0.0.1
 
 ## 🌟 Future Enhancements
 
