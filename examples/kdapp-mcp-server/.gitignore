@@ -1,0 +1,26 @@
+# Ignore wallet key files
+agent_keys/*-wallet.key
+agent_keys/*/key.json
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+
+# Ignore persistent episode snapshots
+episodes/
