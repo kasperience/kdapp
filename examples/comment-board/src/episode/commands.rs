@@ -1,158 +1,153 @@
+use crate::episode::contract::{RoomRules, ViolationType, VoteDecision};
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::pki::PubKey;
-use crate::episode::contract::{ViolationType, VoteDecision, RoomRules};
 
 /// Enhanced Comment Commands for Episode Contract System
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub enum ContractCommand {
     // Room Management Commands
-    CreateRoom { 
-        rules: RoomRules, 
+    CreateRoom {
+        rules: RoomRules,
         moderators: Vec<PubKey>,
         initial_funding: u64,
         custom_lifetime: Option<u64>,
     },
-    
+
     // Basic Participation (Enhanced)
-    JoinRoom { bond_amount: u64 },
-    LeaveRoom { forfeit_bond: bool },
-    
+    JoinRoom {
+        bond_amount: u64,
+    },
+    LeaveRoom {
+        forfeit_bond: bool,
+    },
+
     // Authentication (Existing)
     RequestChallenge,
-    SubmitResponse { signature: String, nonce: String },
-    
-    // Economic Comment System
-    SubmitComment { 
-        text: String, 
-        bond_amount: u64,  // User-specified bond (must meet minimum)
+    SubmitResponse {
+        signature: String,
+        nonce: String,
     },
-    
+
+    // Economic Comment System
+    SubmitComment {
+        text: String,
+        bond_amount: u64, // User-specified bond (must meet minimum)
+    },
+
     // Community Moderation System
-    ReportViolation { 
-        comment_id: u64, 
+    ReportViolation {
+        comment_id: u64,
         violation_type: ViolationType,
         evidence: String,
     },
-    
-    InitiateCommunityVote { 
-        comment_id: u64, 
+
+    InitiateCommunityVote {
+        comment_id: u64,
         accusation: String,
         initial_stake: u64, // KAS staked on this vote
     },
-    
-    SubmitVote { 
-        vote_id: u64, 
-        decision: VoteDecision, 
-        stake: u64,   // KAS committed to this vote decision
+
+    SubmitVote {
+        vote_id: u64,
+        decision: VoteDecision,
+        stake: u64, // KAS committed to this vote decision
     },
-    
+
     // Quality Scoring System
-    UpvoteComment { comment_id: u64, stake: u64 },
-    DownvoteComment { comment_id: u64, stake: u64 },
-    
+    UpvoteComment {
+        comment_id: u64,
+        stake: u64,
+    },
+    DownvoteComment {
+        comment_id: u64,
+        stake: u64,
+    },
+
     // Moderator Actions (Multi-sig Required)
-    EscalateToArbiters { 
-        comment_id: u64, 
+    EscalateToArbiters {
+        comment_id: u64,
         evidence: String,
         moderator_signature: String,
     },
-    
-    SubmitArbitratorDecision { 
-        dispute_id: u64, 
+
+    SubmitArbitratorDecision {
+        dispute_id: u64,
         ruling: VoteDecision,
-        reasoning: String, 
+        reasoning: String,
         signatures: Vec<String>, // Multi-sig from moderator panel
     },
-    
+
     // Economic Actions
-    ClaimBondRefund { comment_id: u64 },
-    ClaimQualityReward { comment_id: u64 },
-    WithdrawFromPenaltyPool { amount: u64 }, // For room creator/moderators
-    
+    ClaimBondRefund {
+        comment_id: u64,
+    },
+    ClaimQualityReward {
+        comment_id: u64,
+    },
+    WithdrawFromPenaltyPool {
+        amount: u64,
+    }, // For room creator/moderators
+
     // Contract Management
-    UpdateRoomRules { new_rules: RoomRules, moderator_signatures: Vec<String> },
-    AddModerator { new_moderator: PubKey, existing_moderator_signatures: Vec<String> },
-    RemoveModerator { moderator_to_remove: PubKey, remaining_moderator_signatures: Vec<String> },
-    
+    UpdateRoomRules {
+        new_rules: RoomRules,
+        moderator_signatures: Vec<String>,
+    },
+    AddModerator {
+        new_moderator: PubKey,
+        existing_moderator_signatures: Vec<String>,
+    },
+    RemoveModerator {
+        moderator_to_remove: PubKey,
+        remaining_moderator_signatures: Vec<String>,
+    },
+
     // Analytics and Showcase
     GetContractStats,
-    GetUserReputation { user: PubKey },
+    GetUserReputation {
+        user: PubKey,
+    },
     GetReputationLeaderboard,
-    
+
     // Emergency Functions
-    EmergencyPause { moderator_signatures: Vec<String> },
-    EmergencyUnpause { moderator_signatures: Vec<String> },
-    ForceResolveDispute { dispute_id: u64, admin_signature: String },
+    EmergencyPause {
+        moderator_signatures: Vec<String>,
+    },
+    EmergencyUnpause {
+        moderator_signatures: Vec<String>,
+    },
+    ForceResolveDispute {
+        dispute_id: u64,
+        admin_signature: String,
+    },
 }
 
 /// Command Results for Terminal Display and Twitter Showcase
 #[derive(Debug, Clone)]
 pub enum CommandResult {
     // Room Creation Results
-    RoomCreated { 
-        episode_id: u32, 
-        total_funding: u64, 
-        rules_summary: String,
-        twitter_showcase_url: String,
-    },
-    
+    RoomCreated { episode_id: u32, total_funding: u64, rules_summary: String, twitter_showcase_url: String },
+
     // Economic Results
-    CommentSubmitted { 
-        comment_id: u64, 
-        bond_locked: u64, 
-        estimated_release_time: u64,
-        reputation_change: i32,
-    },
-    
-    BondRefunded { 
-        comment_id: u64, 
-        amount_returned: u64, 
-        quality_bonus: u64,
-        new_reputation: i32,
-    },
-    
+    CommentSubmitted { comment_id: u64, bond_locked: u64, estimated_release_time: u64, reputation_change: i32 },
+
+    BondRefunded { comment_id: u64, amount_returned: u64, quality_bonus: u64, new_reputation: i32 },
+
     // Moderation Results
-    ViolationReported { 
-        report_id: u64, 
-        comment_id: u64, 
-        estimated_resolution_time: u64,
-    },
-    
-    VoteSubmitted { 
-        vote_id: u64, 
-        stake_committed: u64, 
-        current_vote_tally: VoteTally,
-    },
-    
-    DisputeResolved { 
-        dispute_id: u64, 
-        final_decision: VoteDecision, 
-        affected_bonds: Vec<BondAdjustment>,
-        penalty_pool_change: i64,
-    },
-    
+    ViolationReported { report_id: u64, comment_id: u64, estimated_resolution_time: u64 },
+
+    VoteSubmitted { vote_id: u64, stake_committed: u64, current_vote_tally: VoteTally },
+
+    DisputeResolved { dispute_id: u64, final_decision: VoteDecision, affected_bonds: Vec<BondAdjustment>, penalty_pool_change: i64 },
+
     // Quality System Results
-    QualityRewardEarned { 
-        comment_id: u64, 
-        reward_amount: u64, 
-        reputation_boost: i32,
-    },
-    
+    QualityRewardEarned { comment_id: u64, reward_amount: u64, reputation_boost: i32 },
+
     // Analytics Results
-    ContractStatsSnapshot { 
-        total_locked_kas: u64,
-        active_disputes: u64,
-        average_reputation: f64,
-        showcase_summary: String,
-    },
-    
-    ReputationUpdate { 
-        user: PubKey, 
-        old_reputation: i32, 
-        new_reputation: i32, 
-        reputation_rank: u32,
-    },
-    
+    ContractStatsSnapshot { total_locked_kas: u64, active_disputes: u64, average_reputation: f64, showcase_summary: String },
+
+    ReputationUpdate { user: PubKey, old_reputation: i32, new_reputation: i32, reputation_rank: u32 },
+
     // Error Results
     CommandRejected { reason: String, suggested_action: String },
     InsufficientBond { required: u64, provided: u64, user_balance: u64 },
@@ -188,32 +183,32 @@ pub enum ContractError {
     InsufficientBond { required: u64, provided: u64 },
     BondAlreadyLocked { comment_id: u64 },
     BondNotReleasable { comment_id: u64, unlock_time: u64 },
-    
+
     // Reputation Errors
     ReputationTooLow { current: i32, required: i32 },
     UserNotAuthenticated,
     UserNotInRoom,
-    
+
     // Moderation Errors
     CommentNotFound { comment_id: u64 },
     DisputeNotFound { dispute_id: u64 },
     VoteAlreadySubmitted { vote_id: u64, user: PubKey },
     VotingPeriodExpired { vote_id: u64 },
-    
+
     // Authorization Errors
     NotModerator { user: PubKey },
     InsufficientModeratorSignatures { required: u8, provided: u8 },
     InvalidSignature { signer: PubKey },
-    
+
     // Contract State Errors
     RoomRulesViolation { rule: String },
     ContractExpired { episode_id: u32 },
     EmergencyPauseActive,
-    
+
     // Economic State Errors
     InsufficientPenaltyPool { requested: u64, available: u64 },
     RewardAlreadyClaimed { comment_id: u64 },
-    
+
     // System Errors
     InvalidCommand { reason: String },
     InternalError { message: String },
@@ -223,8 +218,12 @@ impl std::fmt::Display for ContractError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ContractError::InsufficientBond { required, provided } => {
-                write!(f, "Insufficient bond: required {:.6} KAS, provided {:.6} KAS", 
-                       *required as f64 / 100_000_000.0, *provided as f64 / 100_000_000.0)
+                write!(
+                    f,
+                    "Insufficient bond: required {:.6} KAS, provided {:.6} KAS",
+                    *required as f64 / 100_000_000.0,
+                    *provided as f64 / 100_000_000.0
+                )
             }
             ContractError::ReputationTooLow { current, required } => {
                 write!(f, "Reputation too low: {} (required: {})", current, required)

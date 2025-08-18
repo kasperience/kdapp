@@ -15,7 +15,7 @@ pub enum AuthError {
     SessionNotFound,
     InvalidSessionToken,
     SessionAlreadyRevoked,
-    
+
     // Comment errors
     CommentTooLong,
     CommentEmpty,

@@ -1,11 +1,11 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
 use kdapp::{
     episode::{Episode, EpisodeError, PayloadMetadata},
     pki::PubKey,
 };
 use log::info;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 #[derive(Debug, BorshDeserialize, BorshSerialize)]
@@ -34,11 +34,11 @@ pub enum CommentCommand {
     // Authentication commands (from kaspa-auth)
     RequestChallenge,
     SubmitResponse { signature: String, nonce: String },
-    
+
     // Room commands (existing)
     JoinRoom,
     SubmitComment { text: String, bond_amount: u64 },
-    
+
     // Moderation command
     SetForbiddenWords { words: Vec<String> },
 }
@@ -53,21 +53,11 @@ pub struct CommentRollback {
 
 impl CommentRollback {
     pub fn new_join(was_authenticated: bool, prev_timestamp: u64) -> Self {
-        Self {
-            command_type: "join".to_string(),
-            comment_id: None,
-            was_authenticated,
-            prev_timestamp,
-        }
+        Self { command_type: "join".to_string(), comment_id: None, was_authenticated, prev_timestamp }
     }
 
     pub fn new_comment(comment_id: u64, prev_timestamp: u64) -> Self {
-        Self {
-            command_type: "comment".to_string(),
-            comment_id: Some(comment_id),
-            was_authenticated: false,
-            prev_timestamp,
-        }
+        Self { command_type: "comment".to_string(), comment_id: Some(comment_id), was_authenticated: false, prev_timestamp }
     }
 }
 
@@ -86,7 +76,7 @@ pub struct CommentState {
     pub room_members: std::collections::HashSet<String>, // PubKey strings of joined users
     pub total_comments: u64,
     pub authenticated_users: std::collections::HashSet<String>, // PubKey strings of authenticated users
-    pub current_challenge: Option<String>, // Current authentication challenge
+    pub current_challenge: Option<String>,                      // Current authentication challenge
 }
 
 impl CommentState {
@@ -97,15 +87,17 @@ impl CommentState {
         } else {
             for comment in &self.comments {
                 if args.bonds {
-                    println!("[{}] {} (Bond: {:.6} KAS): {}", 
-                        comment.timestamp, 
+                    println!(
+                        "[{}] {} (Bond: {:.6} KAS): {}",
+                        comment.timestamp,
                         &comment.author[..min(8, comment.author.len())], // Show first 8 chars of pubkey
                         comment.bond_amount as f64 / 100_000_000.0,
                         comment.text
                     );
                 } else {
-                    println!("[{}] {}: {}", 
-                        comment.timestamp, 
+                    println!(
+                        "[{}] {}: {}",
+                        comment.timestamp,
                         &comment.author[..min(8, comment.author.len())], // Show first 8 chars of pubkey
                         comment.text
                     );
@@ -114,30 +106,34 @@ impl CommentState {
         }
         println!("Room members: {}", self.room_members.len());
         println!("Authenticated users: {}", self.authenticated_users.len());
-        
+
         println!("Total comments: {}", self.total_comments);
         println!("===================");
     }
 }
 
 fn min(a: usize, b: usize) -> usize {
-    if a < b { a } else { b }
+    if a < b {
+        a
+    } else {
+        b
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CommentBoard {
     pub(crate) comments: Vec<Comment>,
-    pub(crate) creator: Option<PubKey>, // Room creator (first participant)
+    pub(crate) creator: Option<PubKey>,                         // Room creator (first participant)
     pub(crate) room_members: std::collections::HashSet<String>, // Anyone can join
     next_comment_id: u64,
     timestamp: u64,
     comment_history: VecDeque<u64>, // Track comment IDs for potential cleanup
-    
+
     // Authentication state (from kaspa-auth)
     pub challenge: Option<String>,
     pub authenticated_users: std::collections::HashSet<String>, // PubKey strings of authenticated users
     pub session_tokens: std::collections::HashMap<String, String>, // PubKey -> session_token
-    
+
     // Simple moderation
     pub forbidden_words: Vec<String>, // Simple word filter for organizer
 }
@@ -151,17 +147,17 @@ impl Episode for CommentBoard {
         info!("[CommentBoard] 🚀 Open room created! Anyone can join and comment.");
         Self {
             comments: Vec::new(),
-            creator: participants.first().copied(), // Optional creator
+            creator: participants.first().copied(),         // Optional creator
             room_members: std::collections::HashSet::new(), // Empty room initially
             next_comment_id: 1,
             timestamp: metadata.accepting_time,
             comment_history: VecDeque::new(),
-            
+
             // Authentication state
             challenge: None,
             authenticated_users: std::collections::HashSet::new(),
             session_tokens: std::collections::HashMap::new(),
-            
+
             // Simple moderation (will be set by room creator)
             forbidden_words: Vec::new(),
         }
@@ -192,7 +188,7 @@ impl Episode for CommentBoard {
                 }
                 let old_timestamp = self.timestamp;
                 self.timestamp = metadata.accepting_time;
-                
+
                 Ok(CommentRollback::new_join(false, old_timestamp))
             }
 
@@ -205,10 +201,10 @@ impl Episode for CommentBoard {
                         let session_token = format!("sess_{}", rand::thread_rng().gen::<u64>());
                         self.session_tokens.insert(participant_str.clone(), session_token.clone());
                         self.challenge = None; // Clear the challenge after successful authentication
-                        
+
                         let old_timestamp = self.timestamp;
                         self.timestamp = metadata.accepting_time;
-                        
+
                         info!("[CommentBoard] ✅ {} authenticated! Session: {}", participant_str, session_token);
                         Ok(CommentRollback::new_join(false, old_timestamp))
                     } else {
@@ -223,12 +219,13 @@ impl Episode for CommentBoard {
                 // Anyone can join! No restrictions like group Snapchat
                 let was_in_room = self.room_members.contains(&participant_str);
                 self.room_members.insert(participant_str.clone());
-                
+
                 let old_timestamp = self.timestamp;
                 self.timestamp = metadata.accepting_time;
-                
-                info!("[CommentBoard] 🎉 {} joined the room! ({} members)", 
-                    &participant_str[..min(8, participant_str.len())], 
+
+                info!(
+                    "[CommentBoard] 🎉 {} joined the room! ({} members)",
+                    &participant_str[..min(8, participant_str.len())],
                     self.room_members.len()
                 );
                 Ok(CommentRollback::new_join(was_in_room, old_timestamp))
@@ -274,7 +271,7 @@ impl Episode for CommentBoard {
                 let comment_id = self.next_comment_id;
                 self.comments.push(comment);
                 self.comment_history.push_back(comment_id);
-                
+
                 // Optional: Keep only last 50 comments (similar to TTT's 6 move limit)
                 if self.comment_history.len() > 50 {
                     if let Some(old_comment_id) = self.comment_history.pop_front() {
@@ -321,14 +318,14 @@ impl Episode for CommentBoard {
             "comment" => {
                 if let Some(comment_id) = rollback.comment_id {
                     self.timestamp = rollback.prev_timestamp;
-                    
+
                     // Remove the comment
                     let initial_len = self.comments.len();
                     self.comments.retain(|c| c.id != comment_id);
-                    
+
                     // Remove from history
                     self.comment_history.retain(|&id| id != comment_id);
-                    
+
                     // Rollback next_comment_id
                     if self.next_comment_id > 1 {
                         self.next_comment_id = comment_id;
@@ -381,25 +378,20 @@ impl CommentBoard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kdapp::pki::{generate_keypair};
+    use kdapp::pki::generate_keypair;
 
     #[test]
     fn test_comment_authentication() {
         let ((sk1, pk1), (sk2, pk2)) = (generate_keypair(), generate_keypair());
-        let metadata = PayloadMetadata { 
-            accepting_hash: 0u64.into(), 
-            accepting_daa: 0, 
-            accepting_time: 1000, 
-            tx_id: 1u64.into() 
-        };
-        
+        let metadata = PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 1000, tx_id: 1u64.into() };
+
         let mut board = CommentBoard::initialize(vec![pk1, pk2], &metadata);
-        
+
         // Test authentication
         let rollback = board.execute(&CommentCommand::Authenticate, Some(pk1), &metadata).unwrap();
         assert!(board.is_user_authenticated(&pk1));
         assert!(!board.is_user_authenticated(&pk2));
-        
+
         // Test rollback
         board.rollback(rollback);
         // Note: Our simple rollback doesn't remove authentication, which is okay for this example
@@ -408,31 +400,24 @@ mod tests {
     #[test]
     fn test_comment_submission() {
         let ((sk1, pk1), (sk2, pk2)) = (generate_keypair(), generate_keypair());
-        let metadata = PayloadMetadata { 
-            accepting_hash: 0u64.into(), 
-            accepting_daa: 0, 
-            accepting_time: 1000, 
-            tx_id: 1u64.into() 
-        };
-        
+        let metadata = PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 1000, tx_id: 1u64.into() };
+
         let mut board = CommentBoard::initialize(vec![pk1, pk2], &metadata);
-        
+
         // Authenticate first
         board.execute(&CommentCommand::Authenticate, Some(pk1), &metadata).unwrap();
-        
+
         // Submit comment
-        let comment_cmd = CommentCommand::SubmitComment {
-            text: "Hello, blockchain!".to_string(),
-        };
-        
+        let comment_cmd = CommentCommand::SubmitComment { text: "Hello, blockchain!".to_string() };
+
         let rollback = board.execute(&comment_cmd, Some(pk1), &metadata).unwrap();
-        
+
         assert_eq!(board.comments.len(), 1);
         assert_eq!(board.comments[0].text, "Hello, blockchain!");
         assert_eq!(board.comments[0].author, format!("{}", pk1));
         assert_eq!(board.comments[0].id, 1);
         assert_eq!(board.next_comment_id, 2);
-        
+
         // Test rollback
         assert!(board.rollback(rollback));
         assert_eq!(board.comments.len(), 0);
@@ -442,23 +427,16 @@ mod tests {
     #[test]
     fn test_comment_without_auth() {
         let ((sk1, pk1), (sk2, pk2)) = (generate_keypair(), generate_keypair());
-        let metadata = PayloadMetadata { 
-            accepting_hash: 0u64.into(), 
-            accepting_daa: 0, 
-            accepting_time: 1000, 
-            tx_id: 1u64.into() 
-        };
-        
+        let metadata = PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 1000, tx_id: 1u64.into() };
+
         let mut board = CommentBoard::initialize(vec![pk1, pk2], &metadata);
-        
+
         // Try to comment without authentication
-        let comment_cmd = CommentCommand::SubmitComment {
-            text: "Unauthorized comment".to_string(),
-        };
-        
+        let comment_cmd = CommentCommand::SubmitComment { text: "Unauthorized comment".to_string() };
+
         let result = board.execute(&comment_cmd, Some(pk1), &metadata);
         assert!(result.is_err());
-        
+
         match result {
             Err(EpisodeError::InvalidCommand(CommentError::NotAuthenticated)) => {
                 // Expected error

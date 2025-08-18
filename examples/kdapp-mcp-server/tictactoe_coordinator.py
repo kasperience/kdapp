@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 import os
+from collections import deque
 from datetime import datetime
 import secrets
 import hashlib
@@ -101,6 +102,16 @@ class TicTacToeCoordinator:
         self.episode_id = None
         self.game_board = [[None for _ in range(3)] for _ in range(3)]
         self.current_player = "X"
+        # Sliding window cap for prompts; default 6 (Michael's original), allow lower via env
+        try:
+            self.cap = int(os.environ.get('KDAPP_TTT_MAX_SYMBOLS', '6'))
+        except Exception:
+            self.cap = 6
+        self.cap = max(1, min(self.cap, 6))
+        self.move_history = deque()
+        # Under-the-hood prompt visibility (off by default). Enable with KDAPP_SHOW_PROMPTS=1|true|yes
+        self.show_prompts = str(os.environ.get('KDAPP_SHOW_PROMPTS', '')).lower() in ('1', 'true', 'yes')
+        # No sliding window: classic tic-tac-toe (board fills to 9)
 
         # Agent key directories and addresses
         self.agent_keys_root = os.path.join(os.getcwd(), 'agent_keys')
@@ -267,31 +278,40 @@ class TicTacToeCoordinator:
     
     def get_move_from_agent1(self, game_state):
         """Get a move from the HTTP AI agent (LM Studio)"""
+        oldest_hint = ""
+        if len(self.move_history) == self.cap:
+            r, c, p = self.move_history[0]
+            oldest_hint = f"Will be removed before your move: {p} at ({r},{c}).\n"
+
         prompt = f"""
-You are playing TicTacToe as 'X'. Analyze the current board state and make a strategic move.
+You are playing TicTacToe as 'X'.
+Rule: The board shows at most {self.cap} symbols; before a new move is applied, the oldest symbol is removed.
+{oldest_hint}
 
 Current board state:
 {self.format_board_for_prompt()}
 
-Analyze the board carefully:
-1. Look for any possible winning moves for you (X)
-2. Look for any moves your opponent (O) needs to be blocked
-3. Consider strategic positions (center, corners)
-4. Think about your next move strategically
+Recent moves (oldest→newest): {self.format_history_for_prompt()}
 
-Provide your move as a JSON object with "row" and "col" fields (0-2).
+Provide only JSON with fields "row" and "col" (0-2).
 Example: {{"row": 1, "col": 1}}
-
-Think step by step and make the best strategic move.
 """
+        if self.show_prompts:
+            try:
+                print("\n===== LM STUDIO PROMPT (X) =====\n" + prompt + "\n====================\n")
+            except Exception:
+                pass
         
         try:
             response = requests.post(
                 f"{self.agent1_url}/v1/chat/completions",
                 json={
                     "model": "gemma-3-270m-it-qat",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.7
+                    "messages": [
+                        {"role": "system", "content": "You are a TicTacToe agent. Only output strict JSON: {\"row\":<0-2>,\"col\":<0-2>}. No prose, no code fences."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2
                 },
                 timeout=30
             )
@@ -315,23 +335,29 @@ Think step by step and make the best strategic move.
     
     def get_move_from_agent2(self, game_state):
         """Get a move from the Ollama AI agent"""
+        oldest_hint = ""
+        if len(self.move_history) == self.cap:
+            r, c, p = self.move_history[0]
+            oldest_hint = f"Will be removed before your move: {p} at ({r},{c}).\n"
+
         prompt = f"""
-You are playing TicTacToe as 'O'. Analyze the current board state and make a strategic move.
+You are playing TicTacToe as 'O'.
+Rule: The board shows at most {self.cap} symbols; before a new move is applied, the oldest symbol is removed.
+{oldest_hint}
 
 Current board state:
 {self.format_board_for_prompt()}
 
-Analyze the board carefully:
-1. Look for any possible winning moves for you (O)
-2. Look for any moves your opponent (X) needs to be blocked
-3. Consider strategic positions (center, corners)
-4. Think about your next move strategically
+Recent moves (oldest→newest): {self.format_history_for_prompt()}
 
-Provide your move as a JSON object with "row" and "col" fields (0-2).
+Provide only JSON with fields "row" and "col" (0-2).
 Example: {{"row": 1, "col": 1}}
-
-Think step by step and make the best strategic move.
 """
+        if self.show_prompts:
+            try:
+                print("\n===== OLLAMA PROMPT (O) =====\n" + prompt + "\n====================\n")
+            except Exception:
+                pass
         
         try:
             # For Ollama, we make a REST API call to port 11434
@@ -339,7 +365,7 @@ Think step by step and make the best strategic move.
                 f"{self.agent2_url}/api/generate",
                 json={
                     "model": "gemma3:270m",
-                    "prompt": prompt,
+                    "prompt": "You are a TicTacToe agent. Only output strict JSON: {\\\"row\\\":<0-2>,\\\"col\\\":<0-2>}. No prose, no code fences.\n\n" + prompt,
                     "stream": False
                 },
                 timeout=30
@@ -378,6 +404,15 @@ Think step by step and make the best strategic move.
             if i < 2:
                 board_str += "-----\n"
         return board_str
+
+    def format_history_for_prompt(self):
+        if not self.move_history:
+            return "(none)"
+        items = []
+        for idx, (r, c, p) in enumerate(self.move_history, start=1):
+            items.append(f"{idx}. {p} -> ({r},{c})")
+        return " | ".join(items)
+
     
     def get_strategic_analysis(self):
         """Provide strategic analysis for the AI agents"""
@@ -492,7 +527,12 @@ Think step by step and make the best strategic move.
     
     def update_board(self, row, col, player):
         """Update the board with the player's move"""
+        # Mirror engine: sliding window eviction before apply when cap is reached
+        if len(self.move_history) == self.cap:
+            old_row, old_col, _old_player = self.move_history.popleft()
+            self.game_board[old_row][old_col] = None
         self.game_board[row][col] = player
+        self.move_history.append((row, col, player))
     
     def start_game(self, agent1_pubkey, agent2_pubkey):
         """Start a new TicTacToe game"""

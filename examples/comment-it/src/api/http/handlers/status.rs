@@ -1,17 +1,16 @@
 // src/api/http/handlers/status.rs
-use axum::{extract::{State, Path}, response::Json, http::StatusCode};
-use serde_json::json;
-use crate::api::http::{
-    state::PeerState,
+use crate::api::http::state::PeerState;
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::Json,
 };
+use serde_json::json;
 
-pub async fn get_status(
-    State(state): State<PeerState>,
-    Path(episode_id): Path<u64>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+pub async fn get_status(State(state): State<PeerState>, Path(episode_id): Path<u64>) -> Result<Json<serde_json::Value>, StatusCode> {
     println!("🎭 MATRIX UI ACTION: User checking authentication status");
     println!("🔍 Querying episode {} from REAL blockchain state (not memory!)", episode_id);
-    
+
     // ✅ NEW: Query from real blockchain episodes (shared state with kdapp engine)
     match state.blockchain_episodes.lock() {
         Ok(episodes) => {
@@ -20,7 +19,7 @@ pub async fn get_status(
                 println!("   - Authenticated: {}", episode.is_authenticated());
                 println!("   - Challenge: {:?}", episode.challenge());
                 println!("   - Session token: {:?}", episode.session_token());
-                
+
                 Ok(Json(json!({
                     "episode_id": episode_id,
                     "authenticated": episode.is_authenticated(),
@@ -33,7 +32,7 @@ pub async fn get_status(
                 })))
             } else {
                 println!("⚠️ MATRIX UI ERROR: Episode {} not found in blockchain state", episode_id);
-                
+
                 Ok(Json(json!({
                     "episode_id": episode_id,
                     "authenticated": false,

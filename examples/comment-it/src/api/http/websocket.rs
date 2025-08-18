@@ -1,26 +1,26 @@
 // src/api/http/websocket.rs
+use crate::api::http::state::PeerState;
 use axum::{
-    extract::{ws::{WebSocket, Message}, WebSocketUpgrade, State},
+    extract::{
+        ws::{Message, WebSocket},
+        State, WebSocketUpgrade,
+    },
     response::Response,
 };
-use crate::api::http::state::PeerState;
-use tokio::select;
 use log::info;
+use tokio::select;
 
-pub async fn websocket_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<PeerState>,
-) -> Response {
+pub async fn websocket_handler(ws: WebSocketUpgrade, State(state): State<PeerState>) -> Response {
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
 async fn handle_socket(mut socket: WebSocket, state: PeerState) {
     println!("🎭 MATRIX UI ACTION: WebSocket connection established");
     info!("New WebSocket connection established");
-    
+
     // Subscribe to broadcast messages
     let mut rx = state.websocket_tx.subscribe();
-    
+
     loop {
         select! {
             // Listen for broadcast messages from the server
@@ -34,7 +34,7 @@ async fn handle_socket(mut socket: WebSocket, state: PeerState) {
                                 continue;
                             }
                         };
-                        
+
                         if socket.send(Message::Text(json_str.into())).await.is_err() {
                             println!("🎭 MATRIX UI ACTION: WebSocket connection closed");
                             info!("WebSocket connection closed");
@@ -47,7 +47,7 @@ async fn handle_socket(mut socket: WebSocket, state: PeerState) {
                     }
                 }
             }
-            
+
             // Listen for incoming messages from client (optional)
             socket_msg = socket.recv() => {
                 match socket_msg {

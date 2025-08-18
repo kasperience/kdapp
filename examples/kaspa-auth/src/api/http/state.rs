@@ -1,11 +1,11 @@
 // src/api/http/state.rs
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use tokio::sync::broadcast;
-use secp256k1::Keypair;
-use kdapp::generator::TransactionGenerator;
 use crate::core::episode::SimpleAuth;
 use kaspa_wrpc_client::KaspaRpcClient;
+use kdapp::generator::TransactionGenerator;
+use secp256k1::Keypair;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tokio::sync::broadcast;
 
 // Real blockchain-based episode state (not the old fake HashMap approach)
 pub type SharedEpisodeState = Arc<Mutex<HashMap<u64, SimpleAuth>>>;
@@ -19,12 +19,12 @@ pub struct EpisodeState {
 
 #[derive(Clone)]
 pub struct PeerState {
-    pub episodes: Arc<Mutex<HashMap<u64, EpisodeState>>>,  // Legacy - will remove
-    pub blockchain_episodes: SharedEpisodeState,  // NEW - real blockchain state
+    pub episodes: Arc<Mutex<HashMap<u64, EpisodeState>>>, // Legacy - will remove
+    pub blockchain_episodes: SharedEpisodeState,          // NEW - real blockchain state
     pub websocket_tx: broadcast::Sender<WebSocketMessage>,
     pub peer_keypair: Keypair,
     pub transaction_generator: Arc<TransactionGenerator>,
-    pub kaspad_client: Option<Arc<KaspaRpcClient>>,  // NEW - for transaction submission
+    pub kaspad_client: Option<Arc<KaspaRpcClient>>, // NEW - for transaction submission
     pub auth_http_peer: Option<Arc<crate::api::http::blockchain_engine::AuthHttpPeer>>, // Reference to the main peer
 }
 

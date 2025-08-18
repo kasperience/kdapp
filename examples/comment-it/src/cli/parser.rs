@@ -7,16 +7,14 @@ pub fn build_cli() -> Command {
         .version("0.1.0")
         .about("Kaspa Authentication Episode Demo")
         .subcommand(
-            Command::new("test-episode")
-                .about("Test auth episode locally (no Kaspa)")
-                .arg(
-                    Arg::new("participants")
-                        .short('p')
-                        .long("participants")
-                        .value_name("COUNT")
-                        .help("Number of participants")
-                        .default_value("1")
-                )
+            Command::new("test-episode").about("Test auth episode locally (no Kaspa)").arg(
+                Arg::new("participants")
+                    .short('p')
+                    .long("participants")
+                    .value_name("COUNT")
+                    .help("Number of participants")
+                    .default_value("1"),
+            ),
         )
         .subcommand(
             Command::new("http-peer")
@@ -27,15 +25,15 @@ pub fn build_cli() -> Command {
                         .long("port")
                         .value_name("PORT")
                         .help("HTTP coordination peer port")
-                        .default_value("8080")
+                        .default_value("8080"),
                 )
                 .arg(
                     Arg::new("key")
                         .short('k')
                         .long("key")
                         .value_name("PRIVATE_KEY")
-                        .help("Private key (hex format) - generates random if not provided")
-                )
+                        .help("Private key (hex format) - generates random if not provided"),
+                ),
         )
         .subcommand(
             Command::new("authenticate")
@@ -45,14 +43,14 @@ pub fn build_cli() -> Command {
                         .short('k')
                         .long("key")
                         .value_name("PRIVATE_KEY")
-                        .help("Private key (hex format) - generates random if not provided")
+                        .help("Private key (hex format) - generates random if not provided"),
                 )
                 .arg(
                     Arg::new("keyfile")
                         .short('f')
                         .long("keyfile")
                         .value_name("FILE")
-                        .help("Load private key from file (safer than --key)")
+                        .help("Load private key from file (safer than --key)"),
                 )
                 .arg(
                     Arg::new("peer")
@@ -60,7 +58,7 @@ pub fn build_cli() -> Command {
                         .long("peer")
                         .value_name("URL")
                         .help("HTTP organizer peer URL for coordination")
-                        .default_value("http://127.0.0.1:8080")
+                        .default_value("http://127.0.0.1:8080"),
                 )
                 .arg(
                     Arg::new("timeout")
@@ -68,14 +66,14 @@ pub fn build_cli() -> Command {
                         .long("timeout")
                         .value_name("SECONDS")
                         .help("Timeout for authentication completion")
-                        .default_value("30")
+                        .default_value("30"),
                 )
                 .arg(
                     Arg::new("pure-kdapp")
                         .long("pure-kdapp")
                         .help("Use pure kdapp without HTTP coordination (experimental)")
-                        .action(clap::ArgAction::SetTrue)
-                )
+                        .action(clap::ArgAction::SetTrue),
+                ),
         )
         .subcommand(
             Command::new("authenticate-full-flow")
@@ -85,14 +83,14 @@ pub fn build_cli() -> Command {
                         .short('k')
                         .long("key")
                         .value_name("PRIVATE_KEY")
-                        .help("Private key (hex format) - generates random if not provided")
+                        .help("Private key (hex format) - generates random if not provided"),
                 )
                 .arg(
                     Arg::new("keyfile")
                         .short('f')
                         .long("keyfile")
                         .value_name("FILE")
-                        .help("Load private key from file (safer than --key)")
+                        .help("Load private key from file (safer than --key)"),
                 )
                 .arg(
                     Arg::new("peer")
@@ -100,7 +98,7 @@ pub fn build_cli() -> Command {
                         .long("peer")
                         .value_name("URL")
                         .help("HTTP organizer peer URL for coordination")
-                        .default_value("http://127.0.0.1:8080")
+                        .default_value("http://127.0.0.1:8080"),
                 )
                 .arg(
                     Arg::new("timeout")
@@ -108,21 +106,21 @@ pub fn build_cli() -> Command {
                         .long("timeout")
                         .value_name("SECONDS")
                         .help("Session timeout in seconds")
-                        .default_value("120")
+                        .default_value("120"),
                 )
                 .arg(
                     Arg::new("revoke-timeout")
                         .long("revoke-timeout")
                         .value_name("SECONDS")
                         .help("Session revocation timeout in seconds")
-                        .default_value("30")
+                        .default_value("30"),
                 )
                 .arg(
                     Arg::new("pure-kdapp")
                         .long("pure-kdapp")
                         .help("Use pure kdapp without HTTP coordination (experimental)")
-                        .action(clap::ArgAction::SetTrue)
-                )
+                        .action(clap::ArgAction::SetTrue),
+                ),
         )
         .subcommand(
             Command::new("revoke-session")
@@ -133,7 +131,7 @@ pub fn build_cli() -> Command {
                         .long("episode-id")
                         .value_name("EPISODE_ID")
                         .help("Episode ID to revoke session for")
-                        .required(true)
+                        .required(true),
                 )
                 .arg(
                     Arg::new("session-token")
@@ -141,22 +139,22 @@ pub fn build_cli() -> Command {
                         .long("session-token")
                         .value_name("SESSION_TOKEN")
                         .help("Session token to revoke")
-                        .required(true)
+                        .required(true),
                 )
                 .arg(
                     Arg::new("key")
                         .short('k')
                         .long("key")
                         .value_name("PRIVATE_KEY")
-                        .help("Private key (hex format) - uses participant wallet if not provided")
+                        .help("Private key (hex format) - uses participant wallet if not provided"),
                 )
                 .arg(
                     Arg::new("peer")
                         .long("peer")
                         .value_name("PEER_ADDRESS")
                         .help("HTTP organizer peer address")
-                        .default_value("http://localhost:8080")
-                )
+                        .default_value("http://localhost:8080"),
+                ),
         )
         .subcommand(
             Command::new("submit-comment")
@@ -167,7 +165,7 @@ pub fn build_cli() -> Command {
                         .long("episode-id")
                         .value_name("EPISODE_ID")
                         .help("Episode ID to comment on")
-                        .required(true)
+                        .required(true),
                 )
                 .arg(
                     Arg::new("text")
@@ -175,7 +173,7 @@ pub fn build_cli() -> Command {
                         .long("text")
                         .value_name("TEXT")
                         .help("Comment text (max 2000 characters)")
-                        .required(true)
+                        .required(true),
                 )
                 .arg(
                     Arg::new("session-token")
@@ -183,32 +181,27 @@ pub fn build_cli() -> Command {
                         .long("session-token")
                         .value_name("SESSION_TOKEN")
                         .help("Authentication session token")
-                        .required(true)
+                        .required(true),
                 )
                 .arg(
                     Arg::new("key")
                         .short('k')
                         .long("key")
                         .value_name("PRIVATE_KEY")
-                        .help("Private key (hex format) - uses participant wallet if not provided")
-                )
+                        .help("Private key (hex format) - uses participant wallet if not provided"),
+                ),
         )
         .subcommand(
-            Command::new("wallet-status")
-                .about("🔍 Show wallet status and addresses")
-                .arg(
-                    Arg::new("role")
-                        .short('r')
-                        .long("role")
-                        .value_name("ROLE")
-                        .help("Check specific role wallet (organizer-peer, participant-peer, or all)")
-                        .default_value("all")
-                )
+            Command::new("wallet-status").about("🔍 Show wallet status and addresses").arg(
+                Arg::new("role")
+                    .short('r')
+                    .long("role")
+                    .value_name("ROLE")
+                    .help("Check specific role wallet (organizer-peer, participant-peer, or all)")
+                    .default_value("all"),
+            ),
         )
-        .subcommand(
-            Command::new("demo")
-                .about("Run interactive demo")
-        )
+        .subcommand(Command::new("demo").about("Run interactive demo"))
         .subcommand(
             Command::new("organizer-peer")
                 .about("Run auth organizer peer on Kaspa testnet-10")
@@ -218,113 +211,72 @@ pub fn build_cli() -> Command {
                         .long("name")
                         .value_name("NAME")
                         .help("Organizer peer name")
-                        .default_value("auth-organizer-peer")
+                        .default_value("auth-organizer-peer"),
                 )
                 .arg(
                     Arg::new("key")
                         .short('k')
                         .long("key")
                         .value_name("PRIVATE_KEY")
-                        .help("Private key (hex format) - generates random if not provided")
+                        .help("Private key (hex format) - generates random if not provided"),
                 )
-                .arg(
-                    Arg::new("rpc-url")
-                        .long("rpc-url")
-                        .value_name("URL")
-                        .help("Kaspa node RPC URL (e.g., grpc://127.0.0.1:16110)")
-                )
+                .arg(Arg::new("rpc-url").long("rpc-url").value_name("URL").help("Kaspa node RPC URL (e.g., grpc://127.0.0.1:16110)")),
         )
         .subcommand(
             Command::new("tournament")
                 .about("Tournament authentication mode")
-                .arg(
-                    Arg::new("create")
-                        .long("create")
-                        .help("Create a new tournament")
-                )
-                .arg(
-                    Arg::new("max-players")
-                        .long("max-players")
-                        .value_name("COUNT")
-                        .default_value("100")
-                )
+                .arg(Arg::new("create").long("create").help("Create a new tournament"))
+                .arg(Arg::new("max-players").long("max-players").value_name("COUNT").default_value("100")),
         )
         .subcommand(
             Command::new("participant-peer")
                 .about("Run auth participant peer on Kaspa testnet-10")
-                .arg(
-                    Arg::new("auth")
-                        .long("auth")
-                        .action(clap::ArgAction::SetTrue)
-                        .help("Initiate authentication flow")
-                )
+                .arg(Arg::new("auth").long("auth").action(clap::ArgAction::SetTrue).help("Initiate authentication flow"))
                 .arg(
                     Arg::new("key")
                         .short('k')
                         .long("key")
                         .value_name("PRIVATE_KEY")
-                        .help("Private key (hex format) - generates random if not provided")
+                        .help("Private key (hex format) - generates random if not provided"),
                 )
                 .arg(
                     Arg::new("kaspa-private-key")
                         .long("kaspa-private-key")
                         .value_name("KASPA_PRIVATE_KEY")
-                        .help("Kaspa private key for funding transactions (hex format)")
+                        .help("Kaspa private key for funding transactions (hex format)"),
                 )
                 .arg(
                     Arg::new("kaspa-keyfile")
                         .long("kaspa-keyfile")
                         .value_name("FILE")
-                        .help("Load Kaspa private key from file (safer than --kaspa-private-key)")
+                        .help("Load Kaspa private key from file (safer than --kaspa-private-key)"),
                 )
-                .arg(
-                    Arg::new("rpc-url")
-                        .long("rpc-url")
-                        .value_name("URL")
-                        .help("Kaspa node RPC URL (e.g., grpc://127.0.0.1:16110)")
-                )
+                .arg(Arg::new("rpc-url").long("rpc-url").value_name("URL").help("Kaspa node RPC URL (e.g., grpc://127.0.0.1:16110)")),
         )
         .subcommand(
-            Command::new("test-api-flow")
-                .about("Run a full API authentication flow test")
-                .arg(
-                    Arg::new("peer")
-                        .short('p')
-                        .long("peer")
-                        .value_name("URL")
-                        .help("HTTP coordination peer URL")
-                        .default_value("http://127.0.0.1:8080")
-                )
+            Command::new("test-api-flow").about("Run a full API authentication flow test").arg(
+                Arg::new("peer")
+                    .short('p')
+                    .long("peer")
+                    .value_name("URL")
+                    .help("HTTP coordination peer URL")
+                    .default_value("http://127.0.0.1:8080"),
+            ),
         )
         .subcommand(
-            Command::new("test-api")
-                .about("Run tests against all API endpoints")
-                .arg(
-                    Arg::new("peer")
-                        .short('p')
-                        .long("peer")
-                        .value_name("URL")
-                        .help("HTTP coordination peer URL")
-                        .default_value("http://127.0.0.1:8080")
-                )
+            Command::new("test-api").about("Run tests against all API endpoints").arg(
+                Arg::new("peer")
+                    .short('p')
+                    .long("peer")
+                    .value_name("URL")
+                    .help("HTTP coordination peer URL")
+                    .default_value("http://127.0.0.1:8080"),
+            ),
         )
         .subcommand(
             Command::new("unified-peer")
                 .about("🚀 Run unified organizer peer (auth + comments)")
-                .arg(
-                    Arg::new("port")
-                        .short('p')
-                        .long("port")
-                        .value_name("PORT")
-                        .help("HTTP server port")
-                        .default_value("8080")
-                )
-                .arg(
-                    Arg::new("host")
-                        .long("host")
-                        .value_name("HOST")
-                        .help("HTTP server host")
-                        .default_value("127.0.0.1")
-                )
+                .arg(Arg::new("port").short('p').long("port").value_name("PORT").help("HTTP server port").default_value("8080"))
+                .arg(Arg::new("host").long("host").value_name("HOST").help("HTTP server host").default_value("127.0.0.1")),
         )
 }

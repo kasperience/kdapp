@@ -94,7 +94,8 @@ impl TransactionGenerator {
             nonce = nonce.checked_add(1).unwrap(); // We expect this to never overflow for a 10-bit pattern
             Payload::set_nonce(&mut unsigned_tx.payload, nonce);
             unsigned_tx.finalize();
-            debug!("nonce: {}, id: {}", nonce, unsigned_tx.id());
+            let id = unsigned_tx.id();
+            debug!("nonce: {nonce}, id: {id}");
         }
         let signed_tx = sign(
             MutableTransaction::with_entries(unsigned_tx, utxos.iter().map(|(_, entry)| entry.clone()).collect_vec()),

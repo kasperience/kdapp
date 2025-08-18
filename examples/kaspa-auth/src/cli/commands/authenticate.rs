@@ -5,10 +5,10 @@ use std::error::Error;
 pub struct AuthenticateCommand {
     #[arg(short, long, default_value = "http://127.0.0.1:8080")]
     pub server: String,
-    
+
     #[arg(short, long)]
     pub key: Option<String>,
-    
+
     #[arg(short, long)]
     pub keyfile: Option<String>,
 }

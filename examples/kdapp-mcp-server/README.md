@@ -90,6 +90,49 @@ run_tictactoe_game.bat
 ./run_tictactoe_game.sh
 ```
 
+## ⚙️ Stress Mode: Sliding Window Cap (Default 6)
+
+By default, the engine enforces Michael’s dynamic rule: The board shows at most 6 symbols. Before a new move is applied, the oldest symbol is removed. This keeps play dynamic and exercises rollback semantics.
+
+- Default cap: 6 (no setup needed)
+- Override for demos: set a lower cap to showcase evictions earlier
+
+PowerShell (Windows):
+```powershell
+$env:KDAPP_TTT_MAX_SYMBOLS = '3'   # clamp 1..6
+python tictactoe_coordinator.py
+# reset:
+$env:KDAPP_TTT_MAX_SYMBOLS = $null
+```
+
+Linux/macOS:
+```bash
+KDAPP_TTT_MAX_SYMBOLS=3 python tictactoe_coordinator.py
+```
+
+Notes
+- Eviction occurs before applying the next move when the cap is reached (first visible at move cap+1).
+- Engine logs the active cap on episode init: “TicTacToe stress mode: cap=N”.
+- Reorg safety mirrors the original example: evicted mark is recorded in rollback and restored on rollback.
+
+### Show Prompts (Under the Hood)
+To help users understand how agents plan with the rule, the coordinator can print the exact prompts it sends (including rule, recent moves, and the mark that will be removed next when the cap is reached):
+
+PowerShell (Windows):
+```powershell
+$env:KDAPP_SHOW_PROMPTS = '1'
+python tictactoe_coordinator.py
+# reset:
+$env:KDAPP_SHOW_PROMPTS = $null
+```
+
+Linux/macOS:
+```bash
+KDAPP_SHOW_PROMPTS=1 python tictactoe_coordinator.py
+```
+
+When enabled, you’ll see blocks titled “===== LM STUDIO PROMPT (X) =====” and “===== OLLAMA PROMPT (O) =====” for each turn.
+
 ## 🔐 Wallet Management
 
 The kdapp MCP server now includes genuine wallet management capabilities:

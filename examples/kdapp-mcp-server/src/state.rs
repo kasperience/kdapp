@@ -3,8 +3,9 @@ use kaspa_wrpc_client::KaspaRpcClient;
 use kdapp::engine::{Engine, EngineMsg};
 use kdapp::episode::{Episode, EpisodeError, EpisodeEventHandler, PayloadMetadata};
 use kdapp::pki::PubKey;
-use log::debug;
+use log::{debug, info};
 use std::collections::{HashMap, VecDeque};
+use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -28,7 +29,7 @@ pub struct TicTacToeEpisode {
     board: [[u8; 3]; 3], // 0 empty, 1 X, 2 O
     current: Player,
     participants: Vec<PubKey>,
-    // Keep a sliding window of the last 6 placed symbols (row, col)
+    // When stress mode is enabled (see max_symbols_from_env), maintain placement order
     move_history: VecDeque<(u8, u8)>,
 }
 
@@ -48,18 +49,30 @@ pub enum TttCommand {
 }
 
 #[derive(Clone, Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
+pub struct TttRollback {
+    row: u8,
+    col: u8,
+    prev_player: u8,
+    removed: Option<TttRemoved>,
+}
+
+#[derive(Clone, Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
 pub struct TttRemoved {
     row: u8,
     col: u8,
     symbol: u8,
 }
 
-#[derive(Clone, Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
-pub struct TttRollback {
-    row: u8,
-    col: u8,
-    prev_player: u8,
-    removed: Option<TttRemoved>,
+fn max_symbols_from_env() -> Option<usize> {
+    // KDAPP_TTT_STRESS=1 enables 6-move sliding window (default cap=6)
+    // KDAPP_TTT_MAX_SYMBOLS overrides the cap when set to a positive integer
+    if let Ok(v) = env::var("KDAPP_TTT_MAX_SYMBOLS") {
+        if let Ok(n) = v.parse::<usize>() { if n > 0 { return Some(n); } }
+    }
+    if matches!(env::var("KDAPP_TTT_STRESS").as_deref(), Ok("1") | Ok("true") | Ok("yes")) {
+        return Some(6);
+    }
+    None
 }
 
 impl Episode for TicTacToeEpisode {
@@ -96,7 +109,7 @@ impl Episode for TicTacToeEpisode {
                 }
                 // Authorization required and must match designated participant for this player
                 let auth_pk = authorization.ok_or(EpisodeError::Unauthorized)?;
-                let designated = if *player == 0 { self.participants.get(0) } else { self.participants.get(1) };
+                let designated = if *player == 0 { self.participants.first() } else { self.participants.get(1) };
                 if let Some(expected) = designated {
                     if &auth_pk != expected {
                         return Err(EpisodeError::Unauthorized);
@@ -104,23 +117,24 @@ impl Episode for TicTacToeEpisode {
                 } else {
                     return Err(EpisodeError::Unauthorized);
                 }
-                // Enforce maximum 6 symbols on board via sliding window
+                // Optional stress mode: enforce max symbols via sliding window
                 let mut removed: Option<TttRemoved> = None;
-                if self.move_history.len() == 6 {
-                    if let Some((old_r, old_c)) = self.move_history.pop_front() {
-                        let or = old_r as usize;
-                        let oc = old_c as usize;
-                        let sym = self.board[or][oc];
-                        if sym != 0 {
-                            self.board[or][oc] = 0;
-                            removed = Some(TttRemoved { row: old_r, col: old_c, symbol: sym });
+                if let Some(cap) = max_symbols_from_env() {
+                    if self.move_history.len() == cap {
+                        if let Some((old_r, old_c)) = self.move_history.pop_front() {
+                            let or = old_r as usize; let oc = old_c as usize;
+                            let sym = self.board[or][oc];
+                            if sym != 0 {
+                                self.board[or][oc] = 0;
+                                removed = Some(TttRemoved { row: old_r, col: old_c, symbol: sym });
+                            }
                         }
                     }
                 }
 
                 // apply current move
                 self.board[r][c] = if *player == 0 { 1 } else { 2 };
-                self.move_history.push_back((*row, *col));
+                if max_symbols_from_env().is_some() { self.move_history.push_back((*row, *col)); }
 
                 let prev = want;
                 self.current = if *player == 0 { Player::O } else { Player::X };
@@ -137,18 +151,16 @@ impl Episode for TicTacToeEpisode {
         }
         // Remove the last-applied move
         self.board[r][c] = 0;
-        if !self.move_history.is_empty() {
+        if max_symbols_from_env().is_some() && !self.move_history.is_empty() {
             self.move_history.pop_back();
         }
 
-        // Restore any symbol that was evicted due to the 6-move rule
+        // Restore a symbol evicted by the cap if any
         if let Some(rem) = rollback.removed {
-            let rr = rem.row as usize;
-            let rc = rem.col as usize;
+            let rr = rem.row as usize; let rc = rem.col as usize;
             if rr <= 2 && rc <= 2 {
                 self.board[rr][rc] = rem.symbol;
-                // Put it back at the front to preserve original ordering
-                self.move_history.push_front((rem.row, rem.col));
+                if max_symbols_from_env().is_some() { self.move_history.push_front((rem.row, rem.col)); }
             }
         }
 
@@ -179,6 +191,7 @@ impl EpisodeEventHandler<TicTacToeEpisode> for TttEventHandler {
             m.insert(episode_id, snap.clone());
         }
         self.persist_snapshot(episode_id, &snap, "initialize");
+        if let Some(cap) = max_symbols_from_env() { info!("TicTacToe stress mode: cap={cap}"); }
     }
     fn on_command(
         &self,
@@ -197,7 +210,7 @@ impl EpisodeEventHandler<TicTacToeEpisode> for TttEventHandler {
             m.insert(episode_id, snap.clone());
         }
         self.persist_snapshot(episode_id, &snap, "command");
-        debug!("TicTacToe episode {} updated", episode_id);
+        debug!("TicTacToe episode {episode_id} updated");
     }
     fn on_rollback(&self, episode_id: kdapp::episode::EpisodeId, episode: &TicTacToeEpisode) {
         let current = match episode.current {
@@ -209,7 +222,7 @@ impl EpisodeEventHandler<TicTacToeEpisode> for TttEventHandler {
             m.insert(episode_id, snap.clone());
         }
         self.persist_snapshot(episode_id, &snap, "rollback");
-        debug!("TicTacToe episode {} rolled back", episode_id);
+        debug!("TicTacToe episode {episode_id} rolled back");
     }
 }
 
@@ -217,14 +230,15 @@ impl TttEventHandler {
     fn persist_snapshot(&self, episode_id: kdapp::episode::EpisodeId, snap: &TttSnapshot, event: &str) {
         // Ensure directory exists
         if let Err(e) = fs::create_dir_all(&self.dir) {
-            eprintln!("Failed creating episodes dir: {}", e);
+            eprintln!("Failed creating episodes dir: {e}");
             return;
         }
         // Write snapshot file
-        let path = self.dir.join(format!("{}.json", episode_id));
+        let path = self.dir.join(format!("{episode_id}.json"));
         if let Ok(json) = serde_json::to_string_pretty(snap) {
             if let Err(e) = fs::write(&path, json) {
-                eprintln!("Failed persisting snapshot {}: {}", path.display(), e);
+                let p = path.display().to_string();
+                eprintln!("Failed persisting snapshot {p}: {e}");
             }
         }
         // Append event to jsonl log
@@ -239,7 +253,6 @@ impl TttEventHandler {
                     "ts": chrono::Utc::now().to_rfc3339(),
                     "snapshot": snap,
                 })
-                .to_string()
             );
         }
     }
@@ -248,7 +261,6 @@ impl TttEventHandler {
 pub struct ServerState {
     pub sender: Sender<EngineMsg>,
     pub ttt_state: Arc<Mutex<HashMap<kdapp::episode::EpisodeId, TttSnapshot>>>,
-    pub transaction_generator: Option<kdapp::generator::TransactionGenerator>,
     pub agent1_wallet: Arc<AgentWallet>,
     pub agent2_wallet: Arc<AgentWallet>,
     pub node_client: Option<Arc<KaspaRpcClient>>,
@@ -290,15 +302,9 @@ impl ServerState {
             engine.start(vec![handler]);
         });
 
-        let keypair = agent1_wallet.keypair;
-        let pattern: kdapp::generator::PatternType = [(0, 0); 10]; // Simple pattern for testing
-        let prefix: kdapp::generator::PrefixType = 0x12345678;
-        let transaction_generator = kdapp::generator::TransactionGenerator::new(keypair, pattern, prefix);
-
         Self {
             sender,
             ttt_state,
-            transaction_generator: Some(transaction_generator),
             agent1_wallet: Arc::new(agent1_wallet),
             agent2_wallet: Arc::new(agent2_wallet),
             node_client: node_client.map(Arc::new),

@@ -40,7 +40,7 @@ fn connect_options() -> ConnectOptions {
 pub async fn connect_client(network_id: NetworkId, rpc_url: Option<String>) -> Result<KaspaRpcClient, Error> {
     let url = if let Some(url) = &rpc_url { url } else { &Resolver::default().get_url(WrpcEncoding::Borsh, network_id).await? };
 
-    debug!("Connecting to Kaspad {}", url);
+    debug!("Connecting to Kaspad {url}");
     let client = KaspaRpcClient::new_with_args(WrpcEncoding::Borsh, Some(url), None, Some(network_id), None)?;
     client.connect(Some(connect_options())).await.map_err(|e| {
         warn!("Kaspad connection failed: {e}");
@@ -51,16 +51,18 @@ pub async fn connect_client(network_id: NetworkId, rpc_url: Option<String>) -> R
     let connected_network = format!(
         "{}{}",
         server_info.network_id.network_type,
-        server_info.network_id.suffix.map(|s| format!("-{}", s)).unwrap_or_default()
+        server_info.network_id.suffix.map(|s| format!("-{s}")).unwrap_or_default()
     );
-    info!("Connected to Kaspad {}, version: {}, network: {}", url, server_info.server_version, connected_network);
+    let version = server_info.server_version.clone();
+    info!("Connected to Kaspad {url}, version: {version}, network: {connected_network}");
 
     if network_id != server_info.network_id {
-        panic!("Network mismatch, expected '{}', actual '{}'", network_id, connected_network);
+        panic!("Network mismatch, expected '{network_id}', actual '{connected_network}'");
     } else if !server_info.is_synced
         || server_info.network_id.network_type == RpcNetworkType::Mainnet && server_info.virtual_daa_score < 107107107
     {
-        let err_msg = format!("Kaspad {} is NOT synced", server_info.server_version);
+        let version = server_info.server_version.clone();
+        let err_msg = format!("Kaspad {version} is NOT synced");
         warn!("{err_msg}");
         Err(Error::Custom(err_msg))
     } else {
@@ -74,13 +76,13 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
     let info = match kaspad.get_block_dag_info().await {
         Ok(info) => info,
         Err(e) => {
-            warn!("Failed to get block DAG info: {}. Retrying...", e);
+            warn!("Failed to get block DAG info: {e}. Retrying...");
             return;
         }
     };
     let mut sink = info.sink;
     let mut now = Instant::now();
-    info!("Sink: {}", sink);
+    info!("Sink: {sink}");
     loop {
         if exit_signal.load(Ordering::Relaxed) {
             info!("Exiting...");
@@ -92,12 +94,14 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
         let vcb = match kaspad.get_virtual_chain_from_block(sink, true).await {
             Ok(vcb) => vcb,
             Err(e) => {
-                warn!("Failed to get virtual chain from block: {}. Retrying...", e);
+                warn!("Failed to get virtual chain from block: {e}. Retrying...");
                 continue;
             }
         };
 
-        debug!("vspc: {}, {}", vcb.removed_chain_block_hashes.len(), vcb.accepted_transaction_ids.len());
+        let removed_len = vcb.removed_chain_block_hashes.len();
+        let accepted_len = vcb.accepted_transaction_ids.len();
+        debug!("vspc: {removed_len}, {accepted_len}");
 
         if let Some(new_sink) = vcb.accepted_transaction_ids.last().map(|ncb| ncb.accepting_block_hash) {
             sink = new_sink;
@@ -110,7 +114,7 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
             for (_, sender) in engines.values() {
                 let msg = Msg::BlkReverted { accepting_hash: rcb };
                 if let Err(e) = sender.send(msg) {
-                    warn!("Failed to send block reverted message to engine: {}", e);
+                    warn!("Failed to send block reverted message to engine: {e}");
                 }
             }
         }
@@ -139,31 +143,28 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
             let accepting_block = match kaspad.get_block(accepting_hash, false).await {
                 Ok(block) => block,
                 Err(e) => {
-                    warn!("Failed to get accepting block {}: {}. Skipping...", accepting_hash, e);
+                    warn!("Failed to get accepting block {accepting_hash}: {e}. Skipping...");
                     continue;
                 }
             };
             let verbose = match accepting_block.verbose_data {
                 Some(verbose) => verbose,
                 None => {
-                    warn!("Accepting block {} has no verbose data. Skipping...", accepting_hash);
+                    warn!("Accepting block {accepting_hash} has no verbose data. Skipping...");
                     continue;
                 }
             };
             assert_eq!(verbose.selected_parent_hash, verbose.merge_set_blues_hashes[0]);
-            debug!(
-                "accepting block: {}, selected parent: {}, mergeset len: {}",
-                accepting_hash,
-                verbose.selected_parent_hash,
-                verbose.merge_set_blues_hashes.len() + verbose.merge_set_reds_hashes.len()
-            );
+            let selected_parent = verbose.selected_parent_hash;
+            let mergeset_len = verbose.merge_set_blues_hashes.len() + verbose.merge_set_reds_hashes.len();
+            debug!("accepting block: {accepting_hash}, selected parent: {selected_parent}, mergeset len: {mergeset_len}");
 
             // Iterate over merged blocks until finding all accepted and required txs (the mergeset is guaranteed to contain these txs)
             'outer: for merged_hash in verbose.merge_set_blues_hashes.into_iter().chain(verbose.merge_set_reds_hashes) {
                 let merged_block = match kaspad.get_block(merged_hash, true).await {
                     Ok(block) => block,
                     Err(e) => {
-                        warn!("Failed to get merged block {}: {}. Skipping...", merged_hash, e);
+                        warn!("Failed to get merged block {merged_hash}: {e}. Skipping...");
                         continue;
                     }
                 };
@@ -213,7 +214,7 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                     })
                     .collect();
                 for (tx_id, _payload) in associated_txs.iter() {
-                    info!("received episode tx: {}", tx_id);
+                    info!("received episode tx: {tx_id}");
                 }
                 if !associated_txs.is_empty() {
                     let msg = Msg::BlkAccepted {
@@ -223,7 +224,7 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                         associated_txs,
                     };
                     if let Err(e) = sender.send(msg) {
-                        warn!("Failed to send block accepted message to engine: {}", e);
+                        warn!("Failed to send block accepted message to engine: {e}");
                     }
                 }
                 if consumed_txs == required_txs.len() {
@@ -236,7 +237,7 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
 
     for (_, sender) in engines.values() {
         if let Err(e) = sender.send(Msg::Exit) {
-            warn!("Failed to send exit message to engine: {}", e);
+            warn!("Failed to send exit message to engine: {e}");
         }
     }
 }

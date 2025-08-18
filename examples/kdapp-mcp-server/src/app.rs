@@ -1,13 +1,13 @@
 use anyhow::Result;
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::signal;
 use serde_json::{from_str, to_string};
 use std::sync::Arc;
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::signal;
 
 use crate::jsonrpc::{Request, Response};
+use crate::node_connector::{connect_to_node, NodeConfig};
 use crate::state::ServerState;
 use crate::wallet::AgentWallet;
-use crate::node_connector::{connect_to_node, NodeConfig};
 
 pub async fn run() -> Result<()> {
     // Initialize logging (env_logger still used by deps if set)
@@ -30,7 +30,7 @@ pub async fn run() -> Result<()> {
             Some(client)
         }
         Err(e) => {
-            println!("⚠️  Warning: Could not connect to Kaspa node: {}", e);
+            println!("⚠️  Warning: Could not connect to Kaspa node: {e}");
             println!("   The server will continue in offline mode");
             None
         }
@@ -51,7 +51,7 @@ pub async fn run() -> Result<()> {
                 match result {
                     Ok(Some(line)) => { process_request(line, state.clone()).await?; }
                     Ok(None) => { break; }
-                    Err(e) => { eprintln!("Error reading line: {}", e); break; }
+                    Err(e) => { eprintln!("Error reading line: {e}"); break; }
                 }
             }
             _ = signal::ctrl_c() => { println!("Received shutdown signal, exiting..."); break; }

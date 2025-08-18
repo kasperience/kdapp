@@ -5,24 +5,15 @@ use std::collections::HashMap;
 /// Rollback information for authentication operations
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum AuthRollback {
-    Challenge { 
-        previous_challenge: Option<String>,
-        previous_timestamp: u64,
-    },
-    Authentication {
-        previous_auth_status: bool,
-        previous_session_token: Option<String>,
-    },
-    SessionRevoked {
-        previous_token: String,
-        was_authenticated: bool,
-    },
+    Challenge { previous_challenge: Option<String>, previous_timestamp: u64 },
+    Authentication { previous_auth_status: bool, previous_session_token: Option<String> },
+    SessionRevoked { previous_token: String, was_authenticated: bool },
 }
 
 /// Unified rollback information for authentication and comment operations - Pure P2P
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum UnifiedRollback {
-    Challenge { 
+    Challenge {
         participant_key: String,
         previous_participant: Option<()>, // Simplified for pure P2P
     },
@@ -106,7 +97,7 @@ impl RateLimitData {
         let pubkey_str = format!("{}", pubkey);
         self.attempts.get(&pubkey_str).map_or(false, |&attempts| attempts >= 5)
     }
-    
+
     pub fn increment(&mut self, pubkey: &PubKey) {
         let pubkey_str = format!("{}", pubkey);
         *self.attempts.entry(pubkey_str).or_insert(0) += 1;
