@@ -25,6 +25,7 @@
 **/.vscode/
 
 target
+examples/kaspa-linux/kaspax/
 web-root
 **/.idea/
 /rust-toolchain
