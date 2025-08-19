@@ -21,7 +21,9 @@ kaspa-poker-tournament/
 # Temporary files
 *.tmp
 *.temp
+# Shell scripts (ignored by default), but allow tracked helper scripts under scripts/
 *.sh
+!scripts/*.sh
 server.log
 backup_log.txt
 server_debug.log
