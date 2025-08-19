@@ -1,0 +1,21 @@
+[Unit]
+Description=Kaspa Auth Daemon (user)
+After=network.target
+
+[Service]
+Type=simple
+# Override this path if you install the binary elsewhere
+ExecStart=%h/.cargo/bin/kaspa-auth --keychain daemon start --foreground \
+  --socket-path %t/kaspa-auth.sock \
+  --data-dir %h/.local/share/kaspa-auth \
+  --session-timeout 3600
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
+
