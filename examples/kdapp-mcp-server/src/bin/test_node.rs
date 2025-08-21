@@ -5,10 +5,10 @@ use kdapp_mcp_server::node_connector::{connect_to_node, NodeConfig};
 #[tokio::main]
 async fn main() -> Result<()> {
     println!("🧪 Testing node connection functionality...");
-    
+
     // Test node configuration
     let node_config = NodeConfig::default();
-    
+
     println!("🔧 Node configuration:");
     println!("   Network: {:?}", node_config.network_id);
     if let Some(ref url) = node_config.rpc_url {
@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
     } else {
         println!("   RPC URL: Using default resolver");
     }
-    
+
     // Test connecting to node
     match connect_to_node(node_config).await {
         Ok(_client) => {
@@ -27,8 +27,8 @@ async fn main() -> Result<()> {
             println!("   This is expected if no local node is running");
         }
     }
-    
+
     println!("🎉 Node connection test finished!");
-    
+
     Ok(())
 }

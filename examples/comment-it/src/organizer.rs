@@ -17,8 +17,10 @@ use crate::comment::{Comment, CommentEpisode};
 
 // Import auth components from our unified comment-it project
 use crate::{
+    api::http::types::{
+        AuthRequest, AuthResponse, ChallengeResponse, SubmitCommentRequest, SubmitCommentResponse, VerifyRequest, VerifyResponse,
+    },
     core::AuthWithCommentsEpisode,
-    api::http::types::{AuthRequest, AuthResponse, ChallengeResponse, VerifyRequest, VerifyResponse, SubmitCommentRequest, SubmitCommentResponse},
 };
 
 // Additional imports for blockchain integration
@@ -63,48 +65,37 @@ pub struct CommentOrganizer {
 impl CommentOrganizer {
     pub async fn new(host: String, port: u16) -> Result<Self, Box<dyn std::error::Error>> {
         let (websocket_tx, _) = broadcast::channel(100);
-        
-        
-        
+
         let state = OrganizerState {
             auth_episodes: Arc::new(Mutex::new(HashMap::new())),
             comment_episodes: Arc::new(Mutex::new(HashMap::new())),
             websocket_tx,
-            
         };
 
-        Ok(Self {
-            host,
-            port,
-            state,
-        })
+        Ok(Self { host, port, state })
     }
 
     pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         // Print startup banner
         self.print_startup_banner();
-        
+
         let app = Router::new()
             // Main page
             .route("/", get(serve_index))
-            
             // Authentication endpoints (from kaspa-auth)
             .route("/auth/start", post(start_auth))
             .route("/auth/challenge/{episode_id}", get(get_challenge))
             .route("/auth/verify", post(verify_auth))
             .route("/auth/revoke-session", post(revoke_session))
             .route("/auth/status/{episode_id}", get(get_auth_status))
-            
-            // Comment endpoints 
+            // Comment endpoints
             .route("/api/comments", post(submit_comment))
             .route("/api/comments", get(get_comments))
             .route("/api/comments/latest", get(get_latest_comments))
-            
             // Debug and utility
             .route("/api/debug", get(debug_endpoint))
             .route("/health", get(health_check))
             .route("/ws", get(websocket_handler))
-            
             .nest_service("/static", ServeDir::new("public"))
             .layer(CorsLayer::permissive())
             .with_state(self.state);
@@ -157,8 +148,6 @@ impl CommentOrganizer {
     }
 }
 
-
-
 /// Serve the main HTML page
 async fn serve_index() -> Html<&'static str> {
     // Embed the HTML at compile time to avoid path issues
@@ -190,12 +179,9 @@ async fn health_check() -> Json<serde_json::Value> {
 }
 
 /// Start authentication episode (integrated from kaspa-auth)
-async fn start_auth(
-    State(_state): State<OrganizerState>,
-    Json(_req): Json<AuthRequest>,
-) -> Result<Json<AuthResponse>, StatusCode> {
+async fn start_auth(State(_state): State<OrganizerState>, Json(_req): Json<AuthRequest>) -> Result<Json<AuthResponse>, StatusCode> {
     info!("🚀 Starting authentication episode (integrated)");
-    
+
     // TODO: Implement using kaspa-auth logic but in integrated way
     // For now, return a basic response
     Ok(Json(AuthResponse {
@@ -213,7 +199,7 @@ async fn get_challenge(
     axum::extract::Path(episode_id): axum::extract::Path<u64>,
 ) -> Result<Json<ChallengeResponse>, StatusCode> {
     info!("🎲 Getting challenge for episode {}", episode_id);
-    
+
     // TODO: Get real challenge from auth episode
     Ok(Json(ChallengeResponse {
         episode_id,
@@ -223,13 +209,13 @@ async fn get_challenge(
     }))
 }
 
-/// Verify authentication signature  
+/// Verify authentication signature
 async fn verify_auth(
     State(_state): State<OrganizerState>,
     Json(req): Json<VerifyRequest>,
 ) -> Result<Json<VerifyResponse>, StatusCode> {
     info!("✅ Verifying authentication for episode {}", req.episode_id);
-    
+
     // TODO: Implement real signature verification
     Ok(Json(VerifyResponse {
         episode_id: req.episode_id,
@@ -245,7 +231,7 @@ async fn revoke_session(
     Json(_req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     info!("🔄 Revoking session");
-    
+
     // TODO: Implement session revocation
     Ok(Json(serde_json::json!({
         "status": "session_revoked",
@@ -259,7 +245,7 @@ async fn get_auth_status(
     axum::extract::Path(episode_id): axum::extract::Path<u64>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     info!("📊 Getting auth status for episode {}", episode_id);
-    
+
     // TODO: Get real auth status from episode
     Ok(Json(serde_json::json!({
         "episode_id": episode_id,
@@ -311,14 +297,12 @@ async fn submit_comment(
 }
 
 /// Get all comments
-async fn get_comments(
-    State(state): State<OrganizerState>,
-) -> Result<Json<GetCommentsResponse>, StatusCode> {
+async fn get_comments(State(state): State<OrganizerState>) -> Result<Json<GetCommentsResponse>, StatusCode> {
     // Get comments from auth episodes (unified episodes contain both auth and comments)
     let auth_episodes = state.auth_episodes.lock().await;
-    
+
     let mut all_comments = Vec::new();
-    
+
     // Collect comments from all unified episodes
     for (_episode_id, episode) in auth_episodes.iter() {
         for comment in &episode.comments {
@@ -331,26 +315,21 @@ async fn get_comments(
             });
         }
     }
-    
+
     // Sort by timestamp (newest first)
     all_comments.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-    
+
     let total = all_comments.len();
-    Ok(Json(GetCommentsResponse {
-        comments: all_comments,
-        total,
-    }))
+    Ok(Json(GetCommentsResponse { comments: all_comments, total }))
 }
 
 /// Get latest comments
-async fn get_latest_comments(
-    State(state): State<OrganizerState>,
-) -> Result<Json<GetCommentsResponse>, StatusCode> {
+async fn get_latest_comments(State(state): State<OrganizerState>) -> Result<Json<GetCommentsResponse>, StatusCode> {
     // Get latest comments from auth episodes (unified episodes contain both auth and comments)
     let auth_episodes = state.auth_episodes.lock().await;
-    
+
     let mut all_comments = Vec::new();
-    
+
     // Collect comments from all unified episodes
     for (_episode_id, episode) in auth_episodes.iter() {
         for comment in &episode.comments {
@@ -363,33 +342,24 @@ async fn get_latest_comments(
             });
         }
     }
-    
+
     // Sort by timestamp (newest first) and take latest 10
     all_comments.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     all_comments.truncate(10);
-    
+
     let total = all_comments.len();
-    Ok(Json(GetCommentsResponse {
-        comments: all_comments,
-        total,
-    }))
+    Ok(Json(GetCommentsResponse { comments: all_comments, total }))
 }
 
 /// WebSocket handler for real-time comment updates
-async fn websocket_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<OrganizerState>,
-) -> Response {
+async fn websocket_handler(ws: WebSocketUpgrade, State(state): State<OrganizerState>) -> Response {
     ws.on_upgrade(|socket| handle_websocket(socket, state))
 }
 
-async fn handle_websocket(
-    socket: axum::extract::ws::WebSocket,
-    state: OrganizerState,
-) {
+async fn handle_websocket(socket: axum::extract::ws::WebSocket, state: OrganizerState) {
     use axum::extract::ws::Message;
     use futures_util::{sink::SinkExt, stream::StreamExt};
-    
+
     let (mut sender, mut receiver) = socket.split();
     let mut rx = state.websocket_tx.subscribe();
 

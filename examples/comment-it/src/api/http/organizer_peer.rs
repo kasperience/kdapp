@@ -1,31 +1,29 @@
 // src/api/http/server.rs
-use axum::{routing::{get, post}, Router, extract::State};
 use axum::serve;
+use axum::{
+    extract::State,
+    routing::{get, post},
+    Router,
+};
 use std::sync::Arc;
 // Remove unused import
-use tokio::sync::broadcast;
 use crate::wallet::get_wallet_for_command;
-use tower_http::cors::{CorsLayer, Any};
+use tokio::sync::broadcast;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
-use crate::api::http::{
-    state::{PeerState, WebSocketMessage},
-    handlers::{
-        auth::start_auth,
-        challenge::request_challenge,
-        verify::verify_auth,
-        status::get_status,
-        revoke::revoke_session,
-        comment,
-        list_episodes::list_episodes,
-        list_episodes::list_episodes,
-    },
-    blockchain_engine::AuthHttpPeer,
-};
 use crate::api::http::websocket::websocket_handler;
+use crate::api::http::{
+    blockchain_engine::AuthHttpPeer,
+    handlers::{
+        auth::start_auth, challenge::request_challenge, comment, list_episodes::list_episodes, list_episodes::list_episodes,
+        revoke::revoke_session, status::get_status, verify::verify_auth,
+    },
+    state::{PeerState, WebSocketMessage},
+};
 use axum::Json;
-use serde_json::json;
 use kaspa_addresses::{Address, Prefix, Version};
+use serde_json::json;
 
 // Simple endpoint handlers
 async fn health() -> Json<serde_json::Value> {
@@ -37,12 +35,8 @@ async fn health() -> Json<serde_json::Value> {
 }
 
 async fn funding_info(State(state): State<PeerState>) -> Json<serde_json::Value> {
-    let kaspa_addr = Address::new(
-        Prefix::Testnet, 
-        Version::PubKey, 
-        &state.peer_keypair.x_only_public_key().0.serialize()
-    );
-    
+    let kaspa_addr = Address::new(Prefix::Testnet, Version::PubKey, &state.peer_keypair.x_only_public_key().0.serialize());
+
     Json(json!({
         "funding_address": kaspa_addr.to_string(),
         "network": "testnet-10",
@@ -53,22 +47,18 @@ async fn funding_info(State(state): State<PeerState>) -> Json<serde_json::Value>
 
 async fn wallet_status() -> Json<serde_json::Value> {
     println!("🎭 MATRIX UI ACTION: User checking wallet status");
-    
+
     // Check if web-participant wallet exists WITHOUT creating it
     use crate::wallet::wallet_exists_for_command;
-    
+
     if wallet_exists_for_command("web-participant") {
         // Load existing wallet to get details
         match get_wallet_for_command("web-participant", None) {
             Ok(wallet) => {
-                let kaspa_addr = Address::new(
-                    Prefix::Testnet,
-                    Version::PubKey,
-                    &wallet.keypair.public_key().serialize()[1..]
-                );
-                
+                let kaspa_addr = Address::new(Prefix::Testnet, Version::PubKey, &wallet.keypair.public_key().serialize()[1..]);
+
                 println!("✅ MATRIX UI SUCCESS: Existing wallet found - {}", kaspa_addr);
-                
+
                 Json(json!({
                     "exists": true,
                     "needs_funding": false, // Existing wallets assumed funded
@@ -98,23 +88,19 @@ async fn wallet_status() -> Json<serde_json::Value> {
 
 async fn wallet_participant() -> Json<serde_json::Value> {
     println!("🎭 MATRIX UI ACTION: User requesting participant wallet info");
-    
+
     // Check if wallet exists WITHOUT creating it
     use crate::wallet::wallet_exists_for_command;
-    
+
     if wallet_exists_for_command("web-participant") {
         // Load existing wallet to get details
         match get_wallet_for_command("web-participant", None) {
             Ok(wallet) => {
                 let public_key_hex = hex::encode(wallet.keypair.public_key().serialize());
-                let kaspa_addr = Address::new(
-                    Prefix::Testnet,
-                    Version::PubKey,
-                    &wallet.keypair.public_key().serialize()[1..]
-                );
-                
+                let kaspa_addr = Address::new(Prefix::Testnet, Version::PubKey, &wallet.keypair.public_key().serialize()[1..]);
+
                 println!("✅ MATRIX UI SUCCESS: Existing participant wallet - {}", kaspa_addr);
-                
+
                 Json(json!({
                     "public_key": public_key_hex,
                     "kaspa_address": kaspa_addr.to_string(),
@@ -149,10 +135,12 @@ async fn wallet_participant_post(Json(req): Json<serde_json::Value>) -> Json<ser
     // Handle participant peer wallet creation/import from web interface
     if let Some(private_key_hex) = req["private_key"].as_str() {
         let save_to_file = req["save_to_file"].as_bool().unwrap_or(false);
-        
-        println!("🎭 MATRIX UI ACTION: User {} wallet with private key", 
-                 if save_to_file { "creating/importing and saving" } else { "importing temporarily" });
-        
+
+        println!(
+            "🎭 MATRIX UI ACTION: User {} wallet with private key",
+            if save_to_file { "creating/importing and saving" } else { "importing temporarily" }
+        );
+
         // Validate private key format
         if private_key_hex.len() != 64 {
             println!("❌ MATRIX UI ERROR: Invalid private key length ({})", private_key_hex.len());
@@ -161,7 +149,7 @@ async fn wallet_participant_post(Json(req): Json<serde_json::Value>) -> Json<ser
                 "success": false
             }));
         }
-        
+
         // Decode private key
         let private_key_bytes = match hex::decode(private_key_hex) {
             Ok(bytes) => bytes,
@@ -173,7 +161,7 @@ async fn wallet_participant_post(Json(req): Json<serde_json::Value>) -> Json<ser
                 }));
             }
         };
-        
+
         if private_key_bytes.len() != 32 {
             println!("❌ MATRIX UI ERROR: Invalid private key length ({} bytes)", private_key_bytes.len());
             return Json(json!({
@@ -181,7 +169,7 @@ async fn wallet_participant_post(Json(req): Json<serde_json::Value>) -> Json<ser
                 "success": false
             }));
         }
-        
+
         // Create wallet from private key
         let wallet_result = if save_to_file {
             // Save to participant peer wallet file
@@ -191,24 +179,22 @@ async fn wallet_participant_post(Json(req): Json<serde_json::Value>) -> Json<ser
             // Use temporarily without saving
             get_wallet_for_command("web-participant", Some(private_key_hex))
         };
-        
+
         match wallet_result {
             Ok(wallet) => {
                 let public_key_hex = hex::encode(wallet.keypair.public_key().serialize());
-                let kaspa_addr = Address::new(
-                    Prefix::Testnet,
-                    Version::PubKey,
-                    &wallet.keypair.public_key().serialize()[1..]
+                let kaspa_addr = Address::new(Prefix::Testnet, Version::PubKey, &wallet.keypair.public_key().serialize()[1..]);
+
+                println!(
+                    "✅ MATRIX UI SUCCESS: Wallet {} for address: {}",
+                    if save_to_file { "created/imported and saved" } else { "created/imported temporarily" },
+                    kaspa_addr
                 );
-                
-                println!("✅ MATRIX UI SUCCESS: Wallet {} for address: {}", 
-                         if save_to_file { "created/imported and saved" } else { "created/imported temporarily" }, 
-                         kaspa_addr);
                 println!("🔑 Public Key: {}", public_key_hex);
                 if save_to_file {
                     println!("💾 Saved to: .kaspa-auth/participant-peer-wallet.key");
                 }
-                
+
                 Json(json!({
                     "public_key": public_key_hex,
                     "kaspa_address": kaspa_addr.to_string(),
@@ -234,12 +220,11 @@ async fn wallet_participant_post(Json(req): Json<serde_json::Value>) -> Json<ser
     }
 }
 
-
 async fn sign_challenge(Json(req): Json<serde_json::Value>) -> Json<serde_json::Value> {
     // Extract challenge and handle participant wallet signing
     let challenge = req["challenge"].as_str().unwrap_or("");
     let private_key_hint = req["private_key"].as_str().unwrap_or("");
-    
+
     if private_key_hint == "use_client_wallet" || private_key_hint == "use_participant_wallet" {
         // Use the web-participant wallet to sign
         match get_wallet_for_command("web-participant", None) {
@@ -249,18 +234,16 @@ async fn sign_challenge(Json(req): Json<serde_json::Value>) -> Json<serde_json::
                 let signature = kdapp::pki::sign_message(&wallet.keypair.secret_key(), &message);
                 let signature_hex = hex::encode(signature.0.serialize_der());
                 let public_key_hex = hex::encode(wallet.keypair.public_key().serialize());
-                
+
                 Json(json!({
                     "challenge": challenge,
                     "signature": signature_hex,
                     "public_key": public_key_hex
                 }))
             }
-            Err(e) => {
-                Json(json!({
-                    "error": format!("Failed to sign challenge: {}", e)
-                }))
-            }
+            Err(e) => Json(json!({
+                "error": format!("Failed to sign challenge: {}", e)
+            })),
         }
     } else {
         Json(json!({
@@ -271,7 +254,7 @@ async fn sign_challenge(Json(req): Json<serde_json::Value>) -> Json<serde_json::
 
 async fn wallet_debug() -> Json<serde_json::Value> {
     let mut debug_info = json!({});
-    
+
     // Check all wallet types
     let wallet_types = vec![
         ("web-participant", "participant-peer-wallet.key"),
@@ -280,17 +263,13 @@ async fn wallet_debug() -> Json<serde_json::Value> {
         ("organizer-peer", "organizer-peer-wallet.key"),
         ("http-peer", "participant-peer-wallet.key"),
     ];
-    
+
     for (command, expected_file) in wallet_types {
         match get_wallet_for_command(command, None) {
             Ok(wallet) => {
                 let public_key_hex = hex::encode(wallet.keypair.public_key().serialize());
-                let kaspa_addr = Address::new(
-                    Prefix::Testnet,
-                    Version::PubKey,
-                    &wallet.keypair.public_key().serialize()[1..]
-                );
-                
+                let kaspa_addr = Address::new(Prefix::Testnet, Version::PubKey, &wallet.keypair.public_key().serialize()[1..]);
+
                 debug_info[command] = json!({
                     "public_key": public_key_hex,
                     "kaspa_address": kaspa_addr.to_string(),
@@ -306,17 +285,14 @@ async fn wallet_debug() -> Json<serde_json::Value> {
             }
         }
     }
-    
+
     Json(debug_info)
 }
 
-async fn episode_authenticated(
-    State(state): State<PeerState>,
-    Json(payload): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
+async fn episode_authenticated(State(state): State<PeerState>, Json(payload): Json<serde_json::Value>) -> Json<serde_json::Value> {
     let episode_id = payload["episode_id"].as_u64().unwrap_or(0);
     let challenge = payload["challenge"].as_str().unwrap_or("");
-    
+
     // Get the real session token from blockchain episode
     let real_session_token = if let Ok(episodes) = state.blockchain_episodes.lock() {
         if let Some(episode) = episodes.get(&episode_id) {
@@ -327,7 +303,7 @@ async fn episode_authenticated(
     } else {
         None
     };
-    
+
     // Broadcast WebSocket message for authentication success
     let ws_message = WebSocketMessage {
         message_type: "authentication_successful".to_string(),
@@ -338,10 +314,10 @@ async fn episode_authenticated(
         comment: None,
         comments: None,
     };
-    
+
     // Send to all connected WebSocket clients
     let _ = state.websocket_tx.send(ws_message);
-    
+
     Json(json!({
         "status": "success",
         "episode_id": episode_id,
@@ -349,15 +325,12 @@ async fn episode_authenticated(
     }))
 }
 
-async fn session_revoked(
-    State(state): State<PeerState>,
-    Json(payload): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
+async fn session_revoked(State(state): State<PeerState>, Json(payload): Json<serde_json::Value>) -> Json<serde_json::Value> {
     let episode_id = payload["episode_id"].as_u64().unwrap_or(0);
     let session_token = payload["session_token"].as_str().unwrap_or("");
-    
+
     println!("🔔 Received session revocation notification for episode {}, token: {}", episode_id, session_token);
-    
+
     // Broadcast WebSocket message for session revocation success
     let ws_message = WebSocketMessage {
         message_type: "session_revoked".to_string(),
@@ -368,7 +341,7 @@ async fn session_revoked(
         comment: None,
         comments: None,
     };
-    
+
     // Send to all connected WebSocket clients
     match state.websocket_tx.send(ws_message) {
         Ok(_) => {
@@ -378,7 +351,7 @@ async fn session_revoked(
             println!("❌ Failed to send session revocation WebSocket message: {}", e);
         }
     }
-    
+
     Json(json!({
         "status": "success",
         "episode_id": episode_id,
@@ -390,12 +363,12 @@ async fn session_revoked(
 pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let wallet = get_wallet_for_command("participant-peer", provided_private_key)?;
     let keypair = wallet.keypair;
-    
+
     println!("🚀 Starting HTTP coordination peer using PARTICIPANT WALLET (P2P kdapp)");
     println!("🔑 HTTP peer will use participant-peer wallet for blockchain operations");
-    
+
     let (websocket_tx, _) = broadcast::channel::<WebSocketMessage>(100);
-    
+
     // Create the AuthHttpPeer with kdapp engine
     let auth_peer = Arc::new(AuthHttpPeer::new(keypair, websocket_tx.clone()).await?);
     let peer_state = PeerState {
@@ -409,11 +382,8 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
         pending_requests: auth_peer.peer_state.pending_requests.clone(),
         used_utxos: auth_peer.peer_state.used_utxos.clone(),
     };
-    
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(tower_http::cors::AllowMethods::any())
-        .allow_headers(Any);
+
+    let cors = CorsLayer::new().allow_origin(Any).allow_methods(tower_http::cors::AllowMethods::any()).allow_headers(Any);
 
     let app = Router::new()
         .route("/ws", get(websocket_handler))
@@ -439,7 +409,7 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
 
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    
+
     println!("🚀 HTTP Authentication Coordination Peer starting on port {}", port);
     println!("🔗 Starting kdapp blockchain engine...");
     println!();
@@ -447,7 +417,7 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
     println!("💻 Web dashboard available at: http://localhost:{}/", port);
     println!("🚀 Backend will respond to frontend wallet creation/import actions");
     println!();
-    
+
     // Start the blockchain listener in the background
     let auth_peer_clone = auth_peer.clone();
     tokio::spawn(async move {
@@ -455,10 +425,10 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
             eprintln!("❌ Blockchain listener error: {}", e);
         }
     });
-    
+
     // Start the HTTP coordination peer
     println!("🔗 kdapp engine started - HTTP coordination peer is now a real blockchain node!");
     serve(listener, app.into_make_service()).await?;
-    
+
     Ok(())
 }

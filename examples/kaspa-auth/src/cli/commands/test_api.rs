@@ -7,10 +7,10 @@ use std::error::Error;
 pub struct TestApiCommand {
     #[arg(short, long, default_value = "http://localhost:8080")]
     pub peer: String,
-    
+
     #[arg(short, long)]
     pub verbose: bool,
-    
+
     #[arg(long)]
     pub json: bool,
 }
@@ -28,18 +28,18 @@ impl TestApiCommand {
     pub async fn execute(self) -> Result<(), Box<dyn Error>> {
         let participant_peer = Client::new();
         let base_url = self.peer.trim_end_matches('/');
-        
+
         println!("🧪 Testing all API endpoints for: {}", base_url);
         println!("==================================================");
         println!();
-        
+
         let endpoints = self.get_api_endpoints();
         let mut results = Vec::new();
         let mut episode_id: Option<u64> = None;
-        
+
         for endpoint in endpoints {
             let result = self.test_endpoint(&participant_peer, base_url, &endpoint, episode_id).await;
-            
+
             // Extract episode_id from successful POST /auth/start for later tests
             if endpoint.path == "/auth/start" && result.is_ok() {
                 if let Ok(ref response) = result {
@@ -50,76 +50,60 @@ impl TestApiCommand {
                     }
                 }
             }
-            
+
             results.push((endpoint, result));
         }
-        
+
         // Summary
         println!("📊 SUMMARY");
         println!("==========");
-        
+
         let mut success_count = 0;
         let mut total_count = 0;
-        
+
         for (endpoint, result) in &results {
             total_count += 1;
             let status = match result {
                 Ok(_) => {
                     success_count += 1;
                     "✅ PASS"
-                },
-                Err(_) => "❌ FAIL"
+                }
+                Err(_) => "❌ FAIL",
             };
-            
-            println!("{} {} {} - {}", 
-                status, 
-                endpoint.method, 
-                endpoint.path, 
-                endpoint.description
-            );
-            
+
+            println!("{} {} {} - {}", status, endpoint.method, endpoint.path, endpoint.description);
+
             if let Err(e) = result {
                 if self.verbose {
                     println!("    Error: {}", e);
                 }
             }
         }
-        
+
         println!();
-        println!("📈 Results: {}/{} endpoints successful ({:.1}%)", 
-            success_count, 
-            total_count, 
+        println!(
+            "📈 Results: {}/{} endpoints successful ({:.1}%)",
+            success_count,
+            total_count,
             (success_count as f64 / total_count as f64) * 100.0
         );
-        
+
         if success_count == total_count {
             println!("🎉 All endpoints working perfectly!");
         } else {
             println!("⚠️  Some endpoints failed - check organizer peer logs");
         }
-        
+
         Ok(())
     }
-    
+
     fn get_api_endpoints(&self) -> Vec<ApiEndpoint> {
         vec![
+            ApiEndpoint { method: "GET", path: "/", description: "Organizer peer info", needs_data: false, test_data: None },
+            ApiEndpoint { method: "GET", path: "/health", description: "Health check", needs_data: false, test_data: None },
             ApiEndpoint {
                 method: "GET",
-                path: "/",
-                description: "Organizer peer info",
-                needs_data: false,
-                test_data: None,
-            },
-            ApiEndpoint {
-                method: "GET", 
-                path: "/health",
-                description: "Health check",
-                needs_data: false,
-                test_data: None,
-            },
-            ApiEndpoint {
-                method: "GET",
-                path: "/funding-info", 
+                path: "/funding-info",
                 description: "Get funding address and economic parameters",
                 needs_data: false,
                 test_data: None,
@@ -127,7 +111,7 @@ impl TestApiCommand {
             ApiEndpoint {
                 method: "POST",
                 path: "/auth/start",
-                description: "Create authentication episode", 
+                description: "Create authentication episode",
                 needs_data: true,
                 test_data: Some(serde_json::json!({
                     "public_key": "02DUMMY_TEST_PUBLIC_KEY_NOT_FOR_PRODUCTION_USE_ONLY_FOR_TESTING_PURPOSES"
@@ -144,7 +128,7 @@ impl TestApiCommand {
                 })),
             },
             ApiEndpoint {
-                method: "POST", 
+                method: "POST",
                 path: "/auth/request-challenge",
                 description: "Request challenge from blockchain",
                 needs_data: true,
@@ -155,7 +139,7 @@ impl TestApiCommand {
             },
             ApiEndpoint {
                 method: "POST",
-                path: "/auth/sign-challenge", 
+                path: "/auth/sign-challenge",
                 description: "Sign challenge (helper endpoint)",
                 needs_data: true,
                 test_data: Some(serde_json::json!({
@@ -166,7 +150,7 @@ impl TestApiCommand {
             ApiEndpoint {
                 method: "POST",
                 path: "/auth/verify",
-                description: "Submit authentication response", 
+                description: "Submit authentication response",
                 needs_data: true,
                 test_data: Some(serde_json::json!({
                     "episode_id": "DYNAMIC_EPISODE_ID",
@@ -182,7 +166,7 @@ impl TestApiCommand {
                 test_data: None,
             },
             ApiEndpoint {
-                method: "GET", 
+                method: "GET",
                 path: "/challenge/DYNAMIC_EPISODE_ID",
                 description: "Get challenge for episode (legacy)",
                 needs_data: false,
@@ -190,18 +174,18 @@ impl TestApiCommand {
             },
         ]
     }
-    
+
     async fn test_endpoint(
-        &self, 
-        participant_peer: &Client, 
-        base_url: &str, 
+        &self,
+        participant_peer: &Client,
+        base_url: &str,
         endpoint: &ApiEndpoint,
-        episode_id: Option<u64>
+        episode_id: Option<u64>,
     ) -> Result<String, Box<dyn Error>> {
         // Replace dynamic placeholders
         let mut path = endpoint.path.to_string();
         let mut test_data = endpoint.test_data.clone();
-        
+
         if let Some(id) = episode_id {
             path = path.replace("DYNAMIC_EPISODE_ID", &id.to_string());
             if let Some(ref mut data) = test_data {
@@ -215,28 +199,26 @@ impl TestApiCommand {
             // Skip endpoints that need episode_id but we don't have one yet
             return Err("Skipped - no episode_id available yet".into());
         }
-        
+
         let url = format!("{}{}", base_url, path);
-        
+
         println!("🔍 Testing: {} {} - {}", endpoint.method, path, endpoint.description);
-        
+
         let response = match endpoint.method {
-            "GET" => {
-                participant_peer.get(&url).send().await?
-            },
+            "GET" => participant_peer.get(&url).send().await?,
             "POST" => {
                 let mut request = participant_peer.post(&url).header("Content-Type", "application/json");
                 if let Some(data) = test_data {
                     request = request.json(&data);
                 }
                 request.send().await?
-            },
+            }
             _ => return Err("Unsupported HTTP method".into()),
         };
-        
+
         let status = response.status();
         let response_text = response.text().await?;
-        
+
         if self.verbose || !status.is_success() {
             println!("   Status: {}", status);
             if self.json {
@@ -246,30 +228,27 @@ impl TestApiCommand {
                     println!("   Response: {}", response_text);
                 }
             } else {
-                println!("   Response: {}", 
-                    if response_text.len() > 100 { 
-                        format!("{}...", &response_text[..100]) 
-                    } else { 
-                        response_text.clone() 
-                    }
+                println!(
+                    "   Response: {}",
+                    if response_text.len() > 100 { format!("{}...", &response_text[..100]) } else { response_text.clone() }
                 );
             }
         }
-        
+
         if status.is_success() {
             println!("   ✅ Success");
         } else {
             println!("   ❌ Failed");
         }
         println!();
-        
+
         if status.is_success() {
             Ok(response_text)
         } else {
             Err(format!("HTTP {} - {}", status, response_text).into())
         }
     }
-    
+
     fn extract_episode_id(&self, response: &str) -> Option<u64> {
         if let Ok(json) = serde_json::from_str::<Value>(response) {
             json.get("episode_id")?.as_u64()

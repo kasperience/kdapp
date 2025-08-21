@@ -1,10 +1,10 @@
 // src/daemon/mod.rs - kaspa-auth-daemon: Background authentication service
 
-pub mod service;
 pub mod protocol;
+pub mod service;
 
-pub use service::AuthDaemon;
 pub use protocol::{DaemonRequest, DaemonResponse};
+pub use service::AuthDaemon;
 
 /// Configuration for the kaspa-auth daemon
 #[derive(Debug, Clone)]
@@ -39,9 +39,8 @@ impl Default for DaemonConfig {
 impl DaemonConfig {
     /// Create config for user session (uses user runtime directory)
     pub fn for_user_session() -> Self {
-        let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
-            .unwrap_or_else(|_| format!("/tmp/kaspa-auth-{}", std::process::id()));
-        
+        let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| format!("/tmp/kaspa-auth-{}", std::process::id()));
+
         Self {
             data_dir: ".".to_string(),
             socket_path: format!("{}/kaspa-auth.sock", runtime_dir),

@@ -1,12 +1,12 @@
-pub mod test;
-pub mod organizer_peer;
-pub mod participant_peer;
 pub mod authenticate;
 pub mod authenticate_full_flow;
+pub mod daemon;
 pub mod demo;
 pub mod http_organizer_peer;
 pub mod list_endpoints;
-pub mod test_api_flow;
+pub mod organizer_peer;
+pub mod participant_peer;
+pub mod test;
 pub mod test_api;
+pub mod test_api_flow;
 pub mod wallet_status;
-pub mod daemon;

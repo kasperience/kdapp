@@ -20,12 +20,12 @@ use std::sync::{
 use std::time::Duration;
 use tokio::time::{sleep_until, Instant};
 
+use crate::episode::TxOutputInfo;
 use crate::generator::{PatternType, PrefixType};
 use crate::{
     engine::EngineMsg as Msg,
     generator::{check_pattern, Payload},
 };
-use crate::episode::TxOutputInfo;
 
 fn connect_options() -> ConnectOptions {
     ConnectOptions {

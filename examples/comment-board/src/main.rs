@@ -8,7 +8,7 @@ mod participant;
 mod utils;
 mod wallet;
 
-use cli::{Args, handle_command};
+use cli::{handle_command, Args};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

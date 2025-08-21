@@ -29,9 +29,6 @@ pub struct SimpleAuth {
     pub authorized_participants: Vec<PubKey>,
 }
 
-
-
-
 impl Episode for SimpleAuth {
     type Command = AuthCommand;
     type CommandRollback = AuthRollback;
@@ -73,110 +70,100 @@ impl Episode for SimpleAuth {
         match cmd {
             AuthCommand::RequestChallenge => {
                 info!("[SimpleAuth] RequestChallenge from: {:?}", participant);
-                
+
                 // Store previous state for rollback
                 let previous_challenge = self.challenge.clone();
                 let previous_timestamp = self.challenge_timestamp;
-                
+
                 // Generate new challenge with timestamp from metadata
                 let new_challenge = ChallengeGenerator::generate_with_provided_timestamp(metadata.accepting_time);
                 self.challenge = Some(new_challenge);
                 self.challenge_timestamp = metadata.accepting_time;
                 self.owner = Some(participant);
-                
+
                 // Increment rate limit
                 self.increment_rate_limit(&participant);
-                
-                Ok(AuthRollback::Challenge { 
-                    previous_challenge, 
-                    previous_timestamp 
-                })
+
+                Ok(AuthRollback::Challenge { previous_challenge, previous_timestamp })
             }
-            
+
             AuthCommand::SubmitResponse { signature, nonce } => {
                 info!("[SimpleAuth] SubmitResponse from: {:?}", participant);
-                
+
                 // Check if already authenticated
                 if self.is_authenticated {
                     return Err(EpisodeError::InvalidCommand(AuthError::AlreadyAuthenticated));
                 }
-                
+
                 // Check if challenge exists and matches
                 let Some(ref current_challenge) = self.challenge else {
                     return Err(EpisodeError::InvalidCommand(AuthError::ChallengeNotFound));
                 };
-                
+
                 if *nonce != *current_challenge {
                     info!("[SimpleAuth] Challenge mismatch - received: '{}', expected: '{}'", nonce, current_challenge);
                     return Err(EpisodeError::InvalidCommand(AuthError::InvalidChallenge));
                 }
-                
+
                 // Check if challenge has expired (1 hour timeout)
                 if !ChallengeGenerator::is_valid(current_challenge, 3600) {
                     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
                     info!("[SimpleAuth] Challenge expired: {} (current time: {})", current_challenge, now);
                     return Err(EpisodeError::InvalidCommand(AuthError::ChallengeExpired));
                 }
-                
+
                 // Verify signature
                 if !SignatureVerifier::verify(&participant, current_challenge, signature) {
                     return Err(EpisodeError::InvalidCommand(AuthError::SignatureVerificationFailed));
                 }
-                
+
                 // Store previous state for rollback
                 let previous_auth_status = self.is_authenticated;
                 let previous_session_token = self.session_token.clone();
-                
+
                 // Authenticate user
                 self.is_authenticated = true;
                 self.session_token = Some(self.generate_session_token());
-                
+
                 info!("[SimpleAuth] Authentication successful for: {:?}", participant);
-                
-                Ok(AuthRollback::Authentication {
-                    previous_auth_status,
-                    previous_session_token,
-                })
+
+                Ok(AuthRollback::Authentication { previous_auth_status, previous_session_token })
             }
-            
+
             AuthCommand::RevokeSession { session_token, signature } => {
                 info!("[SimpleAuth] RevokeSession from: {:?}", participant);
-                
+
                 // Check if session exists and matches
                 let Some(ref current_token) = self.session_token else {
                     return Err(EpisodeError::InvalidCommand(AuthError::SessionNotFound));
                 };
-                
+
                 if *session_token != *current_token {
                     return Err(EpisodeError::InvalidCommand(AuthError::InvalidSessionToken));
                 }
-                
+
                 // Check if already not authenticated (session already revoked)
                 if !self.is_authenticated {
                     return Err(EpisodeError::InvalidCommand(AuthError::SessionAlreadyRevoked));
                 }
-                
+
                 // Verify signature - participant must sign their own session token to prove ownership
                 if !SignatureVerifier::verify(&participant, session_token, signature) {
                     return Err(EpisodeError::InvalidCommand(AuthError::SignatureVerificationFailed));
                 }
-                
+
                 // Store previous state for rollback
                 let previous_token = self.session_token.clone().unwrap();
                 let was_authenticated = self.is_authenticated;
-                
+
                 // Revoke session
                 self.is_authenticated = false;
                 self.session_token = None;
-                
+
                 info!("[SimpleAuth] Session revoked successfully for: {:?}", participant);
-                
-                Ok(AuthRollback::SessionRevoked {
-                    previous_token,
-                    was_authenticated,
-                })
+
+                Ok(AuthRollback::SessionRevoked { previous_token, was_authenticated })
             }
-            
         }
     }
 
@@ -203,7 +190,6 @@ impl Episode for SimpleAuth {
 }
 
 impl SimpleAuth {
-
     /// Check if a participant is rate limited
     fn is_rate_limited(&self, pubkey: &PubKey) -> bool {
         let pubkey_str = format!("{}", pubkey);
@@ -218,18 +204,13 @@ impl SimpleAuth {
 
     /// Generate a new session token
     fn generate_session_token(&self) -> String {
-        use rand_chacha::ChaCha8Rng;
-        use rand::SeedableRng;
         use rand::Rng;
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
         let mut rng = ChaCha8Rng::seed_from_u64(self.challenge_timestamp);
         format!("sess_{}", rng.gen::<u64>())
     }
-
 }
-
-
-
-
 
 #[cfg(test)]
 mod tests {
@@ -239,57 +220,41 @@ mod tests {
     #[test]
     fn test_auth_challenge_flow() {
         let ((_s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
-        let metadata = PayloadMetadata { 
-            accepting_hash: 0u64.into(), 
-            accepting_daa: 0, 
-            accepting_time: 0, 
-            tx_id: 1u64.into() 
-        };
-        
+        let metadata = PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 0, tx_id: 1u64.into() };
+
         let mut auth = SimpleAuth::initialize(vec![p1], &metadata);
-        
+
         // Request challenge
-        let rollback = auth.execute(
-            &AuthCommand::RequestChallenge, 
-            Some(p1), 
-            &metadata
-        ).unwrap();
-        
+        let rollback = auth.execute(&AuthCommand::RequestChallenge, Some(p1), &metadata).unwrap();
+
         assert!(auth.challenge.is_some());
         assert!(!auth.is_authenticated);
-        
+
         // Test rollback
         auth.rollback(rollback);
         assert!(auth.challenge.is_none());
     }
 
-    
-
     #[test]
     fn test_rate_limiting() {
         let ((_s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
-        let metadata = PayloadMetadata { 
-            accepting_hash: 0u64.into(), 
-            accepting_daa: 0, 
-            accepting_time: 0, 
-            tx_id: 1u64.into() 
-        };
-        
+        let metadata = PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 0, tx_id: 1u64.into() };
+
         let mut auth = SimpleAuth::initialize(vec![p1], &metadata);
-        
+
         // Should not be rate limited initially
         assert!(!auth.is_rate_limited(&p1));
-        
+
         // Make 4 requests - should still work
         for _ in 0..4 {
             auth.execute(&AuthCommand::RequestChallenge, Some(p1), &metadata).unwrap();
         }
         assert!(!auth.is_rate_limited(&p1));
-        
+
         // 5th request should trigger rate limit
         auth.execute(&AuthCommand::RequestChallenge, Some(p1), &metadata).unwrap();
         assert!(auth.is_rate_limited(&p1));
-        
+
         // 6th request should be rejected
         let result = auth.execute(&AuthCommand::RequestChallenge, Some(p1), &metadata);
         assert!(result.is_err());

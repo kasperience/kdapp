@@ -1,13 +1,13 @@
-use anyhow::{Result, anyhow};
-use keyring::Entry;
-use secp256k1::{Secp256k1, SecretKey, PublicKey};
-use kaspa_addresses::Address;
+use anyhow::{anyhow, Result};
 use hex;
+use kaspa_addresses::Address;
 use kaspa_wrpc_client::prelude::RpcApi;
-use kaspa_wrpc_client::{KaspaRpcClient, WrpcEncoding, Resolver};
 use kaspa_wrpc_client::prelude::{NetworkId, NetworkType};
-use tokio::fs;
+use kaspa_wrpc_client::{KaspaRpcClient, Resolver, WrpcEncoding};
+use keyring::Entry;
 use rand::thread_rng;
+use secp256k1::{PublicKey, Secp256k1, SecretKey};
+use tokio::fs;
 
 const DEV_KEY_FILE: &str = ".kdapp-wallet-dev-key";
 
@@ -26,10 +26,9 @@ pub async fn create_wallet(dev_mode: bool) -> Result<()> {
         let address = Address::new(
             kaspa_addresses::Prefix::Testnet, // Assuming Testnet for now, can be configurable
             kaspa_addresses::Version::PubKey,
-            &public_key.serialize()[1..] // Remove compression byte for address
+            &public_key.serialize()[1..], // Remove compression byte for address
         );
         println!("\nWALLET NEEDS FUNDING! Visit https://faucet.kaspanet.io/ and fund: {}", address.to_string());
-
     } else {
         let service = "kdapp-wallet";
         let username = "default_wallet";
@@ -62,14 +61,13 @@ pub async fn get_address(dev_mode: bool) -> Result<()> {
 
     let private_key_bytes = hex::decode(&private_key_hex)?;
     let secp = Secp256k1::new();
-    let secret_key = SecretKey::from_slice(&private_key_bytes)
-        .map_err(|e| anyhow!("Failed to deserialize private key: {}", e))?;
+    let secret_key = SecretKey::from_slice(&private_key_bytes).map_err(|e| anyhow!("Failed to deserialize private key: {}", e))?;
     let public_key = PublicKey::from_secret_key(&secp, &secret_key);
 
     let address = Address::new(
         kaspa_addresses::Prefix::Testnet, // Assuming Testnet for now, can be configurable
         kaspa_addresses::Version::PubKey,
-        &public_key.serialize()[1..] // Remove compression byte for address
+        &public_key.serialize()[1..], // Remove compression byte for address
     );
 
     println!("Wallet Address: {}", address.to_string());
@@ -84,24 +82,19 @@ pub async fn get_balance(rpc_url: Option<String>, dev_mode: bool) -> Result<()> 
 
     let private_key_bytes = hex::decode(&private_key_hex)?;
     let secp = Secp256k1::new();
-    let secret_key = SecretKey::from_slice(&private_key_bytes)
-        .map_err(|e| anyhow!("Failed to deserialize private key: {}", e))?;
+    let secret_key = SecretKey::from_slice(&private_key_bytes).map_err(|e| anyhow!("Failed to deserialize private key: {}", e))?;
     let public_key = PublicKey::from_secret_key(&secp, &secret_key);
 
     let address = Address::new(
         kaspa_addresses::Prefix::Testnet, // Assuming Testnet for now, can be configurable
         kaspa_addresses::Version::PubKey,
-        &public_key.serialize()[1..] // Remove compression byte for address
+        &public_key.serialize()[1..], // Remove compression byte for address
     );
 
     // Connect to a Kaspa node
     let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10); // Explicitly use Testnet with suffix 10
 
-    let (resolver, url) = if let Some(url_str) = rpc_url {
-        (None, Some(url_str))
-    } else {
-        (Some(Resolver::default()), None)
-    };
+    let (resolver, url) = if let Some(url_str) = rpc_url { (None, Some(url_str)) } else { (Some(Resolver::default()), None) };
 
     let rpc_client = KaspaRpcClient::new(
         WrpcEncoding::Borsh,

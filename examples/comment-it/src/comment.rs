@@ -19,24 +19,13 @@ pub enum CommentCommand {
         signature: String,
     },
     /// Get all comments (for authenticated users)
-    GetComments {
-        session_token: Option<String>,
-    },
+    GetComments { session_token: Option<String> },
     /// Get comments by specific author
-    GetCommentsByAuthor {
-        author: String,
-        session_token: Option<String>,
-    },
+    GetCommentsByAuthor { author: String, session_token: Option<String> },
     /// Register a valid authentication session
-    RegisterSession {
-        public_key: String,
-        session_token: String,
-        auth_episode_id: u64,
-    },
+    RegisterSession { public_key: String, session_token: String, auth_episode_id: u64 },
     /// Revoke a session (when user logs out)
-    RevokeSession {
-        session_token: String,
-    },
+    RevokeSession { session_token: String },
 }
 
 /// Rollback data for comment commands
@@ -134,23 +123,23 @@ impl Episode for CommentEpisode {
         match cmd {
             CommentCommand::SubmitComment { text, author, session_token, signature: _ } => {
                 info!("[CommentEpisode] SubmitComment from: {:?}", participant);
-                
+
                 // Basic validation
                 if text.trim().is_empty() {
                     return Err(EpisodeError::InvalidCommand(CommentError::CommentEmpty));
                 }
-                
+
                 if text.len() > 2000 {
                     return Err(EpisodeError::InvalidCommand(CommentError::CommentTooLong));
                 }
-                
+
                 // CRITICAL: Verify user has valid authentication session
                 let participant_key = format!("{}", participant);
                 if !self.valid_sessions.contains_key(&participant_key) {
                     info!("[CommentEpisode] Comment rejected: No valid session for {}", participant_key);
                     return Err(EpisodeError::InvalidCommand(CommentError::InvalidSessionToken));
                 }
-                
+
                 // Verify session token matches
                 if let Some(stored_token) = self.valid_sessions.get(&participant_key) {
                     if stored_token != session_token {
@@ -161,7 +150,7 @@ impl Episode for CommentEpisode {
                     info!("[CommentEpisode] Comment rejected: No stored session token for {}", participant_key);
                     return Err(EpisodeError::InvalidCommand(CommentError::InvalidSessionToken));
                 }
-                
+
                 // Authentication passed - create new comment
                 let comment = Comment {
                     id: self.next_id,
@@ -170,52 +159,52 @@ impl Episode for CommentEpisode {
                     timestamp: metadata.accepting_time,
                     session_token: session_token.clone(),
                 };
-                
+
                 // Store comment
                 let comment_id = self.next_id;
                 self.comments.push(comment);
                 self.next_id += 1;
-                
+
                 info!("[CommentEpisode] ✅ Comment {} added successfully (authenticated user)", comment_id);
-                
+
                 Ok(CommentRollback::CommentSubmitted { comment_id })
             }
-            
+
             CommentCommand::GetComments { session_token: _ } => {
                 info!("[CommentEpisode] GetComments from: {:?}", participant);
-                
+
                 // For now, allow only authenticated users to read comments
                 // TODO: When profile episode is implemented, support anonymous users
-                
+
                 Ok(CommentRollback::CommentsQueried {})
             }
-            
+
             CommentCommand::GetCommentsByAuthor { author, session_token: _ } => {
                 info!("[CommentEpisode] GetCommentsByAuthor {} from: {:?}", author, participant);
-                
+
                 // For now, allow only authenticated users to read comments
                 // TODO: When profile episode is implemented, support anonymous users
-                
+
                 Ok(CommentRollback::CommentsQueried {})
             }
-            
+
             CommentCommand::RegisterSession { public_key, session_token, auth_episode_id } => {
                 info!("[CommentEpisode] RegisterSession for {} from auth episode {}", public_key, auth_episode_id);
-                
+
                 // Store the valid session
                 self.valid_sessions.insert(public_key.clone(), session_token.clone());
                 if self.auth_episode_id.is_none() {
                     self.auth_episode_id = Some(*auth_episode_id);
                 }
-                
+
                 info!("[CommentEpisode] ✅ Session registered for {}", public_key);
-                
+
                 Ok(CommentRollback::SessionRegistered { public_key: public_key.clone() })
             }
-            
+
             CommentCommand::RevokeSession { session_token } => {
                 info!("[CommentEpisode] RevokeSession for token: {}", session_token);
-                
+
                 // Find and remove the session
                 let mut revoked_key = None;
                 for (key, token) in &self.valid_sessions {
@@ -224,15 +213,12 @@ impl Episode for CommentEpisode {
                         break;
                     }
                 }
-                
+
                 if let Some(key) = revoked_key {
                     self.valid_sessions.remove(&key);
                     info!("[CommentEpisode] ✅ Session revoked for {}", key);
-                    
-                    Ok(CommentRollback::SessionRevoked { 
-                        public_key: key, 
-                        session_token: session_token.clone() 
-                    })
+
+                    Ok(CommentRollback::SessionRevoked { public_key: key, session_token: session_token.clone() })
                 } else {
                     info!("[CommentEpisode] Session revocation failed: token not found");
                     Err(EpisodeError::InvalidCommand(CommentError::InvalidSessionToken))
@@ -276,34 +262,34 @@ impl CommentEpisode {
     pub fn get_comments(&self) -> &Vec<Comment> {
         &self.comments
     }
-    
+
     /// Get comments by a specific author
     pub fn get_comments_by_author(&self, author: &str) -> Vec<&Comment> {
         self.comments.iter().filter(|c| c.author == author).collect()
     }
-    
+
     /// Get the latest N comments
     pub fn get_latest_comments(&self, limit: usize) -> Vec<&Comment> {
         let mut comments: Vec<&Comment> = self.comments.iter().collect();
         comments.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         comments.into_iter().take(limit).collect()
     }
-    
+
     /// Check if a user has a valid session
     pub fn has_valid_session(&self, public_key: &str) -> bool {
         self.valid_sessions.contains_key(public_key)
     }
-    
+
     /// Get the session token for a user
     pub fn get_session_token(&self, public_key: &str) -> Option<&String> {
         self.valid_sessions.get(public_key)
     }
-    
+
     /// Get count of authenticated users
     pub fn authenticated_user_count(&self) -> usize {
         self.valid_sessions.len()
     }
-    
+
     /// Check if user can comment (has valid session)
     pub fn can_comment(&self, public_key: &str, session_token: &str) -> bool {
         if let Some(stored_token) = self.valid_sessions.get(public_key) {
@@ -322,15 +308,11 @@ mod tests {
     #[test]
     fn test_comment_episode_initialization() {
         let ((_s1, p1), (_s2, p2)) = (generate_keypair(), generate_keypair());
-        let metadata = PayloadMetadata { 
-            accepting_hash: 0u64.into(), 
-            accepting_daa: 0, 
-            accepting_time: 1234567890, 
-            tx_id: 1u64.into() 
-        };
-        
+        let metadata =
+            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 1234567890, tx_id: 1u64.into() };
+
         let episode = CommentEpisode::initialize(vec![p1, p2], &metadata);
-        
+
         assert_eq!(episode.comments.len(), 0);
         assert_eq!(episode.next_id, 1);
         assert_eq!(episode.authorized_participants.len(), 2);
@@ -340,15 +322,11 @@ mod tests {
     #[test]
     fn test_submit_comment() {
         let ((_s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
-        let metadata = PayloadMetadata { 
-            accepting_hash: 0u64.into(), 
-            accepting_daa: 0, 
-            accepting_time: 1234567890, 
-            tx_id: 1u64.into() 
-        };
-        
+        let metadata =
+            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 1234567890, tx_id: 1u64.into() };
+
         let mut episode = CommentEpisode::initialize(vec![p1], &metadata);
-        
+
         // Submit a comment
         let cmd = CommentCommand::SubmitComment {
             text: "Hello blockchain!".to_string(),
@@ -356,14 +334,14 @@ mod tests {
             session_token: "sess_123".to_string(),
             signature: "test_sig".to_string(),
         };
-        
+
         let rollback = episode.execute(&cmd, Some(p1), &metadata).unwrap();
-        
+
         assert_eq!(episode.comments.len(), 1);
         assert_eq!(episode.comments[0].text, "Hello blockchain!");
         assert_eq!(episode.comments[0].id, 1);
         assert_eq!(episode.next_id, 2);
-        
+
         // Test rollback
         episode.rollback(rollback);
         assert_eq!(episode.comments.len(), 0);
@@ -373,15 +351,11 @@ mod tests {
     #[test]
     fn test_empty_comment_rejected() {
         let ((_s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
-        let metadata = PayloadMetadata { 
-            accepting_hash: 0u64.into(), 
-            accepting_daa: 0, 
-            accepting_time: 1234567890, 
-            tx_id: 1u64.into() 
-        };
-        
+        let metadata =
+            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 1234567890, tx_id: 1u64.into() };
+
         let mut episode = CommentEpisode::initialize(vec![p1], &metadata);
-        
+
         // Try to submit empty comment
         let cmd = CommentCommand::SubmitComment {
             text: "   ".to_string(), // Just whitespace
@@ -389,7 +363,7 @@ mod tests {
             session_token: "sess_123".to_string(),
             signature: "test_sig".to_string(),
         };
-        
+
         let result = episode.execute(&cmd, Some(p1), &metadata);
         assert!(result.is_err());
     }
@@ -397,15 +371,11 @@ mod tests {
     #[test]
     fn test_comment_too_long_rejected() {
         let ((_s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
-        let metadata = PayloadMetadata { 
-            accepting_hash: 0u64.into(), 
-            accepting_daa: 0, 
-            accepting_time: 1234567890, 
-            tx_id: 1u64.into() 
-        };
-        
+        let metadata =
+            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 1234567890, tx_id: 1u64.into() };
+
         let mut episode = CommentEpisode::initialize(vec![p1], &metadata);
-        
+
         // Try to submit very long comment
         let long_text = "a".repeat(2001); // Over 2000 character limit
         let cmd = CommentCommand::SubmitComment {
@@ -414,7 +384,7 @@ mod tests {
             session_token: "sess_123".to_string(),
             signature: "test_sig".to_string(),
         };
-        
+
         let result = episode.execute(&cmd, Some(p1), &metadata);
         assert!(result.is_err());
     }

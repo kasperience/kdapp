@@ -1,6 +1,6 @@
-use std::error::Error;
 use clap::Parser;
 use kaspa_auth::cli::Cli;
+use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -8,7 +8,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
-    
+
     // Show keychain usage info if enabled
     if cli.keychain {
         println!("🔐 Using OS keychain for secure wallet storage");
@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     } else {
         println!("📁 Using file-based wallet storage (.kaspa-auth/ directory)");
     }
-    
+
     cli.command.execute(cli.keychain, cli.dev_mode).await?;
     Ok(())
 }

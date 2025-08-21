@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{Deserialize, Serialize};
 
 /// Commands for the Kaspa authentication episode
 #[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -7,15 +7,9 @@ pub enum AuthCommand {
     /// Request a challenge from the organizer peer
     RequestChallenge,
     /// Submit response with signature and nonce
-    SubmitResponse {
-        signature: String,
-        nonce: String,
-    },
+    SubmitResponse { signature: String, nonce: String },
     /// Revoke an existing session
-    RevokeSession {
-        session_token: String,
-        signature: String,
-    },
+    RevokeSession { session_token: String, signature: String },
 }
 
 impl AuthCommand {
@@ -27,7 +21,7 @@ impl AuthCommand {
             AuthCommand::RevokeSession { .. } => "RevokeSession",
         }
     }
-    
+
     /// Check if command requires authentication
     pub fn requires_auth(&self) -> bool {
         match self {
@@ -51,25 +45,19 @@ mod tests {
 
     #[test]
     fn test_submit_response_command() {
-        let cmd = AuthCommand::SubmitResponse {
-            signature: "test_signature".to_string(),
-            nonce: "test_nonce".to_string(),
-        };
+        let cmd = AuthCommand::SubmitResponse { signature: "test_signature".to_string(), nonce: "test_nonce".to_string() };
         assert_eq!(cmd.command_type(), "SubmitResponse");
         assert!(cmd.requires_auth());
     }
 
     #[test]
     fn test_serialization() {
-        let cmd = AuthCommand::SubmitResponse {
-            signature: "sig123".to_string(),
-            nonce: "nonce456".to_string(),
-        };
-        
+        let cmd = AuthCommand::SubmitResponse { signature: "sig123".to_string(), nonce: "nonce456".to_string() };
+
         // Test that we can serialize and deserialize
         let serialized = serde_json::to_string(&cmd).unwrap();
         let deserialized: AuthCommand = serde_json::from_str(&serialized).unwrap();
-        
+
         match deserialized {
             AuthCommand::SubmitResponse { signature, nonce } => {
                 assert_eq!(signature, "sig123");

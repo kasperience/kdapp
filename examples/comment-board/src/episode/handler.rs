@@ -1,12 +1,12 @@
-use tokio::sync::mpsc::UnboundedSender;
-use kdapp::{
-    episode::{EpisodeEventHandler, EpisodeId},
-    pki::PubKey,
-};
 use crate::{
     comments::CommentBoard,
     episode::board_with_contract::{ContractCommentBoard, ContractState},
 };
+use kdapp::{
+    episode::{EpisodeEventHandler, EpisodeId},
+    pki::PubKey,
+};
+use tokio::sync::mpsc::UnboundedSender;
 
 pub struct CommentHandler {
     pub sender: UnboundedSender<(EpisodeId, ContractState)>,

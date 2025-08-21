@@ -1,23 +1,19 @@
 // src/cli/organizer_commands.rs - Organizer peer commands (renamed from server_commands.rs for P2P philosophy)
-use std::error::Error;
-use secp256k1::Keypair;
-use clap::ArgMatches;
-use crate::wallet::get_wallet_for_command;
-use crate::utils::crypto::{parse_private_key, load_private_key_from_file, generate_random_keypair};
 use crate::api::http::organizer_peer::run_http_peer;
 use crate::auth::authentication::run_http_coordinated_authentication;
+use crate::utils::crypto::{generate_random_keypair, load_private_key_from_file, parse_private_key};
+use crate::wallet::get_wallet_for_command;
+use clap::ArgMatches;
+use secp256k1::Keypair;
+use std::error::Error;
 
 /// Handle http-peer command
 pub async fn handle_http_peer(sub_matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let port: u16 = sub_matches
-        .get_one::<String>("port")
-        .unwrap()
-        .parse()
-        .unwrap_or(8080);
-    
+    let port: u16 = sub_matches.get_one::<String>("port").unwrap().parse().unwrap_or(8080);
+
     let provided_private_key = sub_matches.get_one::<String>("key").map(|s| s.as_str());
     run_http_peer(provided_private_key, port).await?;
-    
+
     Ok(())
 }
 
@@ -26,10 +22,10 @@ pub async fn handle_organizer_peer(sub_matches: &ArgMatches) -> Result<(), Box<d
     let name = sub_matches.get_one::<String>("name").unwrap().clone();
     let rpc_url = sub_matches.get_one::<String>("rpc-url").cloned();
     let provided_private_key = sub_matches.get_one::<String>("key").map(|s| s.as_str());
-    
+
     let wallet = get_wallet_for_command("organizer-peer", provided_private_key)?;
     run_kaspa_organizer_peer(wallet.keypair, name, rpc_url).await?;
-    
+
     Ok(())
 }
 
@@ -37,7 +33,7 @@ pub async fn handle_organizer_peer(sub_matches: &ArgMatches) -> Result<(), Box<d
 pub async fn handle_participant_peer(sub_matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let should_auth = sub_matches.get_flag("auth");
     let rpc_url = sub_matches.get_one::<String>("rpc-url").cloned();
-    
+
     // Get Kaspa keypair (for funding transactions)
     let kaspa_keypair = if let Some(kaspa_keyfile_path) = sub_matches.get_one::<String>("kaspa-keyfile") {
         load_private_key_from_file(kaspa_keyfile_path)?
@@ -49,7 +45,7 @@ pub async fn handle_participant_peer(sub_matches: &ArgMatches) -> Result<(), Box
         let kaspa_addr = kaspa_addresses::Address::new(
             kaspa_addresses::Prefix::Testnet,
             kaspa_addresses::Version::PubKey,
-            &keypair.x_only_public_key().0.serialize()
+            &keypair.x_only_public_key().0.serialize(),
         );
         println!("🔑 No --kaspa-private-key or --kaspa-keyfile provided. Generated new participant peer wallet:");
         println!("📍 Kaspa Address: {}", kaspa_addr);
@@ -72,7 +68,10 @@ pub async fn handle_participant_peer(sub_matches: &ArgMatches) -> Result<(), Box
         println!("🚀 After funding, run blockchain authentication:");
         println!("cargo run -p kaspa-auth -- participant-peer --auth --kaspa-keyfile kaspa_private.key");
         println!("or");
-        println!("cargo run -p kaspa-auth -- participant-peer --auth --kaspa-private-key {}", hex::encode(keypair.secret_key().secret_bytes()));
+        println!(
+            "cargo run -p kaspa-auth -- participant-peer --auth --kaspa-private-key {}",
+            hex::encode(keypair.secret_key().secret_bytes())
+        );
         println!();
         println!("🎯 This will create REAL blockchain transactions on Kaspa testnet-10!");
         println!("📊 You can verify transactions at: https://explorer.kaspa.org/");
@@ -80,13 +79,13 @@ pub async fn handle_participant_peer(sub_matches: &ArgMatches) -> Result<(), Box
     } else {
         generate_random_keypair()
     };
-    
+
     // Get auth keypair (for episode authentication)
     let provided_private_key = sub_matches.get_one::<String>("key").map(|s| s.as_str());
     let wallet = get_wallet_for_command("participant-peer", provided_private_key)?;
-    
+
     run_kaspa_participant_peer(kaspa_keypair, wallet.keypair, should_auth, rpc_url).await?;
-    
+
     Ok(())
 }
 
@@ -94,12 +93,12 @@ pub async fn handle_participant_peer(sub_matches: &ArgMatches) -> Result<(), Box
 pub async fn handle_unified_peer(sub_matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let host = sub_matches.get_one::<String>("host").unwrap().clone();
     let port: u16 = sub_matches.get_one::<String>("port").unwrap().parse()?;
-    
+
     println!("🚀 Starting unified comment-it organizer peer...");
-    
+
     let organizer = crate::organizer::CommentOrganizer::new(host, port).await?;
     organizer.run().await?;
-    
+
     Ok(())
 }
 
@@ -112,21 +111,26 @@ async fn run_kaspa_organizer_peer(_signer: Keypair, name: String, rpc_url: Optio
     } else {
         println!("📡 Connecting to testnet-10 (public node)...");
     }
-    
+
     // TODO: Implement running Kaspa organizer peer without HTTP server
     // For now, this function does nothing.
-    
+
     Ok(())
 }
 
-async fn run_kaspa_participant_peer(kaspa_signer: Keypair, auth_signer: Keypair, should_auth: bool, rpc_url: Option<String>) -> Result<(), Box<dyn Error>> {
+async fn run_kaspa_participant_peer(
+    kaspa_signer: Keypair,
+    auth_signer: Keypair,
+    should_auth: bool,
+    rpc_url: Option<String>,
+) -> Result<(), Box<dyn Error>> {
     println!("🔑 Starting Kaspa Auth Participant Peer");
     if let Some(url) = &rpc_url {
         println!("📡 Connecting to node: {}", url);
     } else {
         println!("📡 Connecting to testnet-10 (public node)...");
     }
-    
+
     if should_auth {
         println!("🚀 Initiating blockchain authentication flow...");
         println!("🎯 This will create REAL transactions on Kaspa testnet-10");
@@ -140,6 +144,6 @@ async fn run_kaspa_participant_peer(kaspa_signer: Keypair, auth_signer: Keypair,
         // TODO: Implement running Kaspa participant peer without HTTP server
         // For now, this function does nothing.
     }
-    
+
     Ok(())
 }

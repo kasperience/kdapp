@@ -1,13 +1,13 @@
 use anyhow::Result;
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::signal;
 use serde_json::{from_str, to_string};
 use std::sync::Arc;
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::signal;
 
 use crate::jsonrpc::{Request, Response};
+use crate::node_connector::{connect_to_node, NodeConfig};
 use crate::state::ServerState;
 use crate::wallet::AgentWallet;
-use crate::node_connector::{connect_to_node, NodeConfig};
 
 pub async fn run() -> Result<()> {
     // Initialize logging (env_logger still used by deps if set)

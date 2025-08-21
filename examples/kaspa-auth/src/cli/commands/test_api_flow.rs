@@ -1,8 +1,8 @@
 use clap::Args;
-use reqwest::Client;
-use serde_json::Value;
-use secp256k1::{Keypair, Secp256k1, SecretKey};
 use kdapp::pki::{sign_message, to_message};
+use reqwest::Client;
+use secp256k1::{Keypair, Secp256k1, SecretKey};
+use serde_json::Value;
 
 #[derive(Args)]
 pub struct TestApiFlowCommand {
@@ -14,7 +14,7 @@ impl TestApiFlowCommand {
     pub async fn execute(self) -> Result<(), Box<dyn std::error::Error>> {
         println!("🚀 Starting API Flow Test against coordination peer: {}", self.peer);
         let participant_peer = Client::new();
-        
+
         let secp = Secp256k1::new();
         let secret_key = SecretKey::new(&mut rand::thread_rng());
         let keypair = Keypair::from_secret_key(&secp, &secret_key);
@@ -23,8 +23,10 @@ impl TestApiFlowCommand {
         println!("🔑 Generated temporary participant peer keypair. Public key: {}", public_key_hex);
 
         // Step 1: Start Auth
-        println!("
-[1/5] Calling POST /auth/start...");
+        println!(
+            "
+[1/5] Calling POST /auth/start..."
+        );
         let start_res = participant_peer
             .post(format!("{}/auth/start", self.peer))
             .json(&serde_json::json!({ "public_key": public_key_hex }))
@@ -39,8 +41,10 @@ impl TestApiFlowCommand {
         println!("✅ Success! Episode ID: {}", episode_id);
 
         // Step 2: Request Challenge
-        println!("
-[2/5] Calling POST /auth/request-challenge...");
+        println!(
+            "
+[2/5] Calling POST /auth/request-challenge..."
+        );
         let req_challenge_res = participant_peer
             .post(format!("{}/auth/request-challenge", self.peer))
             .json(&serde_json::json!({ "episode_id": episode_id, "public_key": public_key_hex }))
@@ -52,8 +56,11 @@ impl TestApiFlowCommand {
         println!("✅ Success! Challenge request sent.");
 
         // Step 3: Poll for Challenge
-        println!("
-[3/5] Polling GET /auth/status/{} for challenge...", episode_id);
+        println!(
+            "
+[3/5] Polling GET /auth/status/{} for challenge...",
+            episode_id
+        );
         let mut challenge = String::new();
         for _ in 0..10 {
             let status_res = participant_peer.get(format!("{}/auth/status/{}", self.peer, episode_id)).send().await?;
@@ -70,16 +77,20 @@ impl TestApiFlowCommand {
         }
 
         // Step 4: Sign Challenge
-        println!("
-[4/5] Signing challenge locally...");
+        println!(
+            "
+[4/5] Signing challenge locally..."
+        );
         let msg = to_message(&challenge);
         let signature = sign_message(&keypair.secret_key(), &msg);
         let signature_hex = hex::encode(signature.0.serialize_der());
         println!("✅ Challenge signed.");
 
         // Step 5: Verify Auth
-        println!("
-[5/5] Calling POST /auth/verify...");
+        println!(
+            "
+[5/5] Calling POST /auth/verify..."
+        );
         let verify_res = participant_peer
             .post(format!("{}/auth/verify", self.peer))
             .json(&serde_json::json!({
@@ -95,14 +106,18 @@ impl TestApiFlowCommand {
         let verify_data: Value = verify_res.json().await?;
         println!("✅ Verification request successful: {}", verify_data);
 
-        println!("
-🏁 Verification complete! Checking final status...");
+        println!(
+            "
+🏁 Verification complete! Checking final status..."
+        );
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         let final_status_res = participant_peer.get(format!("{}/auth/status/{}", self.peer, episode_id)).send().await?;
         let final_status_data: Value = final_status_res.json().await?;
 
-        println!("
---- FINAL RESULT ---");
+        println!(
+            "
+--- FINAL RESULT ---"
+        );
         println!("{}", serde_json::to_string_pretty(&final_status_data)?);
         println!("--------------------");
 

@@ -6,14 +6,12 @@ use kaspa_consensus_core::{
 use kaspa_wrpc_client::prelude::*;
 use log::*;
 use rand::Rng;
-use secp256k1::{Keypair, SecretKey, Message};
+use secp256k1::{Keypair, Message, SecretKey};
 use sha2::{Digest, Sha256};
-use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc::channel,
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc::channel,
+    Arc,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -29,11 +27,11 @@ use crate::{
     cli::Args,
     comments::CommentCommand,
     episode::{
-        handler::CommentHandler,
         board_with_contract::{ContractCommentBoard, ContractState},
         commands::ContractCommand,
+        handler::CommentHandler,
     },
-    utils::{PATTERN, PREFIX, FEE},
+    utils::{FEE, PATTERN, PREFIX},
     wallet::UtxoLockManager,
 };
 
@@ -67,7 +65,7 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
     // Extract participant identity from Kaspa key (public key is your username!)
     let participant_pk = PubKey(kaspa_signer.public_key());
     let participant_sk = kaspa_signer.secret_key();
-    
+
     info!("Your identity (public key): {}", participant_pk);
     info!("Your Kaspa address: {}", kaspa_addr);
 
@@ -105,16 +103,17 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
     // Run the participant task
     let participant_task = tokio::spawn(async move {
         run_comment_board(
-            participant_kaspad, 
-            kaspa_signer, 
-            kaspa_addr, 
-            response_receiver, 
-            exit_signal, 
-            participant_sk, 
-            participant_pk, 
+            participant_kaspad,
+            kaspa_signer,
+            kaspa_addr,
+            response_receiver,
+            exit_signal,
+            participant_sk,
+            participant_pk,
             target_episode_id,
             args_clone,
-        ).await;
+        )
+        .await;
     });
 
     // Run the kaspad listener
@@ -122,7 +121,7 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
 
     engine_task.await.unwrap();
     participant_task.await.unwrap();
-    
+
     Ok(())
 }
 
@@ -181,12 +180,12 @@ async fn run_comment_board(
         println!("🎯 Joining room with Episode ID: {}", room_id);
         println!("🔧 Registering episode with local engine for command processing...");
         println!("💰 You pay for your own comments with address: {}", kaspa_addr);
-        
+
         // Create episode registration transaction - empty participants means no state initialization
         // This allows the engine to recognize the episode_id when processing commands
-        let register_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode { 
-            episode_id: room_id, 
-            participants: vec![] // Empty - engine registers episode_id but doesn't call initialize()
+        let register_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode {
+            episode_id: room_id,
+            participants: vec![], // Empty - engine registers episode_id but doesn't call initialize()
         };
         let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &register_episode, FEE);
         info!("Submitting episode registration for room {}: {}", room_id, tx.id());
@@ -214,10 +213,10 @@ async fn run_comment_board(
         println!("📢 Share this Episode ID with friends to let them join!");
         println!("⚠️  IMPORTANT: Friends must start their terminals BEFORE you create this room!");
         println!("💰 You pay for room creation with address: {}", kaspa_addr);
-        
-        let new_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode { 
-            episode_id: new_episode_id, 
-            participants: vec![] // Empty - anyone can join by sending commands!
+
+        let new_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode {
+            episode_id: new_episode_id,
+            participants: vec![], // Empty - anyone can join by sending commands!
         };
         let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &new_episode, FEE);
         info!("Submitting room creation: {}", tx.id());
@@ -252,16 +251,12 @@ async fn run_comment_board(
         }
     };
     println!("📺 Connected to room: Episode {}", received_episode_id);
-    
+
     // Display simple comment board
     println!("=== 💬 Comment Board ===");
     println!("Comments: {} | Members: {}", state.comments.len(), state.room_members.len());
     for comment in &state.comments {
-        println!("[{}] {}: {}", 
-            comment.timestamp, 
-            &comment.author[..8], 
-            comment.text
-        );
+        println!("[{}] {}: {}", comment.timestamp, &comment.author[..8], comment.text);
     }
     println!("========================");
 
@@ -273,7 +268,7 @@ async fn run_comment_board(
             .split(',')
             .map(|w| w.trim().to_string())
             .collect();
-        
+
         println!("🚫 Setting forbidden words: {:?}", forbidden_words);
         let forbidden_cmd = CommentCommand::SetForbiddenWords { words: forbidden_words };
         let step = EpisodeMessage::<CommentBoard>::new_signed_command(episode_id, forbidden_cmd, participant_sk, participant_pk);
@@ -298,13 +293,26 @@ async fn run_comment_board(
     // Join the room if not already a member
     if !state.room_members.contains(&format!("{}", participant_pk)) {
         println!("🎉 Joining the room... (paying with your own wallet)");
-        let bond_amount = if args.bonds { if state.room_rules.bonds_enabled { state.room_rules.min_bond } else { 0 } } else { 0 };
+        let bond_amount = if args.bonds {
+            if state.room_rules.bonds_enabled {
+                state.room_rules.min_bond
+            } else {
+                0
+            }
+        } else {
+            0
+        };
         if args.bonds {
             println!("💸 Joining room with a {} KAS bond...", bond_amount / 100_000_000);
         } else {
             println!("💬 Joining room (no bond)...");
         }
-        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::JoinRoom { bond_amount }, participant_sk, participant_pk);
+        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(
+            episode_id,
+            ContractCommand::JoinRoom { bond_amount },
+            participant_sk,
+            participant_pk,
+        );
 
         let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &step, FEE);
         info!("💰 Submitting join room (you pay): {}", tx.id());
@@ -349,7 +357,12 @@ async fn run_comment_board(
     if !state.authenticated_users.contains(&format!("{}", participant_pk)) {
         println!("🔑 Requesting authentication challenge...");
         let request_challenge_cmd = CommentCommand::RequestChallenge;
-        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::RequestChallenge, participant_sk, participant_pk);
+        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(
+            episode_id,
+            ContractCommand::RequestChallenge,
+            participant_sk,
+            participant_pk,
+        );
 
         let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &step, FEE);
         info!("💰 Submitting RequestChallenge (you pay): {}", tx.id());
@@ -396,11 +409,14 @@ async fn run_comment_board(
             hasher.update(challenge_text.as_bytes());
             let message = Message::from_digest(hasher.finalize().into());
             let signature = secp.sign_ecdsa(&message, &participant_sk);
-            let submit_response_cmd = CommentCommand::SubmitResponse {
-                signature: signature.to_string(),
-                nonce: challenge_text.clone(),
-            };
-            let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, ContractCommand::SubmitResponse { signature: signature.to_string(), nonce: challenge_text }, participant_sk, participant_pk);
+            let submit_response_cmd =
+                CommentCommand::SubmitResponse { signature: signature.to_string(), nonce: challenge_text.clone() };
+            let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(
+                episode_id,
+                ContractCommand::SubmitResponse { signature: signature.to_string(), nonce: challenge_text },
+                participant_sk,
+                participant_pk,
+            );
 
             let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &step, FEE);
             info!("💰 Submitting SubmitResponse (you pay): {}", tx.id());
@@ -452,11 +468,7 @@ async fn run_comment_board(
             println!("=== 💬 Comment Board ===");
             println!("Comments: {} | Members: {}", state.comments.len(), state.room_members.len());
             for comment in &state.comments {
-                println!("[{}] {}: {}", 
-                    comment.timestamp, 
-                    &comment.author[..8], 
-                    comment.text
-                );
+                println!("[{}] {}: {}", comment.timestamp, &comment.author[..8], comment.text);
             }
             println!("========================");
         }
@@ -487,14 +499,13 @@ async fn run_comment_board(
             // 🔓 TIME-BASED UTXO UNLOCKING: Check and unlock available bonds
             let mut unlocked_total = 0u64;
             let locked_comment_ids: Vec<u64> = utxo_manager.locked_utxos.keys().copied().collect();
-            
+
             for comment_id in locked_comment_ids {
                 if utxo_manager.can_unlock_bond(comment_id) {
                     match utxo_manager.unlock_bond(comment_id) {
                         Ok(unlocked_amount) => {
                             unlocked_total += unlocked_amount;
-                            println!("🔓 Unlocked {:.6} KAS bond for comment {}", 
-                                     unlocked_amount as f64 / 100_000_000.0, comment_id);
+                            println!("🔓 Unlocked {:.6} KAS bond for comment {}", unlocked_amount as f64 / 100_000_000.0, comment_id);
                         }
                         Err(e) => {
                             warn!("Failed to unlock bond for comment {}: {}", comment_id, e);
@@ -502,7 +513,7 @@ async fn run_comment_board(
                     }
                 }
             }
-            
+
             if unlocked_total > 0 {
                 println!("✅ Total unlocked: {:.6} KAS", unlocked_total as f64 / 100_000_000.0);
                 let balance_info = utxo_manager.get_balance_info();
@@ -522,23 +533,38 @@ async fn run_comment_board(
                 for (comment_id, locked_utxo) in &utxo_manager.locked_utxos {
                     match &locked_utxo.enforcement_level {
                         crate::wallet::utxo_manager::BondEnforcementLevel::ApplicationLayer { proof_transaction_id } => {
-                            println!("💬 Comment {}: {:.6} KAS (Phase 1.2 - Application Layer)", 
-                                   comment_id, locked_utxo.bond_amount as f64 / 100_000_000.0);
+                            println!(
+                                "💬 Comment {}: {:.6} KAS (Phase 1.2 - Application Layer)",
+                                comment_id,
+                                locked_utxo.bond_amount as f64 / 100_000_000.0
+                            );
                             println!("  🔗 Proof TX: {}", proof_transaction_id);
                             println!("  ⚠️  Enforcement: Application-layer tracking");
                         }
                         crate::wallet::utxo_manager::BondEnforcementLevel::ScriptBased { script_pubkey, unlock_script_condition } => {
-                            println!("🔐 Comment {}: {:.6} KAS (Phase 2.0 - Script Enforced)", 
-                                   comment_id, locked_utxo.bond_amount as f64 / 100_000_000.0);
+                            println!(
+                                "🔐 Comment {}: {:.6} KAS (Phase 2.0 - Script Enforced)",
+                                comment_id,
+                                locked_utxo.bond_amount as f64 / 100_000_000.0
+                            );
                             println!("  🔒 Script size: {} bytes", script_pubkey.script().len());
                             println!("  ✅ Enforcement: TRUE blockchain script-based locking");
                             match unlock_script_condition {
                                 crate::wallet::kaspa_scripts::ScriptUnlockCondition::TimeLock { unlock_time, .. } => {
                                     println!("  ⏰ Unlock time: {} (time-lock only)", unlock_time);
                                 }
-                                crate::wallet::kaspa_scripts::ScriptUnlockCondition::TimeOrModerator { unlock_time, moderator_pubkeys, required_signatures, .. } => {
+                                crate::wallet::kaspa_scripts::ScriptUnlockCondition::TimeOrModerator {
+                                    unlock_time,
+                                    moderator_pubkeys,
+                                    required_signatures,
+                                    ..
+                                } => {
                                     println!("  ⏰ Unlock time: {} OR moderator consensus", unlock_time);
-                                    println!("  👥 Moderators: {} (require {} signatures)", moderator_pubkeys.len(), required_signatures);
+                                    println!(
+                                        "  👥 Moderators: {} (require {} signatures)",
+                                        moderator_pubkeys.len(),
+                                        required_signatures
+                                    );
                                 }
                                 _ => {
                                     println!("  🛡️ Complex unlock conditions");
@@ -561,17 +587,17 @@ async fn run_comment_board(
         // Phase 2.0: Upgrade existing Phase 1.2 bonds to Phase 2.0 script-based enforcement
         if comment_text == "upgrade" {
             println!("=== 🔄 Upgrade Bonds to Phase 2.0 ===");
-            
+
             // Find application-layer bonds that can be upgraded
-            let upgradeable_bonds: Vec<u64> = utxo_manager.locked_utxos.iter()
-                .filter_map(|(comment_id, bond)| {
-                    match &bond.enforcement_level {
-                        crate::wallet::utxo_manager::BondEnforcementLevel::ApplicationLayer { .. } => Some(*comment_id),
-                        _ => None,
-                    }
+            let upgradeable_bonds: Vec<u64> = utxo_manager
+                .locked_utxos
+                .iter()
+                .filter_map(|(comment_id, bond)| match &bond.enforcement_level {
+                    crate::wallet::utxo_manager::BondEnforcementLevel::ApplicationLayer { .. } => Some(*comment_id),
+                    _ => None,
                 })
                 .collect();
-            
+
             if upgradeable_bonds.is_empty() {
                 println!("❌ No Phase 1.2 bonds available for upgrade");
                 println!("💡 Only application-layer bonds can be upgraded to script-based enforcement");
@@ -582,7 +608,7 @@ async fn run_comment_board(
                         println!("  💬 Comment {}: {:.6} KAS", comment_id, bond.bond_amount as f64 / 100_000_000.0);
                     }
                 }
-                
+
                 println!("\n🔐 Upgrading first bond to Phase 2.0 script-based enforcement...");
                 if let Some(first_comment_id) = upgradeable_bonds.first() {
                     match utxo_manager.upgrade_bond_to_script_based(*first_comment_id, None, None).await {
@@ -605,11 +631,12 @@ async fn run_comment_board(
         // Phase 2.0: Create new script-based bond directly
         if comment_text == "script-bond" {
             println!("=== 🔐 Create Phase 2.0 Script-Based Bond ===");
-            
+
             let balance_info = utxo_manager.get_balance_info();
             balance_info.display();
-            
-            if balance_info.available_balance < 100_000_000 { // 1 KAS minimum
+
+            if balance_info.available_balance < 100_000_000 {
+                // 1 KAS minimum
                 println!("❌ Insufficient balance for script-based bond");
                 println!("💰 Minimum: 1.0 KAS, Available: {:.6} KAS", balance_info.available_balance as f64 / 100_000_000.0);
             } else {
@@ -617,15 +644,18 @@ async fn run_comment_board(
                 println!("💰 Bond amount: 100.000000 KAS");
                 println!("⏰ Lock duration: 10 minutes");
                 println!("🔐 Enforcement: TRUE blockchain script-based locking");
-                
+
                 let next_comment_id = state.total_comments + 1000; // Use high comment ID for testing
-                match utxo_manager.create_script_based_bond(
-                    next_comment_id,
-                    100_000_000, // 100 KAS
-                    600, // 10 minutes
-                    None, // No moderators for now
-                    None,
-                ).await {
+                match utxo_manager
+                    .create_script_based_bond(
+                        next_comment_id,
+                        100_000_000, // 100 KAS
+                        600,         // 10 minutes
+                        None,        // No moderators for now
+                        None,
+                    )
+                    .await
+                {
                     Ok(bond_tx_id) => {
                         println!("✅ Phase 2.0 script-based bond created successfully!");
                         println!("🔗 Transaction ID: {}", bond_tx_id);
@@ -649,8 +679,16 @@ async fn run_comment_board(
         }
 
         // Submit comment with bond based on room rules
-        let bond_amount = if args.bonds { if state.room_rules.bonds_enabled { state.room_rules.min_bond } else { 0 } } else { 0 };
-        
+        let bond_amount = if args.bonds {
+            if state.room_rules.bonds_enabled {
+                state.room_rules.min_bond
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
         // 🔒 REAL ECONOMIC ENFORCEMENT: Check if user can afford the bond
         if bond_amount > 0 {
             if !utxo_manager.can_afford_bond(bond_amount) {
@@ -673,7 +711,8 @@ async fn run_comment_board(
                 bond_output_index: Some(0), // We will place the bond as output index 0
                 bond_script: if args.script_bonds {
                     // Use a simple timelock descriptor matching the default 10 min used for now
-                    let unlock_time = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 600) as u64;
+                    let unlock_time =
+                        (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 600) as u64;
                     Some(crate::episode::commands::BondScriptKind::TimeLock { unlock_time })
                 } else {
                     Some(crate::episode::commands::BondScriptKind::P2PK)
@@ -681,10 +720,7 @@ async fn run_comment_board(
             };
             let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, cmd, participant_sk, participant_pk);
 
-            match utxo_manager
-                .submit_comment_with_bond_payload(&step, bond_amount, 600, PATTERN, PREFIX, args.script_bonds)
-                .await
-            {
+            match utxo_manager.submit_comment_with_bond_payload(&step, bond_amount, 600, PATTERN, PREFIX, args.script_bonds).await {
                 Ok(txid) => {
                     info!("💰 Submitted combined comment+bond tx: {}", txid);
                     // Refresh UTXOs for next round
@@ -697,7 +733,7 @@ async fn run_comment_board(
                 }
             }
         } else {
-            let cmd = ContractCommand::SubmitComment { 
+            let cmd = ContractCommand::SubmitComment {
                 text: comment_text.to_string(),
                 bond_amount,
                 bond_output_index: None,
@@ -738,38 +774,45 @@ async fn run_comment_board(
                 if let Some(latest_comment) = state.comments.last() {
                     if latest_comment.text == comment_text && latest_comment.author == format!("{}", participant_pk) {
                         println!("✅ Comment added to blockchain!");
-                        
+
                         // 🔒 PHASE 1.1: Create REAL bond transaction on Kaspa blockchain
                         if bond_amount > 0 {
                             // 🔄 Refresh UTXO state after comment transaction
                             println!("🔄 Refreshing UTXO state after comment transaction...");
                             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await; // Small delay for transaction processing
                             let _ = utxo_manager.refresh_utxos(&kaspad).await;
-                            
+
                             // Phase 2.0: Create script-based bond that truly locks funds
-                            match utxo_manager.create_script_based_bond(
-                                latest_comment.id,
-                                bond_amount,
-                                600, // 10 minutes lock period for testing
-                                None,
-                                None,
-                            ).await {
+                            match utxo_manager
+                                .create_script_based_bond(
+                                    latest_comment.id,
+                                    bond_amount,
+                                    600, // 10 minutes lock period for testing
+                                    None,
+                                    None,
+                                )
+                                .await
+                            {
                                 Ok(bond_tx_id) => {
-                                    println!("🔐 Phase 2.0 bond created {} for comment {} ({:.6} KAS locked)",
+                                    println!(
+                                        "🔐 Phase 2.0 bond created {} for comment {} ({:.6} KAS locked)",
                                         bond_tx_id,
                                         latest_comment.id,
-                                        bond_amount as f64 / 100_000_000.0);
+                                        bond_amount as f64 / 100_000_000.0
+                                    );
                                 }
                                 Err(e) => {
                                     warn!("Failed to create script-based bond: {}", e);
                                 }
                             }
-                            
+
                             // Display updated balance
                             let balance_info = utxo_manager.get_balance_info();
-                            println!("💰 Updated balance: {:.6} KAS available, {:.6} KAS locked in bonds", 
-                                     balance_info.available_balance as f64 / 100_000_000.0,
-                                     balance_info.locked_balance as f64 / 100_000_000.0);
+                            println!(
+                                "💰 Updated balance: {:.6} KAS available, {:.6} KAS locked in bonds",
+                                balance_info.available_balance as f64 / 100_000_000.0,
+                                balance_info.locked_balance as f64 / 100_000_000.0
+                            );
                         }
                         break;
                     }

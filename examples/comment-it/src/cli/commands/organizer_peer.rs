@@ -5,10 +5,10 @@ use std::error::Error;
 pub struct OrganizerPeerCommand {
     #[arg(short, long, default_value = "auth-organizer-peer")]
     pub name: String,
-    
+
     #[arg(short, long)]
     pub key: Option<String>,
-    
+
     #[arg(long)]
     pub rpc_url: Option<String>,
 }

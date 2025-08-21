@@ -80,8 +80,15 @@ impl<G: Episode> EpisodeMessage<G> {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub enum EngineMsg {
-    BlkAccepted { accepting_hash: Hash, accepting_daa: u64, accepting_time: u64, associated_txs: Vec<(Hash, Vec<u8>, Option<Vec<TxOutputInfo>>)> },
-    BlkReverted { accepting_hash: Hash },
+    BlkAccepted {
+        accepting_hash: Hash,
+        accepting_daa: u64,
+        accepting_time: u64,
+        associated_txs: Vec<(Hash, Vec<u8>, Option<Vec<TxOutputInfo>>)>,
+    },
+    BlkReverted {
+        accepting_hash: Hash,
+    },
     Exit,
 }
 

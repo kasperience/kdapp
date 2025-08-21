@@ -3,10 +3,6 @@
 pub mod keychain;
 
 pub use keychain::{
-    KeychainConfig, 
+    create_keychain_wallet, get_keychain_wallet_for_command, keychain_wallet_exists, load_keychain_wallet, KeychainConfig,
     KeychainManager,
-    get_keychain_wallet_for_command,
-    create_keychain_wallet,
-    load_keychain_wallet,
-    keychain_wallet_exists,
 };

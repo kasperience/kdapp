@@ -5,13 +5,13 @@ use std::error::Error;
 pub struct ParticipantPeerCommand {
     #[arg(long)]
     pub auth: bool,
-    
+
     #[arg(short, long)]
     pub key: Option<String>,
-    
+
     #[arg(long)]
     pub kaspa_private_key: Option<String>,
-    
+
     #[arg(long)]
     pub rpc_url: Option<String>,
 }

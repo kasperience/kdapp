@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{Deserialize, Serialize};
 
 /// Unified commands for the Kaspa authentication and comment episode
 #[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -8,22 +8,13 @@ pub enum UnifiedCommand {
     /// Request a challenge from the server
     RequestChallenge,
     /// Submit response with signature and nonce
-    SubmitResponse {
-        signature: String,
-        nonce: String,
-    },
+    SubmitResponse { signature: String, nonce: String },
     /// Revoke an existing session
-    RevokeSession {
-        session_token: String,
-        signature: String,
-    },
-    
+    RevokeSession { session_token: String, signature: String },
+
     // Comment commands (only work after authentication)
     /// Submit a new comment to the blockchain
-    SubmitComment {
-        text: String,
-        session_token: String,
-    },
+    SubmitComment { text: String, session_token: String },
 }
 
 impl UnifiedCommand {
@@ -36,7 +27,7 @@ impl UnifiedCommand {
             UnifiedCommand::SubmitComment { .. } => "SubmitComment",
         }
     }
-    
+
     /// Check if command requires authentication
     pub fn requires_auth(&self) -> bool {
         match self {
@@ -61,35 +52,26 @@ mod tests {
 
     #[test]
     fn test_submit_response_command() {
-        let cmd = UnifiedCommand::SubmitResponse {
-            signature: "test_signature".to_string(),
-            nonce: "test_nonce".to_string(),
-        };
+        let cmd = UnifiedCommand::SubmitResponse { signature: "test_signature".to_string(), nonce: "test_nonce".to_string() };
         assert_eq!(cmd.command_type(), "SubmitResponse");
         assert!(cmd.requires_auth());
     }
 
     #[test]
     fn test_submit_comment_command() {
-        let cmd = UnifiedCommand::SubmitComment {
-            text: "Hello blockchain!".to_string(),
-            session_token: "sess_123".to_string(),
-        };
+        let cmd = UnifiedCommand::SubmitComment { text: "Hello blockchain!".to_string(), session_token: "sess_123".to_string() };
         assert_eq!(cmd.command_type(), "SubmitComment");
         assert!(cmd.requires_auth());
     }
 
     #[test]
     fn test_serialization() {
-        let cmd = UnifiedCommand::SubmitResponse {
-            signature: "sig123".to_string(),
-            nonce: "nonce456".to_string(),
-        };
-        
+        let cmd = UnifiedCommand::SubmitResponse { signature: "sig123".to_string(), nonce: "nonce456".to_string() };
+
         // Test that we can serialize and deserialize
         let serialized = serde_json::to_string(&cmd).unwrap();
         let deserialized: UnifiedCommand = serde_json::from_str(&serialized).unwrap();
-        
+
         match deserialized {
             UnifiedCommand::SubmitResponse { signature, nonce } => {
                 assert_eq!(signature, "sig123");

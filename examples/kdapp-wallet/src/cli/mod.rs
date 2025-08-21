@@ -1,5 +1,5 @@
-use clap::{Parser, Subcommand};
 use crate::wallet;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

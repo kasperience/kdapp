@@ -12,11 +12,11 @@ use commands::*;
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
-    
+
     /// Use OS keychain for secure wallet storage (instead of file-based)
     #[arg(long, global = true)]
     pub keychain: bool,
-    
+
     /// Development mode: store keys insecurely in local files (DO NOT USE FOR REAL FUNDS)
     #[arg(long, global = true)]
     pub dev_mode: bool,
@@ -51,32 +51,32 @@ impl Commands {
             Commands::HttpOrganizerPeer(mut cmd) => {
                 cmd.set_storage_options(keychain, dev_mode);
                 cmd.execute().await
-            },
+            }
             Commands::Authenticate(mut cmd) => {
                 cmd.set_storage_options(keychain, dev_mode);
                 cmd.execute().await
-            },
+            }
             Commands::AuthenticateFullFlow(mut cmd) => {
                 cmd.set_storage_options(keychain, dev_mode);
                 cmd.execute().await
-            },
+            }
             Commands::Demo(cmd) => cmd.execute().await,
             Commands::OrganizerPeer(mut cmd) => {
                 cmd.set_storage_options(keychain, dev_mode);
                 cmd.execute().await
-            },
+            }
             Commands::ParticipantPeer(mut cmd) => {
                 cmd.set_storage_options(keychain, dev_mode);
                 cmd.execute().await
-            },
+            }
             Commands::WalletStatus(mut cmd) => {
                 cmd.set_storage_options(keychain, dev_mode);
                 cmd.execute().await
-            },
+            }
             Commands::Daemon(mut cmd) => {
                 cmd.set_storage_options(keychain, dev_mode);
                 cmd.execute().await
-            },
+            }
         }
     }
 }

@@ -1,15 +1,17 @@
+mod app;
 mod jsonrpc;
+mod node_connector;
+mod rpc_handlers;
 mod state;
 mod tools;
 mod wallet;
-mod node_connector;
-mod app;
-mod rpc_handlers;
 use anyhow::Result;
 use jsonrpc::{Request, Response};
+use node_connector::{connect_to_node, NodeConfig};
 use state::ServerState;
 use wallet::AgentWallet;
-use node_connector::{connect_to_node, NodeConfig};
 
 #[tokio::main]
-async fn main() -> Result<()> { app::run().await }
+async fn main() -> Result<()> {
+    app::run().await
+}
