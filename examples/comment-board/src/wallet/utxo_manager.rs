@@ -357,6 +357,7 @@ impl UtxoLockManager {
         lock_duration_seconds: u64,
         pattern: PatternType,
         prefix: PrefixType,
+        use_script_bonds: bool,
     ) -> Result<String, String> {
         use kaspa_consensus_core::{
             constants::TX_VERSION,
@@ -379,9 +380,23 @@ impl UtxoLockManager {
         }
         let (source_outpoint, source_entry) = candidate.ok_or_else(|| "No available UTXOs for comment+bond".to_string())?;
 
-        // Build bond output — TEMP: standard P2PK to remain standard-valid (no timelock yet)
-        // Once standard script templates are finalized, replace with script-locked output.
-        let bond_output = TransactionOutput { value: bond_amount, script_public_key: pay_to_address_script(&self.kaspa_address) };
+        // Build bond output
+        // Default: standard P2PK to remain standard-valid (no timelock yet)
+        // If use_script_bonds is set, attempt experimental script-locked output.
+        let bond_output = if use_script_bonds {
+            let current_time = self.current_time();
+            let unlock_time = current_time + lock_duration_seconds;
+            let script_condition = crate::wallet::kaspa_scripts::ScriptUnlockCondition::TimeLock { unlock_time, user_pubkey: self.keypair.public_key() };
+            match crate::wallet::kaspa_scripts::create_bond_script_pubkey(&script_condition) {
+                Ok(spk) => TransactionOutput { value: bond_amount, script_public_key: spk },
+                Err(e) => {
+                    warn!("Falling back to P2PK bond output: script build failed: {}", e);
+                    TransactionOutput { value: bond_amount, script_public_key: pay_to_address_script(&self.kaspa_address) }
+                }
+            }
+        } else {
+            TransactionOutput { value: bond_amount, script_public_key: pay_to_address_script(&self.kaspa_address) }
+        };
         let change_value = source_entry.amount.saturating_sub(bond_amount + FEE);
         if change_value == 0 { return Err("Insufficient funds after fees".to_string()); }
         let change_output = TransactionOutput { value: change_value, script_public_key: pay_to_address_script(&self.kaspa_address) };

@@ -85,10 +85,9 @@ Today’s session plan:
    - Rationale: closes the “payload says 100 KAS but TX carries 1 KAS” gap.
 
 2) Script‑enforced timelock path (single‑party)
-   - Use `kaspa-txscript` to build a real timelock script (CLTV‑style) paying back to the user after
-     `unlock_time`. Replace the placeholder serialization in `kaspa_scripts.rs` with true opcodes.
-   - Wallet flow: `UtxoLockManager` creates a bond output to the timelock script and references it
-     in the command. Episode verifies amount + script template match.
+   - Default today: P2PK bond output for standardness; episode enforces on‑chain value at submission.
+   - Experimental: `--script-bonds` builds a script‑locked output; may be non‑standard until templates stabilize.
+   - Next: Use `kaspa-txscript` with finalized templates (timelock/multisig), then verify script descriptor in episode.
 
 3) Moderator escape hatch (multisig)
    - Add combined script (timelock OR N‑of‑M moderator sigs). Store moderator pubkeys in
@@ -120,4 +119,3 @@ Optional “Lightning‑style” exploration (future):
 - Rust 2021, `cargo fmt`, `cargo clippy -W warnings`.
 - Tests near code with `#[cfg(test)]` as seen in `kaspa_scripts.rs`.
 - Prefer explicit types, structured errors, and `log` macros.
-

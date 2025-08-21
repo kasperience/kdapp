@@ -21,7 +21,9 @@ kdapp example with economic enforcement on Kaspa L1.
 - **[🔐 Security Analysis](docs/security-analysis.md)** - Threat model, vulnerabilities, and mitigations
 - **[🏗️ Architecture Decisions](docs/architecture-decisions/)** - ADRs documenting major technical choices
 
-**Current Status**: Phase 2.0 Complete - Script-based UTXO locking with cryptographic enforcement
+**Current Status**: Phase 2.0 in progress
+- Default: P2PK bond output in the combined comment transaction (standard-valid, on-chain value enforced by the episode)
+- Experimental: Script-based bonds (timelock/multisig) behind `--script-bonds` flag; may be non-standard until templates are finalized
 
 ## 🎮 Usage - Modern CLI Interface
 
@@ -63,11 +65,22 @@ cargo run -- participant --kaspa-private-key <your-key> --room-episode-id 123456
 
 ### 🔒 **Phase 2.0 Script-Based Commands**
 
-#### **`script-bond`** - Blockchain Script Enforcement
+#### **`script-bond`** - Blockchain Script Enforcement (experimental)
 ```
-Creates 100 KAS bond with cryptographic script locking
-Funds locked by blockchain scripts, not application logic
-Episode Contracts with mathematical enforcement
+Creates 100 KAS bond with a script-based output (timelock or multisig)
+Status: experimental; may be rejected by nodes as non-standard until templates are finalized
+Default bonds use P2PK output for standardness; the episode still enforces on-chain value
+
+### Bond Output Types (Technical Overview)
+- P2PK (default):
+  - Why: Standard-valid across nodes; ensures smooth propagation and acceptance
+  - How: Combined comment tx includes an output[0] paying back to the sender’s address for the exact `bond_amount`
+  - Episode Enforcement: Validates `tx_outputs[0].value == bond_amount` for the carrier tx
+  - Trade-off: Not consensus-locked; liquidity is committed at submission time, but spend policy is not enforced by script
+- Script-based (experimental):
+  - Why: Consensus-level enforcement (timelock / moderator multisig)
+  - How: Output script encodes spend conditions; requires finalized kaspa-txscript templates for standardness
+  - Status: Behind `--script-bonds`; may be rejected as non-standard by public nodes until templates are stabilized
 ```
 
 #### **`upgrade`** - Script Migration  

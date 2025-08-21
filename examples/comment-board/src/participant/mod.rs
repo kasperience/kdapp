@@ -99,6 +99,7 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
         log_level: args.log_level.clone(),
         forbidden_words: args.forbidden_words.clone(),
         bonds: args.bonds,
+        script_bonds: args.script_bonds,
     };
 
     // Run the participant task
@@ -674,7 +675,7 @@ async fn run_comment_board(
             let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, cmd, participant_sk, participant_pk);
 
             match utxo_manager
-                .submit_comment_with_bond_payload(&step, bond_amount, 600, PATTERN, PREFIX)
+                .submit_comment_with_bond_payload(&step, bond_amount, 600, PATTERN, PREFIX, args.script_bonds)
                 .await
             {
                 Ok(txid) => {

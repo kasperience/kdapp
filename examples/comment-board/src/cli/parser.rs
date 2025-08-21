@@ -31,4 +31,8 @@ pub struct Args {
     /// Enable economic comment bonds (users pay 100 KAS to comment)
     #[arg(long, default_value_t = false)]
     pub bonds: bool,
+
+    /// Experimental: use script-based bond output in the combined tx (may be non-standard)
+    #[arg(long, default_value_t = false)]
+    pub script_bonds: bool,
 }

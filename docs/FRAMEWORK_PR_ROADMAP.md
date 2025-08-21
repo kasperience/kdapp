@@ -25,6 +25,7 @@ keep kdapp/src changes small, optional, and high value.
 
 2) Script verification (next)
    - Introduce stable encoding/checks for script policy (e.g., timelock, multisig) using kaspa‑txscript.
+   - Maintain a default P2PK bond path (standard‑valid) for broad network compatibility.
    - Enrich `TxOutputInfo` with script bytes or a compact descriptor only when the dependency
      boundary is well‑defined.
 
@@ -47,4 +48,3 @@ keep kdapp/src changes small, optional, and high value.
 ## Request
 We propose upstreaming this minimal, optional `tx_outputs` surface to unlock verifiable
 economic contracts while maintaining kdapp’s simplicity.
-
