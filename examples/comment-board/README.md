@@ -81,6 +81,7 @@ Default bonds use P2PK output for standardness; the episode still enforces on-ch
   - Why: Consensus-level enforcement (timelock / moderator multisig)
   - How: Output script encodes spend conditions; requires finalized kaspa-txscript templates for standardness
   - Status: Behind `--script-bonds`; may be rejected as non-standard by public nodes until templates are stabilized. Command carries a script descriptor; episode logs and enforces value while script verification is pending.
+  - Descriptor: See `docs/script-descriptor.md` for the compact format carried on-chain and compared by the episode once tx context exposes script bytes.
 ```
 
 #### **`upgrade`** - Script Migration  

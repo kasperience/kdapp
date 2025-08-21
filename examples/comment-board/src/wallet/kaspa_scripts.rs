@@ -2,6 +2,7 @@ use kaspa_consensus_core::tx::ScriptPublicKey;
 use kaspa_addresses::{Address, AddressT};
 use secp256k1::PublicKey;
 use log::*;
+use crate::episode::commands::BondScriptKind;
 
 /// Phase 2.0: Kaspa Script Generation for True UTXO Locking
 /// 
@@ -268,4 +269,62 @@ mod tests {
         };
         assert!(validate_script_conditions(&moderator_condition, current_time).is_ok());
     }
+}
+
+/// Draft: Encode a compact bond script descriptor for episode-side verification.
+/// This is a stable, compact byte layout we can later map to true kaspa-txscript templates.
+pub fn encode_bond_descriptor(
+    descriptor: &BondScriptKind,
+    user_pubkey: &PublicKey,
+    moderator_pubkeys: Option<&[PublicKey]>,
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    match descriptor {
+        BondScriptKind::P2PK => {
+            out.push(0x01);
+            out.extend_from_slice(&user_pubkey.serialize());
+        }
+        BondScriptKind::TimeLock { unlock_time } => {
+            out.push(0x02);
+            out.extend_from_slice(&unlock_time.to_le_bytes());
+            out.extend_from_slice(&user_pubkey.serialize());
+        }
+        BondScriptKind::ModeratorMultisig { required_signatures, moderator_count } => {
+            out.push(0x03);
+            out.push(*required_signatures);
+            out.push(*moderator_count);
+            if let Some(mks) = moderator_pubkeys {
+                for k in mks.iter().take(*moderator_count as usize) {
+                    out.extend_from_slice(&k.serialize());
+                }
+            }
+            out.extend_from_slice(&user_pubkey.serialize());
+        }
+        BondScriptKind::TimeOrModerator { unlock_time, required_signatures, moderator_count } => {
+            out.push(0x04);
+            out.extend_from_slice(&unlock_time.to_le_bytes());
+            out.push(*required_signatures);
+            out.push(*moderator_count);
+            if let Some(mks) = moderator_pubkeys {
+                for k in mks.iter().take(*moderator_count as usize) {
+                    out.extend_from_slice(&k.serialize());
+                }
+            }
+            out.extend_from_slice(&user_pubkey.serialize());
+        }
+    }
+    out
+}
+
+/// Draft: Build a ScriptPublicKey from a compact descriptor (non-standard). For now, this wraps
+/// the descriptor bytes in a ScriptPublicKey so the transaction can carry the policy hint.
+pub fn create_bond_script_pubkey_from_descriptor(
+    descriptor: &BondScriptKind,
+    user_pubkey: &PublicKey,
+    moderator_pubkeys: Option<&[PublicKey]>,
+) -> Result<ScriptPublicKey, Box<dyn std::error::Error>> {
+    let desc = encode_bond_descriptor(descriptor, user_pubkey, moderator_pubkeys);
+    use smallvec::SmallVec;
+    let script_vec: SmallVec<[u8; 36]> = desc.into_iter().collect();
+    Ok(ScriptPublicKey::new(0, script_vec))
 }
