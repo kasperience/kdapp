@@ -22,8 +22,13 @@ pub async fn request_challenge(
         if let Some(episode) = episodes.get_mut(&episode_id) {
             // Generate challenge locally for coordination
             let challenge_cmd = AuthCommand::RequestChallenge;
-            let metadata =
-                PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 0, tx_id: episode_id.into() };
+            let metadata = PayloadMetadata {
+                accepting_hash: 0u64.into(),
+                accepting_daa: 0,
+                accepting_time: 0,
+                tx_id: episode_id.into(),
+                tx_outputs: None,
+            };
             match episode.execute(&challenge_cmd, episode.owner, &metadata) {
                 Ok(_) => {
                     if let Some(challenge) = &episode.challenge {

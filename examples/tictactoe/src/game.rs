@@ -247,7 +247,8 @@ mod tests {
     #[test]
     fn test_ttt_rollback() {
         let ((_s1, p1), (_s2, p2)) = (generate_keypair(), generate_keypair());
-        let metadata = PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 0, tx_id: 1u64.into() };
+        let metadata =
+            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 0, tx_id: 1u64.into(), tx_outputs: None };
         let mut game = TicTacToe::initialize(vec![p1, p2], &metadata);
         let rollback = game.execute(&TTTMove { row: 0, col: 0 }, Some(p1), &metadata).unwrap();
         game.rollback(rollback);

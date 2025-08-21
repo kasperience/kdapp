@@ -56,8 +56,13 @@ pub async fn verify_auth(State(state): State<PeerState>, Json(req): Json<VerifyR
     {
         let mut episodes = state.blockchain_episodes.lock().unwrap();
         if let Some(episode) = episodes.get_mut(&episode_id) {
-            let metadata =
-                PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 0, tx_id: episode_id.into() };
+            let metadata = PayloadMetadata {
+                accepting_hash: 0u64.into(),
+                accepting_daa: 0,
+                accepting_time: 0,
+                tx_id: episode_id.into(),
+                tx_outputs: None,
+            };
             // Execute the authentication command in memory
             let _ = episode.execute(
                 &AuthCommand::SubmitResponse { signature: req.signature.clone(), nonce: req.nonce.clone() },

@@ -308,8 +308,13 @@ mod tests {
     #[test]
     fn test_comment_episode_initialization() {
         let ((_s1, p1), (_s2, p2)) = (generate_keypair(), generate_keypair());
-        let metadata =
-            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 1234567890, tx_id: 1u64.into() };
+        let metadata = PayloadMetadata {
+            accepting_hash: 0u64.into(),
+            accepting_daa: 0,
+            accepting_time: 1234567890,
+            tx_id: 1u64.into(),
+            tx_outputs: None,
+        };
 
         let episode = CommentEpisode::initialize(vec![p1, p2], &metadata);
 
@@ -322,8 +327,13 @@ mod tests {
     #[test]
     fn test_submit_comment() {
         let ((_s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
-        let metadata =
-            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 1234567890, tx_id: 1u64.into() };
+        let metadata = PayloadMetadata {
+            accepting_hash: 0u64.into(),
+            accepting_daa: 0,
+            accepting_time: 1234567890,
+            tx_id: 1u64.into(),
+            tx_outputs: None,
+        };
 
         let mut episode = CommentEpisode::initialize(vec![p1], &metadata);
 
@@ -351,8 +361,13 @@ mod tests {
     #[test]
     fn test_empty_comment_rejected() {
         let ((_s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
-        let metadata =
-            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 1234567890, tx_id: 1u64.into() };
+        let metadata = PayloadMetadata {
+            accepting_hash: 0u64.into(),
+            accepting_daa: 0,
+            accepting_time: 1234567890,
+            tx_id: 1u64.into(),
+            tx_outputs: None,
+        };
 
         let mut episode = CommentEpisode::initialize(vec![p1], &metadata);
 
@@ -371,8 +386,13 @@ mod tests {
     #[test]
     fn test_comment_too_long_rejected() {
         let ((_s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
-        let metadata =
-            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 1234567890, tx_id: 1u64.into() };
+        let metadata = PayloadMetadata {
+            accepting_hash: 0u64.into(),
+            accepting_daa: 0,
+            accepting_time: 1234567890,
+            tx_id: 1u64.into(),
+            tx_outputs: None,
+        };
 
         let mut episode = CommentEpisode::initialize(vec![p1], &metadata);
 

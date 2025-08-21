@@ -16,8 +16,8 @@ use crate::api::http::websocket::websocket_handler;
 use crate::api::http::{
     blockchain_engine::AuthHttpPeer,
     handlers::{
-        auth::start_auth, challenge::request_challenge, comment, list_episodes::list_episodes, list_episodes::list_episodes,
-        revoke::revoke_session, status::get_status, verify::verify_auth,
+        auth::start_auth, challenge::request_challenge, comment, list_episodes::list_episodes, revoke::revoke_session,
+        status::get_status, verify::verify_auth,
     },
     state::{PeerState, WebSocketMessage},
 };
@@ -400,7 +400,7 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
         .route("/auth/revoke-session", post(revoke_session))
         .route("/auth/status/{episode_id}", get(get_status))
         .route("/episodes", get(list_episodes))
-        .route("/api/comments", post(handlers::comment::submit_comment))
+        .route("/api/comments", post(comment::submit_comment))
         .route("/internal/episode-authenticated", post(episode_authenticated))
         .route("/internal/session-revoked", post(session_revoked))
         .fallback_service(ServeDir::new("public"))
