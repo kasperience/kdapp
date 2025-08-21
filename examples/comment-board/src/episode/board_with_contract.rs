@@ -151,8 +151,8 @@ impl Episode for ContractCommentBoard {
                 self.execute_submit_response(participant, signature, nonce, metadata)
             }
             
-            ContractCommand::SubmitComment { text, bond_amount, bond_output_index } => {
-                self.execute_submit_comment(participant, text, *bond_amount, *bond_output_index, metadata)
+            ContractCommand::SubmitComment { text, bond_amount, bond_output_index, bond_script } => {
+                self.execute_submit_comment(participant, text, *bond_amount, *bond_output_index, bond_script.as_ref(), metadata)
             }
             
             _ => {
@@ -280,6 +280,7 @@ impl ContractCommentBoard {
         text: &str,
         bond_amount: u64,
         bond_output_index: Option<u32>,
+        bond_script: Option<&crate::episode::commands::BondScriptKind>,
         metadata: &PayloadMetadata,
     ) -> Result<ContractRollback, EpisodeError<ContractError>> {
         let participant_str = format!("{}", participant);
@@ -321,6 +322,21 @@ impl ContractCommentBoard {
                         return Err(EpisodeError::InvalidCommand(
                             ContractError::InsufficientBond { required: bond_amount, provided: 0 }
                         ));
+                    }
+                    // Note: script descriptor verification is pending until tx context includes script bytes
+                    if let Some(descriptor) = bond_script {
+                        match descriptor {
+                            crate::episode::commands::BondScriptKind::P2PK => {
+                                // No extra checks; value match suffices
+                            }
+                            crate::episode::commands::BondScriptKind::TimeLock { .. } |
+                            crate::episode::commands::BondScriptKind::ModeratorMultisig { .. } |
+                            crate::episode::commands::BondScriptKind::TimeOrModerator { .. } => {
+                                // Placeholder: we will verify script template once metadata exposes script bytes
+                                // For now, accept if value matches; emit an info log for visibility
+                                log::info!("[ContractCommentBoard] Experimental script bond descriptor present; value verified, script policy verification pending");
+                            }
+                        }
                     }
                 } else {
                     // Fallback: accept if any output covers the bond (Phase 1.5)

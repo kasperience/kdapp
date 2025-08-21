@@ -671,6 +671,13 @@ async fn run_comment_board(
                 text: comment_text.to_string(),
                 bond_amount,
                 bond_output_index: Some(0), // We will place the bond as output index 0
+                bond_script: if args.script_bonds {
+                    // Use a simple timelock descriptor matching the default 10 min used for now
+                    let unlock_time = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 600) as u64;
+                    Some(crate::episode::commands::BondScriptKind::TimeLock { unlock_time })
+                } else {
+                    Some(crate::episode::commands::BondScriptKind::P2PK)
+                },
             };
             let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, cmd, participant_sk, participant_pk);
 
@@ -694,6 +701,7 @@ async fn run_comment_board(
                 text: comment_text.to_string(),
                 bond_amount,
                 bond_output_index: None,
+                bond_script: None,
             };
             let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, cmd, participant_sk, participant_pk);
 

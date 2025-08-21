@@ -2,6 +2,19 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::pki::PubKey;
 use crate::episode::contract::{ViolationType, VoteDecision, RoomRules};
 
+/// Experimental descriptor of the bond script policy requested by the client
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub enum BondScriptKind {
+    /// Standard P2PK output (default, standard-valid)
+    P2PK,
+    /// Timelock descriptor (experimental)
+    TimeLock { unlock_time: u64 },
+    /// Moderator multisig descriptor (experimental)
+    ModeratorMultisig { required_signatures: u8, moderator_count: u8 },
+    /// Combined: timelock OR moderator multisig (experimental)
+    TimeOrModerator { unlock_time: u64, required_signatures: u8, moderator_count: u8 },
+}
+
 /// Enhanced Comment Commands for Episode Contract System
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub enum ContractCommand {
@@ -24,8 +37,9 @@ pub enum ContractCommand {
     // Economic Comment System
     SubmitComment { 
         text: String, 
-        bond_amount: u64,  // User-specified bond (must meet minimum)
+        bond_amount: u64,               // User-specified bond (must meet minimum)
         bond_output_index: Option<u32>, // If present, exact output index carrying the bond in the carrier tx
+        bond_script: Option<BondScriptKind>, // Optional script policy descriptor (experimental)
     },
     
     // Community Moderation System
