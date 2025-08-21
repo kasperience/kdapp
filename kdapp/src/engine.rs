@@ -6,7 +6,7 @@ use kaspa_consensus_core::Hash;
 use log::*;
 use secp256k1::SecretKey;
 
-use crate::episode::{Episode, EpisodeError, EpisodeEventHandler, EpisodeId, PayloadMetadata};
+use crate::episode::{Episode, EpisodeError, EpisodeEventHandler, EpisodeId, PayloadMetadata, TxOutputInfo};
 use crate::pki::{sign_message, to_message, verify_signature, PubKey, Sig};
 use std::any::type_name;
 use std::collections::hash_map::Entry;
@@ -80,7 +80,7 @@ impl<G: Episode> EpisodeMessage<G> {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub enum EngineMsg {
-    BlkAccepted { accepting_hash: Hash, accepting_daa: u64, accepting_time: u64, associated_txs: Vec<(Hash, Vec<u8>)> },
+    BlkAccepted { accepting_hash: Hash, accepting_daa: u64, accepting_time: u64, associated_txs: Vec<(Hash, Vec<u8>, Option<Vec<TxOutputInfo>>)> },
     BlkReverted { accepting_hash: Hash },
     Exit,
 }
@@ -145,7 +145,7 @@ impl<G: Episode, H: EpisodeEventHandler<G>> Engine<G, H> {
                 EngineMsg::BlkAccepted { accepting_hash, accepting_daa, accepting_time, associated_txs } => {
                     self.filter_old_episodes(accepting_daa);
                     let mut revert_vec: Vec<(EpisodeId, PayloadMetadata)> = vec![];
-                    for (tx_id, payload) in associated_txs {
+                    for (tx_id, payload, tx_outputs) in associated_txs {
                         let episode_action: EpisodeMessage<G> = match borsh::from_slice(&payload) {
                             Ok(EpisodeMessage::Revert { episode_id }) => {
                                 warn!("Episode: {}. Illegal revert attempted. Ignoring.", episode_id);
@@ -157,7 +157,7 @@ impl<G: Episode, H: EpisodeEventHandler<G>> Engine<G, H> {
                                 continue;
                             }
                         };
-                        let metadata = PayloadMetadata { accepting_hash, accepting_daa, accepting_time, tx_id };
+                        let metadata = PayloadMetadata { accepting_hash, accepting_daa, accepting_time, tx_id, tx_outputs };
                         if let Some(revert_id) = self.handle_message(episode_action, &metadata, &handlers) {
                             revert_vec.push(revert_id);
                         }
@@ -173,6 +173,7 @@ impl<G: Episode, H: EpisodeEventHandler<G>> Engine<G, H> {
                                 accepting_daa: reversion.1.accepting_daa,
                                 accepting_time: reversion.1.accepting_time,
                                 tx_id: reversion.1.tx_id,
+                                tx_outputs: reversion.1.tx_outputs.clone(),
                             };
                             assert_eq!(self.handle_message(episode_action, &metadata, &handlers), None);
                         }

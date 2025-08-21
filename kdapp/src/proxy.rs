@@ -25,6 +25,7 @@ use crate::{
     engine::EngineMsg as Msg,
     generator::{check_pattern, Payload},
 };
+use crate::episode::TxOutputInfo;
 
 fn connect_options() -> ConnectOptions {
     ConnectOptions {
@@ -128,8 +129,9 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                 .filter(|&id| engines.values().any(|(pattern, _)| check_pattern(id, pattern)))
                 .collect();
 
-            // Track the required payloads
+            // Track the required payloads and outputs
             let mut required_payloads: HashMap<Hash, Option<Vec<u8>>> = required_txs.iter().map(|&id| (id, None)).collect();
+            let mut required_outputs: HashMap<Hash, Option<Vec<TxOutputInfo>>> = required_txs.iter().map(|&id| (id, None)).collect();
             let mut required_num = required_payloads.len();
 
             if required_num == 0 {
@@ -172,6 +174,18 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                         if let Some(required_payload) = required_payloads.get_mut(&tx_verbose.transaction_id) {
                             if required_payload.is_none() {
                                 required_payload.replace(tx.payload);
+                                // Collect outputs summary for this transaction
+                                if let Some(outputs_slot) = required_outputs.get_mut(&tx_verbose.transaction_id) {
+                                    let outputs_info: Vec<TxOutputInfo> = tx
+                                        .outputs
+                                        .into_iter()
+                                        .map(|out| TxOutputInfo {
+                                            value: out.value,
+                                            script_version: out.script_public_key.version,
+                                        })
+                                        .collect();
+                                    outputs_slot.replace(outputs_info);
+                                }
                                 required_num -= 1;
                                 if required_num == 0 {
                                     break 'outer;
@@ -202,7 +216,9 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                                     if Payload::check_header(payload_ref, prefix) {
                                         if let Some(payload) = entry.remove() {
                                             consumed_txs += 1;
-                                            return Some((id, Payload::strip_header(payload)));
+                                            // Also fetch corresponding outputs
+                                            let outputs = required_outputs.remove(&id).and_then(|o| o);
+                                            return Some((id, Payload::strip_header(payload), outputs));
                                         }
                                     }
                                 }
@@ -212,7 +228,7 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                         None
                     })
                     .collect();
-                for (tx_id, _payload) in associated_txs.iter() {
+                for (tx_id, _payload, _outs) in associated_txs.iter() {
                     info!("received episode tx: {}", tx_id);
                 }
                 if !associated_txs.is_empty() {

@@ -664,23 +664,50 @@ async fn run_comment_board(
         } else {
             println!("💬 Submitting comment (no bond)...");
         }
-        let cmd = ContractCommand::SubmitComment { 
-            text: comment_text.to_string(),
-            bond_amount,
-        };
-        let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, cmd, participant_sk, participant_pk);
+        // If bonding is requested, build a combined tx that includes the bond output
+        if bond_amount > 0 {
+            let cmd = ContractCommand::SubmitComment {
+                text: comment_text.to_string(),
+                bond_amount,
+                bond_output_index: Some(0), // We will place the bond as output index 0
+            };
+            let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, cmd, participant_sk, participant_pk);
 
-        let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &step, FEE);
-        info!("💰 Submitting comment (you pay): {}", tx.id());
-        match kaspad.submit_transaction(tx.as_ref().into(), false).await {
-            Ok(_) => {
-                utxo = generator::get_first_output_utxo(&tx);
+            match utxo_manager
+                .submit_comment_with_bond_payload(&step, bond_amount, 600, PATTERN, PREFIX)
+                .await
+            {
+                Ok(txid) => {
+                    info!("💰 Submitted combined comment+bond tx: {}", txid);
+                    // Refresh UTXOs for next round
+                    let _ = utxo_manager.refresh_utxos(&kaspad).await;
+                }
+                Err(e) => {
+                    println!("❌ Failed to submit combined comment+bond transaction: {}", e);
+                    println!("💡 Try a smaller bond or ensure micro-UTXOs are prepared");
+                    continue;
+                }
             }
-            Err(e) => {
-                println!("❌ Failed to submit comment transaction: {}", e);
-                println!("💡 This might be due to network issues or transaction mass limits");
-                println!("💡 Try again or check your wallet funding");
-                continue;
+        } else {
+            let cmd = ContractCommand::SubmitComment { 
+                text: comment_text.to_string(),
+                bond_amount,
+                bond_output_index: None,
+            };
+            let step = EpisodeMessage::<ContractCommentBoard>::new_signed_command(episode_id, cmd, participant_sk, participant_pk);
+
+            let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &step, FEE);
+            info!("💰 Submitting comment (you pay): {}", tx.id());
+            match kaspad.submit_transaction(tx.as_ref().into(), false).await {
+                Ok(_) => {
+                    utxo = generator::get_first_output_utxo(&tx);
+                }
+                Err(e) => {
+                    println!("❌ Failed to submit comment transaction: {}", e);
+                    println!("💡 This might be due to network issues or transaction mass limits");
+                    println!("💡 Try again or check your wallet funding");
+                    continue;
+                }
             }
         }
 

@@ -4,6 +4,9 @@ use kaspa_wrpc_client::prelude::*;
 use secp256k1::{Keypair, PublicKey};
 use std::collections::HashMap;
 use log::*;
+use kdapp::generator::{check_pattern, Payload, PatternType, PrefixType};
+use kdapp::engine::EpisodeMessage;
+use crate::episode::board_with_contract::ContractCommentBoard;
 
 // Phase 2.0: Import script generation for true UTXO locking
 use crate::wallet::kaspa_scripts::{ScriptUnlockCondition, create_bond_script_pubkey, validate_script_conditions};
@@ -342,6 +345,88 @@ impl UtxoLockManager {
             }
         } else {
             Err("No available UTXOs for bond creation".to_string())
+        }
+    }
+
+    /// Create a single transaction that both locks a bond UTXO (script-based) and carries
+    /// the episode command as payload, brute-forcing the payload nonce to match the pattern.
+    pub async fn submit_comment_with_bond_payload(
+        &mut self,
+        episode_msg: &EpisodeMessage<ContractCommentBoard>,
+        bond_amount: u64,
+        lock_duration_seconds: u64,
+        pattern: PatternType,
+        prefix: PrefixType,
+    ) -> Result<String, String> {
+        use kaspa_consensus_core::{
+            constants::TX_VERSION,
+            sign::sign,
+            subnets::SUBNETWORK_ID_NATIVE,
+            tx::{MutableTransaction, Transaction, TransactionInput, TransactionOutput},
+        };
+        use kaspa_txscript::pay_to_address_script;
+
+        // Select a small enough UTXO
+        let required = bond_amount + FEE;
+        let mut candidate: Option<(TransactionOutpoint, UtxoEntry)> = None;
+        for (op, e) in &self.available_utxos {
+            if e.amount >= required + FEE { // include room for fee
+                match &candidate {
+                    None => candidate = Some((op.clone(), e.clone())),
+                    Some((_, best)) => if e.amount < best.amount { candidate = Some((op.clone(), e.clone())); },
+                }
+            }
+        }
+        let (source_outpoint, source_entry) = candidate.ok_or_else(|| "No available UTXOs for comment+bond".to_string())?;
+
+        // Build bond output — TEMP: standard P2PK to remain standard-valid (no timelock yet)
+        // Once standard script templates are finalized, replace with script-locked output.
+        let bond_output = TransactionOutput { value: bond_amount, script_public_key: pay_to_address_script(&self.kaspa_address) };
+        let change_value = source_entry.amount.saturating_sub(bond_amount + FEE);
+        if change_value == 0 { return Err("Insufficient funds after fees".to_string()); }
+        let change_output = TransactionOutput { value: change_value, script_public_key: pay_to_address_script(&self.kaspa_address) };
+
+        // Inputs
+        let tx_input = TransactionInput { previous_outpoint: source_outpoint.clone(), signature_script: vec![], sequence: 0, sig_op_count: 1 };
+
+        // Payload with kdapp header for pattern/prefix and episode message
+        let inner = borsh::to_vec(episode_msg).map_err(|e| format!("encode episode msg: {}", e))?;
+        let mut payload = Payload::pack_header(inner, prefix);
+
+        // Nonce brute-force loop
+        let mut nonce = 0u32;
+        let mut unsigned = Transaction::new_non_finalized(
+            TX_VERSION,
+            vec![tx_input.clone()],
+            vec![bond_output.clone(), change_output.clone()],
+            0,
+            SUBNETWORK_ID_NATIVE,
+            0,
+            payload.clone(),
+        );
+        unsigned.finalize();
+        while !check_pattern(unsigned.id(), &pattern) {
+            nonce = nonce.checked_add(1).ok_or_else(|| "nonce overflow".to_string())?;
+            Payload::set_nonce(&mut payload, nonce);
+            unsigned = Transaction::new_non_finalized(
+                TX_VERSION,
+                vec![tx_input.clone()],
+                vec![bond_output.clone(), change_output.clone()],
+                0,
+                SUBNETWORK_ID_NATIVE,
+                0,
+                payload.clone(),
+            );
+            unsigned.finalize();
+        }
+
+        // Sign
+        let signed = sign(MutableTransaction::with_entries(unsigned, vec![source_entry.clone()]), self.keypair).tx;
+
+        // Submit
+        match self.kaspad_client.submit_transaction((&signed).into(), false).await {
+            Ok(_) => Ok(signed.id().to_string()),
+            Err(e) => Err(format!("submit failed: {}", e)),
         }
     }
     

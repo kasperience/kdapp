@@ -25,6 +25,7 @@ pub enum ContractCommand {
     SubmitComment { 
         text: String, 
         bond_amount: u64,  // User-specified bond (must meet minimum)
+        bond_output_index: Option<u32>, // If present, exact output index carrying the bond in the carrier tx
     },
     
     // Community Moderation System

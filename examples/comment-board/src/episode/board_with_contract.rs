@@ -151,8 +151,8 @@ impl Episode for ContractCommentBoard {
                 self.execute_submit_response(participant, signature, nonce, metadata)
             }
             
-            ContractCommand::SubmitComment { text, bond_amount } => {
-                self.execute_submit_comment(participant, text, *bond_amount, metadata)
+            ContractCommand::SubmitComment { text, bond_amount, bond_output_index } => {
+                self.execute_submit_comment(participant, text, *bond_amount, *bond_output_index, metadata)
             }
             
             _ => {
@@ -279,6 +279,7 @@ impl ContractCommentBoard {
         participant: PubKey,
         text: &str,
         bond_amount: u64,
+        bond_output_index: Option<u32>,
         metadata: &PayloadMetadata,
     ) -> Result<ContractRollback, EpisodeError<ContractError>> {
         let participant_str = format!("{}", participant);
@@ -310,6 +311,26 @@ impl ContractCommentBoard {
                         provided: bond_amount
                     }
                 ));
+            }
+
+            // If available, verify the declared bond against carrier tx outputs
+            if let Some(outputs) = &metadata.tx_outputs {
+                if let Some(idx) = bond_output_index.map(|v| v as usize) {
+                    // Exact match: required bond must equal the value at index
+                    if outputs.get(idx).map(|o| o.value) != Some(bond_amount) {
+                        return Err(EpisodeError::InvalidCommand(
+                            ContractError::InsufficientBond { required: bond_amount, provided: 0 }
+                        ));
+                    }
+                } else {
+                    // Fallback: accept if any output covers the bond (Phase 1.5)
+                    let has_sufficient_output = outputs.iter().any(|o| o.value >= bond_amount);
+                    if !has_sufficient_output {
+                        return Err(EpisodeError::InvalidCommand(
+                            ContractError::InsufficientBond { required: bond_amount, provided: 0 }
+                        ));
+                    }
+                }
             }
         }
         // If bond_amount == 0, participant chose no bond - allow this even if bonds are enabled
