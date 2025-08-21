@@ -6,7 +6,7 @@ This directory contains technical documentation, proofs, and validation material
 
 ### Core Documentation
 - **`technical-validation.md`** - External validation of UTXO locking feasibility 
-- **`implementation-roadmap.md`** - Phase 1.1 → 1.2 → 2.0 development path
+- **`implementation-roadmap.md`** - Phase 1.1 → 1.2 → 2.0 development path (includes “UTXO Locking + Multisig: Current Status”)
 - **`security-analysis.md`** - Security considerations and threat model
 - **`performance-benchmarks.md`** - Performance testing and optimization results
 
@@ -22,6 +22,7 @@ This directory contains technical documentation, proofs, and validation material
 
 ### Decision Records
 - **`architecture-decisions/`** - ADRs documenting major technical decisions
+- Notable: ADR-001 (UTXO Locking Approach), ADR-002 (Shared Policy Helpers/commons)
 - **`security-decisions/`** - Security-specific architectural choices
 - **`performance-decisions/`** - Performance optimization decisions
 

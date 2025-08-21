@@ -98,6 +98,19 @@ let locked_utxo = create_utxo_with_script(bond_amount, lock_script);
 
 ---
 
+## 📌 UTXO Locking + Multisig: Current Status
+
+- Descriptor plumbing: 80% — `script_bytes` wiring behind a feature flag; episodes can inspect when available.
+- Standard script bonds: 30% — experimental path exists; public nodes reject non‑standard scripts. Next: standard, node‑accepted templates.
+- Episode enforcement: 50% — policy mismatch rejection works; needs broader coverage and removal of feature gating.
+- Wallet/UTXO manager (script outputs): 30% — solid for P2PK; need builder/signing for standard scripts and change handling.
+- Multisig orchestration: 10–20% — not implemented. Requires n‑of‑m key mgmt, signature collection/aggregation, and rollback flows.
+- E2E tests (locking/reorg/rollback): 20% — scaffolding exists; contract scenarios missing.
+
+Overall: ~35–45% toward “full on‑chain UTXO locking with multisig” across infra + examples. Single‑sig standard script bonding: ~1–2 weeks focused work. Multisig: +2–4 weeks for orchestration/UX/tests, assuming no node policy blockers.
+
+---
+
 ## 🏛️ Phase 3.0: Full Episode Contracts (FUTURE)
 
 ### 🎯 **Goal**: Complete decentralized moderation platform
