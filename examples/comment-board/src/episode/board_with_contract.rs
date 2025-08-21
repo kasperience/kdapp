@@ -323,19 +323,21 @@ impl ContractCommentBoard {
                             ContractError::InsufficientBond { required: bond_amount, provided: 0 }
                         ));
                     }
-                    // Note: script descriptor verification is pending until tx context includes script bytes
+                    // If script bytes are available in tx context, decode and compare to the command descriptor
                     if let Some(descriptor) = bond_script {
-                        match descriptor {
-                            crate::episode::commands::BondScriptKind::P2PK => {
-                                // No extra checks; value match suffices
+                        if let Some(script_bytes) = outputs.get(idx).and_then(|o| o.script_bytes.as_ref()) {
+                            if let Some(onchain_desc) = crate::wallet::kaspa_scripts::decode_bond_descriptor(script_bytes) {
+                                if &onchain_desc != descriptor {
+                                    return Err(EpisodeError::InvalidCommand(
+                                        ContractError::InvalidCommand { reason: "bond script descriptor mismatch".to_string() }
+                                    ));
+                                }
+                            } else {
+                                log::info!("[ContractCommentBoard] Script bytes present but could not decode descriptor; accepting value-verified bond");
                             }
-                            crate::episode::commands::BondScriptKind::TimeLock { .. } |
-                            crate::episode::commands::BondScriptKind::ModeratorMultisig { .. } |
-                            crate::episode::commands::BondScriptKind::TimeOrModerator { .. } => {
-                                // Placeholder: we will verify script template once metadata exposes script bytes
-                                // For now, accept if value matches; emit an info log for visibility
-                                log::info!("[ContractCommentBoard] Experimental script bond descriptor present; value verified, script policy verification pending");
-                            }
+                        } else {
+                            // Placeholder: we will verify script template once metadata exposes script bytes
+                            log::info!("[ContractCommentBoard] Experimental script bond descriptor present; value verified, script policy verification pending");
                         }
                     }
                 } else {

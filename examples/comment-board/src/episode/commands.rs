@@ -3,7 +3,7 @@ use kdapp::pki::PubKey;
 use crate::episode::contract::{ViolationType, VoteDecision, RoomRules};
 
 /// Experimental descriptor of the bond script policy requested by the client
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
 pub enum BondScriptKind {
     /// Standard P2PK output (default, standard-valid)
     P2PK,

@@ -328,3 +328,50 @@ pub fn create_bond_script_pubkey_from_descriptor(
     let script_vec: SmallVec<[u8; 36]> = desc.into_iter().collect();
     Ok(ScriptPublicKey::new(0, script_vec))
 }
+
+/// Decode a compact bond script descriptor from bytes (draft). Mirrors encode_bond_descriptor.
+pub fn decode_bond_descriptor(bytes: &[u8]) -> Option<BondScriptKind> {
+    if bytes.is_empty() { return None; }
+    let tag = bytes[0];
+    let mut i = 1usize;
+    let read_u64 = |b: &[u8], off: &mut usize| -> Option<u64> {
+        if *off + 8 > b.len() { return None; }
+        let mut arr = [0u8;8];
+        arr.copy_from_slice(&b[*off..*off+8]);
+        *off += 8;
+        Some(u64::from_le_bytes(arr))
+    };
+    let skip_pub = |b: &[u8], off: &mut usize| -> bool { if *off + 33 > b.len() { false } else { *off += 33; true } };
+    match tag {
+        0x01 => {
+            if !skip_pub(bytes, &mut i) { return None; }
+            Some(BondScriptKind::P2PK)
+        }
+        0x02 => {
+            let t = read_u64(bytes, &mut i)?;
+            if !skip_pub(bytes, &mut i) { return None; }
+            Some(BondScriptKind::TimeLock { unlock_time: t })
+        }
+        0x03 => {
+            if i+2 > bytes.len() { return None; }
+            let req = bytes[i]; i+=1; let cnt = bytes[i]; i+=1;
+            // skip moderator pubkeys
+            let need = (cnt as usize) * 33;
+            if i + need > bytes.len() { return None; }
+            i += need;
+            if !skip_pub(bytes, &mut i) { return None; }
+            Some(BondScriptKind::ModeratorMultisig { required_signatures: req, moderator_count: cnt })
+        }
+        0x04 => {
+            let t = read_u64(bytes, &mut i)?;
+            if i+2 > bytes.len() { return None; }
+            let req = bytes[i]; i+=1; let cnt = bytes[i]; i+=1;
+            let need = (cnt as usize) * 33;
+            if i + need > bytes.len() { return None; }
+            i += need;
+            if !skip_pub(bytes, &mut i) { return None; }
+            Some(BondScriptKind::TimeOrModerator { unlock_time: t, required_signatures: req, moderator_count: cnt })
+        }
+        _ => None,
+    }
+}

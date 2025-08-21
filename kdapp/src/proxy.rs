@@ -182,6 +182,7 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                                         .map(|out| TxOutputInfo {
                                             value: out.value,
                                             script_version: out.script_public_key.version,
+                                            script_bytes: None,
                                         })
                                         .collect();
                                     outputs_slot.replace(outputs_info);

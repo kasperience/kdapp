@@ -26,6 +26,8 @@ pub enum EpisodeError<E: Error + 'static> {
 pub struct TxOutputInfo {
     pub value: u64,
     pub script_version: u16,
+    // Optional script bytes for advanced policy verification (may be omitted by proxy)
+    pub script_bytes: Option<Vec<u8>>,
 }
 
 #[derive(Clone, PartialEq, Debug, BorshSerialize, BorshDeserialize)]
