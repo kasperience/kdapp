@@ -179,10 +179,16 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                                     let outputs_info: Vec<TxOutputInfo> = tx
                                         .outputs
                                         .into_iter()
-                                        .map(|out| TxOutputInfo {
-                                            value: out.value,
-                                            script_version: out.script_public_key.version,
-                                            script_bytes: None,
+                                        .map(|out| {
+                                            #[cfg(feature = "tx-script-bytes")]
+                                            let script_bytes = Some(out.script_public_key.script().to_vec());
+                                            #[cfg(not(feature = "tx-script-bytes"))]
+                                            let script_bytes = None;
+                                            TxOutputInfo {
+                                                value: out.value,
+                                                script_version: out.script_public_key.version,
+                                                script_bytes,
+                                            }
                                         })
                                         .collect();
                                     outputs_slot.replace(outputs_info);

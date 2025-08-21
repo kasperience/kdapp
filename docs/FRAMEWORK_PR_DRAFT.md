@@ -48,6 +48,14 @@ unlock script-policy verification for economic episodes (e.g., timelock/multisig
 ## Rollout
 - Phase 1: land optional `script_bytes`; no behavior change by default.
 - Phase 2: enable proxy population of `script_bytes` where RPC types allow.
+
+## Local Feature Flag (for validation)
+- Crate: `kdapp` feature `tx-script-bytes` populates `TxOutputInfo.script_bytes` from
+  `out.script_public_key.script()` when available.
+- Usage examples:
+  - `cargo check -p kdapp --features tx-script-bytes`
+  - `cargo build -p kdapp --features tx-script-bytes`
+- Episodes can then decode on-chain descriptors and validate against command intent.
 - Phase 3: episodes adopt verification (descriptor decode/compare or direct script template checks).
 
 ## Notes
