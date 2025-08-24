@@ -52,3 +52,5 @@ package-sizes.js
 # Future examples - keep in dev branch only, hide from master
 examples/kaspa-poker-tournament/
 examples/episode-contract/
+/target-join/
+/examples/*/target-join/
