@@ -27,13 +27,14 @@ use crate::{
     generator::{check_pattern, Payload},
 };
 
-fn connect_options() -> ConnectOptions {
+pub fn connect_options() -> ConnectOptions {
     ConnectOptions {
         block_async_connect: true,
         strategy: ConnectStrategy::Fallback,
         url: None,
         connect_timeout: Some(Duration::from_secs(5)),
-        retry_interval: None,
+        // Enable periodic reconnect attempts when the socket drops
+        retry_interval: Some(Duration::from_secs(2)),
     }
 }
 
@@ -75,8 +76,19 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
     let info = match kaspad.get_block_dag_info().await {
         Ok(info) => info,
         Err(e) => {
-            warn!("Failed to get block DAG info: {}. Retrying...", e);
-            return;
+            warn!("Failed to get block DAG info: {}. Attempting reconnect...", e);
+            // Try to (re)connect and fetch again
+            if let Err(err) = kaspad.connect(Some(connect_options())).await {
+                warn!("Reconnect failed: {}", err);
+                return;
+            }
+            match kaspad.get_block_dag_info().await {
+                Ok(info) => info,
+                Err(e2) => {
+                    warn!("Failed to get block DAG info after reconnect: {}", e2);
+                    return;
+                }
+            }
         }
     };
     let mut sink = info.sink;
@@ -93,7 +105,21 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
         let vcb = match kaspad.get_virtual_chain_from_block(sink, true).await {
             Ok(vcb) => vcb,
             Err(e) => {
-                warn!("Failed to get virtual chain from block: {}. Retrying...", e);
+                warn!("Failed to get virtual chain from block: {}. Reconnecting...", e);
+                // Attempt a reconnect and reset sink
+                if let Err(err) = kaspad.connect(Some(connect_options())).await {
+                    warn!("Reconnect failed: {}", err);
+                    continue;
+                }
+                match kaspad.get_block_dag_info().await {
+                    Ok(info) => {
+                        sink = info.sink;
+                        info!("Sink: {}", sink);
+                    }
+                    Err(e2) => {
+                        warn!("Failed to refresh DAG info after reconnect: {}", e2);
+                    }
+                }
                 continue;
             }
         };

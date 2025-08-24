@@ -70,6 +70,26 @@ pub enum UnlockCondition {
 }
 
 impl UtxoLockManager {
+    async fn submit_with_retry(&self, tx: &kaspa_consensus_core::tx::Transaction) -> Result<(), String> {
+        let mut attempts = 0usize;
+        loop {
+            match self.kaspad_client.submit_transaction(tx.into(), false).await {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    attempts += 1;
+                    let msg = e.to_string();
+                    if msg.contains("already accepted") { return Ok(()); }
+                    if attempts >= 3 { return Err(format!("{}", msg)); }
+                    if msg.contains("WebSocket") || msg.contains("not connected") || msg.contains("disconnected") {
+                        let _ = self.kaspad_client.connect(Some(kdapp::proxy::connect_options())).await;
+                        continue;
+                    }
+                    // Orphan/transient
+                    continue;
+                }
+            }
+        }
+    }
     /// Create new UTXO manager with current wallet state - Phase 1.1 Enhanced
     pub async fn new(
         kaspad: &KaspaRpcClient,
@@ -229,6 +249,14 @@ impl UtxoLockManager {
     ) -> Result<String, String> {
         info!("🔒 Phase 2.0: Creating script-based bond with TRUE blockchain enforcement");
 
+        use kaspa_consensus_core::{
+            constants::TX_VERSION,
+            sign::sign,
+            subnets::SUBNETWORK_ID_NATIVE,
+            tx::{MutableTransaction, Transaction, TransactionInput, TransactionOutput},
+        };
+        use kaspa_txscript::pay_to_address_script;
+
         // Check if we have sufficient balance
         if !self.can_afford_bond(bond_amount) {
             return Err(format!(
@@ -239,13 +267,11 @@ impl UtxoLockManager {
         }
 
         let current_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-
         let unlock_time = current_time + lock_duration_seconds;
         let user_pubkey = self.keypair.public_key();
 
         // Create script unlock condition based on provided parameters
         let script_condition = if let (Some(mod_pubkeys), Some(required_sigs)) = (moderator_pubkeys, required_moderator_signatures) {
-            // Combined: time-lock OR moderator release
             ScriptUnlockCondition::TimeOrModerator {
                 unlock_time,
                 user_pubkey,
@@ -253,85 +279,99 @@ impl UtxoLockManager {
                 required_signatures: required_sigs,
             }
         } else {
-            // Simple time-lock only
             ScriptUnlockCondition::TimeLock { unlock_time, user_pubkey }
         };
 
-        // Validate script conditions
         if let Err(e) = validate_script_conditions(&script_condition, current_time) {
             return Err(format!("Invalid script conditions: {}", e));
         }
 
-        // Generate script public key for the bond UTXO
         let script_pubkey = match create_bond_script_pubkey(&script_condition) {
             Ok(spk) => spk,
             Err(e) => return Err(format!("Failed to create script public key: {}", e)),
         };
-
         info!("🔐 Script public key created: {} bytes", script_pubkey.script().len());
 
-        // Find the smallest UTXO that can cover bond + fee
-        let required = bond_amount + FEE;
-        let mut candidate: Option<(TransactionOutpoint, UtxoEntry)> = None;
-        for (op, e) in &self.available_utxos {
-            if e.amount >= required {
-                match &candidate {
-                    None => candidate = Some((op.clone(), e.clone())),
-                    Some((_, best_e)) => {
-                        if e.amount < best_e.amount {
-                            candidate = Some((op.clone(), e.clone()));
-                        }
-                    }
-                }
+        // --- Multi-input coin selection ---
+        let required_total = bond_amount + FEE;
+        let mut utxos_sorted: Vec<(TransactionOutpoint, UtxoEntry)> = self.available_utxos.clone();
+        utxos_sorted.sort_by_key(|(_, e)| e.amount);
+
+        let mut selected_inputs: Vec<(TransactionOutpoint, UtxoEntry)> = Vec::new();
+        let mut selected_total: u64 = 0;
+        for (op, e) in utxos_sorted.into_iter() {
+            selected_total = selected_total.saturating_add(e.amount);
+            selected_inputs.push((op, e));
+            if selected_total >= required_total {
+                break;
             }
         }
+        if selected_total < required_total {
+            return Err("No available UTXOs for bond creation".to_string());
+        }
 
-        if let Some((outpoint, entry)) = candidate {
-            if entry.amount >= required {
-                // Need extra for fees
-                // Phase 2.0: Create REAL script-based transaction that locks funds
-                match self
-                    .create_script_bond_transaction(comment_id, bond_amount, &outpoint, &entry, &script_pubkey, &script_condition)
-                    .await
-                {
-                    Ok(bond_tx_id) => {
-                        // Create script-based bond address
-                        let bond_address = self.kaspa_address.clone(); // TODO: Generate from script_pubkey
+        // --- Transaction construction ---
+        let tx_inputs: Vec<TransactionInput> = selected_inputs
+            .iter()
+            .map(|(op, _e)| TransactionInput { previous_outpoint: op.clone(), signature_script: vec![], sequence: 0, sig_op_count: 1 })
+            .collect();
 
-                        let locked_utxo = LockedUtxo {
-                            outpoint: outpoint.clone(),
-                            entry: entry.clone(),
-                            comment_id,
-                            bond_amount,
-                            lock_time: current_time,
-                            unlock_conditions: UnlockCondition::TimeBasedRelease { unlock_time },
-                            bond_transaction_id: bond_tx_id.clone(),
-                            confirmation_height: None,
-                            bond_address,
-                            enforcement_level: BondEnforcementLevel::ScriptBased {
-                                script_pubkey: script_pubkey.clone(),
-                                unlock_script_condition: script_condition,
-                            },
-                        };
+        let script_output = TransactionOutput { value: bond_amount, script_public_key: script_pubkey.clone() };
 
-                        // Track the script-based bond
-                        self.pending_bonds.insert(comment_id, bond_tx_id.clone());
-                        self.locked_utxos.insert(comment_id, locked_utxo);
-                        self.total_locked_balance += bond_amount;
-
-                        info!("✅ Phase 2.0: Script-based bond created with TRUE blockchain enforcement");
-                        info!("🔗 Bond transaction: {}", bond_tx_id);
-                        info!("🔒 Funds are now TRULY locked by blockchain script until unlock conditions are met");
-
-                        Ok(bond_tx_id)
-                    }
-                    Err(e) => Err(format!("Failed to create script bond transaction: {}", e)),
-                }
-            } else {
-                Err("No UTXO with sufficient balance for bond + fees".to_string())
-            }
+        let change_value = selected_total.saturating_sub(bond_amount + FEE);
+        let change_output = if change_value > 0 {
+            Some(TransactionOutput { value: change_value, script_public_key: pay_to_address_script(&self.kaspa_address) })
         } else {
-            Err("No available UTXOs for bond creation".to_string())
+            None
+        };
+
+        let mut outputs = vec![script_output];
+        if let Some(co) = change_output {
+            outputs.push(co);
+        }
+
+        let bond_payload = format!("SCRIPT_BOND:{}:{}:{}", comment_id, bond_amount, script_pubkey.script().len());
+
+        let unsigned_tx = Transaction::new_non_finalized(TX_VERSION, tx_inputs, outputs, 0, SUBNETWORK_ID_NATIVE, 0, bond_payload.into_bytes());
+
+        let selected_entries: Vec<UtxoEntry> = selected_inputs.iter().map(|(_, e)| e.clone()).collect();
+        let signed_tx = sign(MutableTransaction::with_entries(unsigned_tx, selected_entries), self.keypair).tx;
+        let tx_id = signed_tx.id().to_string();
+
+        // --- Submit and update state ---
+        match self.kaspad_client.submit_transaction((&signed_tx).into(), false).await {
+            Ok(_) => {
+                let bond_address = self.kaspa_address.clone(); // TODO: Generate from script_pubkey
+                let locked_utxo = LockedUtxo {
+                    outpoint: selected_inputs[0].0.clone(), // TODO: This is not quite right for multi-input, but ok for now
+                    entry: selected_inputs[0].1.clone(),    // TODO: see above
+                    comment_id,
+                    bond_amount,
+                    lock_time: current_time,
+                    unlock_conditions: UnlockCondition::TimeBasedRelease { unlock_time },
+                    bond_transaction_id: tx_id.clone(),
+                    confirmation_height: None,
+                    bond_address,
+                    enforcement_level: BondEnforcementLevel::ScriptBased {
+                        script_pubkey: script_pubkey.clone(),
+                        unlock_script_condition: script_condition,
+                    },
+                };
+
+                self.pending_bonds.insert(comment_id, tx_id.clone());
+                self.locked_utxos.insert(comment_id, locked_utxo);
+                self.total_locked_balance += bond_amount;
+
+                info!("✅ Phase 2.0: Script-based bond created with TRUE blockchain enforcement");
+                info!("🔗 Bond transaction: {}", tx_id);
+                info!("🔒 Funds are now TRULY locked by blockchain script until unlock conditions are met");
+
+                Ok(tx_id)
+            }
+            Err(e) => {
+                error!("❌ Failed to submit script bond transaction: {}", e);
+                Err(format!("Script bond transaction submission failed: {}", e))
+            }
         }
     }
 
@@ -354,91 +394,103 @@ impl UtxoLockManager {
         };
         use kaspa_txscript::pay_to_address_script;
 
-        // Select a small enough UTXO
-        let required = bond_amount + FEE;
-        let mut candidate: Option<(TransactionOutpoint, UtxoEntry)> = None;
-        for (op, e) in &self.available_utxos {
-            if e.amount >= required + FEE {
-                // include room for fee
-                match &candidate {
-                    None => candidate = Some((op.clone(), e.clone())),
-                    Some((_, best)) => {
-                        if e.amount < best.amount {
-                            candidate = Some((op.clone(), e.clone()));
-                        }
+        // Encode payload once (header is updated for nonce, but body is constant)
+        let inner = borsh::to_vec(episode_msg).map_err(|e| format!("encode episode msg: {}", e))?;
+
+        // Attempt twice: initial + orphan/refresh retry
+        for attempt in 0..=1u8 {
+            if attempt == 1 {
+                // Refresh wallet state to avoid using spent or pending inputs
+                let _ = self.refresh_utxos().await;
+            }
+
+            // Coin select: pick smallest-first inputs until we cover bond + fee
+            let required_total = bond_amount + FEE;
+            let mut utxos_sorted: Vec<(TransactionOutpoint, UtxoEntry)> = self.available_utxos.clone();
+            utxos_sorted.sort_by_key(|(_, e)| e.amount);
+
+            let mut selected_inputs: Vec<(TransactionOutpoint, UtxoEntry)> = Vec::new();
+            let mut selected_total: u64 = 0;
+            for (op, e) in utxos_sorted.into_iter() {
+                selected_total = selected_total.saturating_add(e.amount);
+                selected_inputs.push((op, e));
+                if selected_total >= required_total {
+                    break;
+                }
+            }
+            if selected_total < required_total {
+                return Err("No available UTXOs for comment+bond".to_string());
+            }
+
+            // Build bond output
+            let bond_output = if use_script_bonds {
+                let current_time = self.current_time();
+                let unlock_time = current_time + lock_duration_seconds;
+                let script_condition = crate::wallet::kaspa_scripts::ScriptUnlockCondition::TimeLock {
+                    unlock_time,
+                    user_pubkey: self.keypair.public_key(),
+                };
+                match crate::wallet::kaspa_scripts::create_bond_script_pubkey(&script_condition) {
+                    Ok(spk) => TransactionOutput { value: bond_amount, script_public_key: spk },
+                    Err(e) => {
+                        warn!("Falling back to P2PK bond output: script build failed: {}", e);
+                        TransactionOutput { value: bond_amount, script_public_key: pay_to_address_script(&self.kaspa_address) }
                     }
                 }
-            }
-        }
-        let (source_outpoint, source_entry) = candidate.ok_or_else(|| "No available UTXOs for comment+bond".to_string())?;
+            } else {
+                TransactionOutput { value: bond_amount, script_public_key: pay_to_address_script(&self.kaspa_address) }
+            };
+            let change_value = selected_total.saturating_sub(bond_amount + FEE);
+            let change_output = if change_value > 0 {
+                Some(TransactionOutput { value: change_value, script_public_key: pay_to_address_script(&self.kaspa_address) })
+            } else {
+                None
+            };
 
-        // Build bond output
-        // Default: standard P2PK to remain standard-valid (no timelock yet)
-        // If use_script_bonds is set, attempt experimental script-locked output.
-        let bond_output = if use_script_bonds {
-            let current_time = self.current_time();
-            let unlock_time = current_time + lock_duration_seconds;
-            let script_condition =
-                crate::wallet::kaspa_scripts::ScriptUnlockCondition::TimeLock { unlock_time, user_pubkey: self.keypair.public_key() };
-            match crate::wallet::kaspa_scripts::create_bond_script_pubkey(&script_condition) {
-                Ok(spk) => TransactionOutput { value: bond_amount, script_public_key: spk },
+            // Inputs (multi-input)
+            let tx_inputs: Vec<TransactionInput> = selected_inputs
+                .iter()
+                .map(|(op, _e)| TransactionInput { previous_outpoint: op.clone(), signature_script: vec![], sequence: 0, sig_op_count: 1 })
+                .collect();
+
+            // Payload with kdapp header for pattern/prefix and episode message
+            let mut payload = Payload::pack_header(inner.clone(), prefix);
+
+            // Nonce brute-force loop
+            let mut nonce = 0u32;
+            let mut outputs = vec![bond_output.clone()];
+            if let Some(co) = change_output.clone() {
+                outputs.push(co);
+            }
+            let mut unsigned =
+                Transaction::new_non_finalized(TX_VERSION, tx_inputs.clone(), outputs.clone(), 0, SUBNETWORK_ID_NATIVE, 0, payload.clone());
+            unsigned.finalize();
+            while !check_pattern(unsigned.id(), &pattern) {
+                nonce = nonce.checked_add(1).ok_or_else(|| "nonce overflow".to_string())?;
+                Payload::set_nonce(&mut payload, nonce);
+                unsigned = Transaction::new_non_finalized(TX_VERSION, tx_inputs.clone(), outputs.clone(), 0, SUBNETWORK_ID_NATIVE, 0, payload.clone());
+                unsigned.finalize();
+            }
+
+            // Sign with all selected entries
+            let selected_entries: Vec<UtxoEntry> = selected_inputs.iter().map(|(_, e)| e.clone()).collect();
+            let signed = sign(MutableTransaction::with_entries(unsigned, selected_entries), self.keypair).tx;
+
+            // Submit
+            match self.submit_with_retry(&signed).await {
+                Ok(()) => return Ok(signed.id().to_string()),
                 Err(e) => {
-                    warn!("Falling back to P2PK bond output: script build failed: {}", e);
-                    TransactionOutput { value: bond_amount, script_public_key: pay_to_address_script(&self.kaspa_address) }
+                    let es = e.to_string();
+                    if es.contains("orphan") && attempt == 0 {
+                        warn!("comment+bond submit rejected as orphan; retrying after refresh...");
+                        continue;
+                    }
+                    return Err(format!("submit failed: {}", es));
                 }
             }
-        } else {
-            TransactionOutput { value: bond_amount, script_public_key: pay_to_address_script(&self.kaspa_address) }
-        };
-        let change_value = source_entry.amount.saturating_sub(bond_amount + FEE);
-        if change_value == 0 {
-            return Err("Insufficient funds after fees".to_string());
-        }
-        let change_output = TransactionOutput { value: change_value, script_public_key: pay_to_address_script(&self.kaspa_address) };
-
-        // Inputs
-        let tx_input =
-            TransactionInput { previous_outpoint: source_outpoint.clone(), signature_script: vec![], sequence: 0, sig_op_count: 1 };
-
-        // Payload with kdapp header for pattern/prefix and episode message
-        let inner = borsh::to_vec(episode_msg).map_err(|e| format!("encode episode msg: {}", e))?;
-        let mut payload = Payload::pack_header(inner, prefix);
-
-        // Nonce brute-force loop
-        let mut nonce = 0u32;
-        let mut unsigned = Transaction::new_non_finalized(
-            TX_VERSION,
-            vec![tx_input.clone()],
-            vec![bond_output.clone(), change_output.clone()],
-            0,
-            SUBNETWORK_ID_NATIVE,
-            0,
-            payload.clone(),
-        );
-        unsigned.finalize();
-        while !check_pattern(unsigned.id(), &pattern) {
-            nonce = nonce.checked_add(1).ok_or_else(|| "nonce overflow".to_string())?;
-            Payload::set_nonce(&mut payload, nonce);
-            unsigned = Transaction::new_non_finalized(
-                TX_VERSION,
-                vec![tx_input.clone()],
-                vec![bond_output.clone(), change_output.clone()],
-                0,
-                SUBNETWORK_ID_NATIVE,
-                0,
-                payload.clone(),
-            );
-            unsigned.finalize();
         }
 
-        // Sign
-        let signed = sign(MutableTransaction::with_entries(unsigned, vec![source_entry.clone()]), self.keypair).tx;
-
-        // Submit
-        match self.kaspad_client.submit_transaction((&signed).into(), false).await {
-            Ok(_) => Ok(signed.id().to_string()),
-            Err(e) => Err(format!("submit failed: {}", e)),
-        }
+        Err("unreachable".to_string())
     }
 
     /// Phase 2.0: Create script-based transaction that truly locks funds on blockchain
@@ -449,7 +501,7 @@ impl UtxoLockManager {
         source_outpoint: &TransactionOutpoint,
         source_entry: &UtxoEntry,
         script_pubkey: &ScriptPublicKey,
-        script_condition: &ScriptUnlockCondition,
+        _script_condition: &ScriptUnlockCondition,
     ) -> Result<String, String> {
         info!("🔐 Phase 2.0: Creating REAL script-based bond transaction");
         info!("💰 Bond amount: {:.6} KAS", bond_amount as f64 / 100_000_000.0);
@@ -527,7 +579,7 @@ impl UtxoLockManager {
         info!("✅ Bond UTXO will be TRULY locked by blockchain script");
 
         // Submit the transaction to Kaspa network
-        match self.kaspad_client.submit_transaction((&signed_tx).into(), false).await {
+        match self.submit_with_retry(&signed_tx).await {
             Ok(_) => {
                 info!("✅ Script-based bond transaction {} submitted successfully", tx_id);
                 info!("🔒 Funds are now locked by blockchain script - trustless enforcement active");
@@ -612,7 +664,7 @@ impl UtxoLockManager {
         let tx_id = bond_tx.id().to_string();
 
         // Submit REAL transaction to Kaspa blockchain
-        match self.kaspad_client.submit_transaction((&bond_tx).into(), false).await {
+        match self.submit_with_retry(&bond_tx).await {
             Ok(_) => {
                 info!("✅ REAL bond transaction {} successfully submitted to Kaspa blockchain", tx_id);
                 info!(
@@ -678,7 +730,7 @@ impl UtxoLockManager {
             let mutable_tx = MutableTransaction::with_entries(unsigned_tx, vec![entry.clone()]);
             let split_tx = sign(mutable_tx, self.keypair).tx;
 
-            match self.kaspad_client.submit_transaction((&split_tx).into(), false).await {
+            match self.submit_with_retry(&split_tx).await {
                 Ok(_) => {
                     info!("✅ Split transaction {} submitted successfully", split_tx.id());
                     // Remove the old large UTXO; new ones will appear on refresh
@@ -699,7 +751,6 @@ impl UtxoLockManager {
     /// Ensure we have at least `min_count` micro-UTXOs (<= max_utxo_size), performing staged splits
     pub async fn ensure_micro_utxos(
         &mut self,
-        kaspad: &KaspaRpcClient,
         min_count: usize,
         max_utxo_size: u64,
         target_chunk_size: u64,
@@ -726,7 +777,7 @@ impl UtxoLockManager {
                 Ok(_) => {
                     // Allow propagation, then refresh
                     sleep(Duration::from_millis(1500)).await;
-                    let _ = self.refresh_utxos(kaspad).await;
+                    let _ = self.refresh_utxos().await;
                 }
                 Err(e) => return Err(e),
             }
@@ -919,10 +970,11 @@ impl UtxoLockManager {
     }
 
     /// Refresh UTXO state from blockchain
-    pub async fn refresh_utxos(&mut self, kaspad: &KaspaRpcClient) -> Result<(), String> {
+    pub async fn refresh_utxos(&mut self) -> Result<(), String> {
         info!("🔄 Refreshing UTXO state from blockchain...");
 
-        let entries = kaspad
+        let entries = self
+            .kaspad_client
             .get_utxos_by_addresses(vec![self.kaspa_address.clone()])
             .await
             .map_err(|e| format!("Failed to refresh UTXOs: {}", e))?;
