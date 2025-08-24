@@ -2,6 +2,12 @@
 
 kdapp example with economic enforcement on Kaspa L1.
 
+## Recent Improvements
+
+- RPC resilience: automatic reconnects in the listener and retry-on-disconnect for submissions to handle transient WebSocket drops without manual restarts.
+- Non-blocking input: participant UI now renders state updates immediately while waiting for input (no aggregation or multi-comment delay).
+- Organizer/participant parity: both sides reflect comments near real time even under intermittent node issues.
+
 ## Features
 
 - **Episode Contracts** - Economic smart contracts on kdapp/Kaspa L1
