@@ -393,14 +393,18 @@ mod tests {
 
         let mut board = CommentBoard::initialize(vec![pk1, pk2], &metadata);
 
-        // Test authentication
-        let rollback = board.execute(&CommentCommand::Authenticate, Some(pk1), &metadata).unwrap();
-        assert!(board.is_user_authenticated(&pk1));
-        assert!(!board.is_user_authenticated(&pk2));
-
-        // Test rollback
-        board.rollback(rollback);
-        // Note: Our simple rollback doesn't remove authentication, which is okay for this example
+        // Request a challenge, then submit a response
+        let _rb1 = board.execute(&CommentCommand::RequestChallenge, Some(pk1), &metadata).unwrap();
+        let challenge = board.challenge.clone().expect("challenge should be set");
+        let _rb2 = board
+            .execute(
+                &CommentCommand::SubmitResponse { signature: "sig".to_string(), nonce: challenge },
+                Some(pk1),
+                &metadata,
+            )
+            .unwrap();
+        assert!(board.authenticated_users.contains(&format!("{}", pk1)));
+        assert!(!board.authenticated_users.contains(&format!("{}", pk2)));
     }
 
     #[test]
@@ -416,11 +420,22 @@ mod tests {
 
         let mut board = CommentBoard::initialize(vec![pk1, pk2], &metadata);
 
-        // Authenticate first
-        board.execute(&CommentCommand::Authenticate, Some(pk1), &metadata).unwrap();
+        // Authenticate first (challenge + response)
+        board.execute(&CommentCommand::RequestChallenge, Some(pk1), &metadata).unwrap();
+        let challenge = board.challenge.clone().expect("challenge should be set");
+        board
+            .execute(
+                &CommentCommand::SubmitResponse { signature: "sig".to_string(), nonce: challenge },
+                Some(pk1),
+                &metadata,
+            )
+            .unwrap();
+
+        // Join room before commenting
+        board.execute(&CommentCommand::JoinRoom, Some(pk1), &metadata).unwrap();
 
         // Submit comment
-        let comment_cmd = CommentCommand::SubmitComment { text: "Hello, blockchain!".to_string() };
+        let comment_cmd = CommentCommand::SubmitComment { text: "Hello, blockchain!".to_string(), bond_amount: 0 };
 
         let rollback = board.execute(&comment_cmd, Some(pk1), &metadata).unwrap();
 
@@ -450,7 +465,7 @@ mod tests {
         let mut board = CommentBoard::initialize(vec![pk1, pk2], &metadata);
 
         // Try to comment without authentication
-        let comment_cmd = CommentCommand::SubmitComment { text: "Unauthorized comment".to_string() };
+        let comment_cmd = CommentCommand::SubmitComment { text: "Unauthorized comment".to_string(), bond_amount: 0 };
 
         let result = board.execute(&comment_cmd, Some(pk1), &metadata);
         assert!(result.is_err());

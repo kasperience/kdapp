@@ -4,14 +4,12 @@ use kdapp::{
     pki::PubKey,
 };
 use log::{info, warn};
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use crate::episode::{
-    commands::{format_kas_amount, CommandResult, ContractCommand, ContractError},
+    commands::{format_kas_amount, ContractCommand, ContractError},
     contract::{
-        CommentBond, CommentRoomContract, ContractStats, EconomicComment, ModerationStatus, ReleaseConditions, RoomRules,
-        ViolationType,
+        CommentRoomContract, ContractStats, EconomicComment, ModerationStatus, RoomRules,
     },
 };
 
@@ -184,6 +182,28 @@ impl Episode for ContractCommentBoard {
             }
         }
 
+        // Revert comment-side state when applicable
+        if rollback.operation_type == "submit_comment" {
+            if let Some(cid) = rollback.comment_id {
+                // Remove the comment with this id if it exists
+                let before = self.contract.comments.len();
+                self.contract.comments.retain(|c| c.id != cid);
+                if self.contract.total_comments > 0 && self.contract.comments.len() < before {
+                    self.contract.total_comments -= 1;
+                }
+                if let Some(bond) = rollback.bond_amount {
+                    self.contract.total_locked_value = self.contract.total_locked_value.saturating_sub(bond);
+                }
+            }
+        } else if rollback.operation_type == "join_room" {
+            // Best-effort revert for join: we can’t easily know which index, so convert to set-like unique list
+            // and remove last entry to avoid duplication during reorgs
+            if let Some(bond) = rollback.bond_amount {
+                self.contract.total_locked_value = self.contract.total_locked_value.saturating_sub(bond);
+            }
+            // No-op for room_members here to avoid accidental removal of legitimate joins
+        }
+
         true
     }
 }
@@ -218,7 +238,7 @@ impl ContractCommentBoard {
     /// Execute challenge request
     fn execute_request_challenge(
         &mut self,
-        participant: PubKey,
+        _participant: PubKey,
         metadata: &PayloadMetadata,
     ) -> Result<ContractRollback, EpisodeError<ContractError>> {
         let challenge = format!("auth_{}", metadata.tx_id);

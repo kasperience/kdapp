@@ -1,6 +1,6 @@
 use clap::Parser;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about = "Pure kdapp Comment Board - Based on TicTacToe Architecture", long_about = None)]
 pub struct Args {
     /// Kaspa schnorr private key (pays for your transactions)
@@ -35,4 +35,17 @@ pub struct Args {
     /// Experimental: use script-based bond output in the combined tx (may be non-standard)
     #[arg(long, default_value_t = false)]
     pub script_bonds: bool,
+
+    /// Optional: declare a bond script descriptor policy for episode-side verification
+    /// Supported: "p2pk", "timelock" (others reserved)
+    #[arg(long)]
+    pub bond_script_descriptor: Option<String>,
+
+    /// Optional: bond amount in KAS for --bonds posts (overrides default/room min)
+    #[arg(long)]
+    pub bond_amount: Option<f64>,
+
+    /// Optional: organizer-preferred minimum bond in KAS (used by this client when --bonds is set)
+    #[arg(long)]
+    pub min_bond: Option<f64>,
 }

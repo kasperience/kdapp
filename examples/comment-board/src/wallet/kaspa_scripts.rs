@@ -1,5 +1,5 @@
 use crate::episode::commands::BondScriptKind;
-use kaspa_addresses::{Address, AddressT};
+
 use kaspa_consensus_core::tx::ScriptPublicKey;
 use log::*;
 use secp256k1::PublicKey;

@@ -55,6 +55,11 @@ focused roadmap for on‑chain signing and script‑enforced bonds.
 - Do: Prefer `log` macros and structured errors; avoid `println!` in core logic.
 - Do: Keep changes scoped to this example unless framework changes are explicitly needed.
 
+### Local Builds Policy (Agents)
+- Do not run `cargo build`, `cargo test`, `cargo run`, `cargo fmt`, or `cargo clippy` from agents.
+- The user executes cargo locally (WSL/cross‑platform limitations). When verification is required, request the exact command and interpret the output provided by the user.
+- Favor static reasoning and minimal diffs; avoid adding or changing rustup/toolchain configuration.
+
 ## Key Files
 - `src/episode/commands.rs` — Public `ContractCommand` API and `ContractError`.
 - `src/episode/contract.rs` — Economic model (rules, bonds, disputes, reputation).
