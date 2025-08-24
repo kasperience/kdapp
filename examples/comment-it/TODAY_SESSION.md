@@ -576,3 +576,4 @@ The beauty is that authenticated comments naturally emerge from combining:
 - Blockchain as the source of truth
 
 No external auth service, no database, just pure kdapp architecture! 🚀
+> Legacy document. Current instructions: see README.md in this folder.

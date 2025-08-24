@@ -533,3 +533,4 @@ These resources provide implementation details for Phase 2-3 of our decentraliza
 ---
 
 **Vision**: A commenting system that can't be taken down, where users own their data, and discovery happens through the blockchain itself. The matrix UI is just the beginning! 🚀do 
+> Legacy document. Current instructions: see README.md in this folder.

@@ -8,12 +8,19 @@ A kdapp example that exposes a WebSocket API to a frontend and submits signed Ep
 - Uses the kdapp `TransactionGenerator` to build payload transactions.
 
 ## Run
-- Server: `cargo run -p comment_it -- --ws-addr 127.0.0.1:8080`
-- Frontend connects to `ws://127.0.0.1:8080` and sends JSON commands:
+
+Mode A — WebSocket peer (lightweight)
+- Start: `cargo run -p comment-it -- --ws-addr 127.0.0.1:8080`
+- Client: connect to `ws://127.0.0.1:8080` and send JSON commands:
   - `{ "SubmitComment": { "text": "hi", "episode_id": 123 } }`
   - `{ "RequestChallenge": { "episode_id": 123 } }`
   - `{ "SubmitResponse": { "episode_id": 123, "signature": "...", "nonce": "..." } }`
   - `{ "RevokeSession": { "episode_id": 123, "signature": "..." } }`
+
+Mode B — HTTP organizer peer (full UI)
+- Start: `cargo run -p comment-it -- http-peer --port 8080`
+- Open: `http://localhost:8080` (wallet flows + auth + comments)
+- CLI helpers: see `src/cli/organizer_commands.rs` and `TESTING.md`
 
 ## RPC Reliability (dev)
 - Reuses a shared Kaspa RPC client instance.

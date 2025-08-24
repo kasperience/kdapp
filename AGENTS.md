@@ -29,6 +29,11 @@ Generator → Kaspa Network ← Proxy (wRPC)
 - Test: `cargo test --workspace` — runs unit/integration tests across members.
 - Run Tic‑Tac‑Toe: `cargo run -p ttt -- --help` or `cargo run -p ttt -- --kaspa-private-key <hex>`.
 
+### Local Builds Policy (Agents)
+- Do not run `cargo build`, `cargo test`, `cargo run`, `cargo fmt`, or `cargo clippy` from agents.
+- The user owns all cargo invocations (WSL/cross‑platform constraints). Ask the user to run commands when needed and work from their logs.
+- Prefer static analysis and minimal, surgical code changes. Avoid introducing or modifying toolchain configuration.
+
 ## Examples Quickstart
 - Tic‑Tac‑Toe (`examples/tictactoe`):
   - Player 1: `cargo run -p ttt -- --kaspa-private-key <hex>` (copy printed game pubkey).

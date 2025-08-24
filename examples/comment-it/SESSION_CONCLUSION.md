@@ -252,3 +252,4 @@
   a single episode.
 
   This is exactly how real kdapp applications should be built! 🎉
+> Legacy document. Current instructions: see README.md in this folder.

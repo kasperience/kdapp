@@ -147,3 +147,4 @@
 ---
 
 *This session demonstrated the importance of architectural terminology, blockchain verification, and user feedback integration in building authentic P2P applications.*
+> Legacy document. Current instructions: see README.md in this folder.

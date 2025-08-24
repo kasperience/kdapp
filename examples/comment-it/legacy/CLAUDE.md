@@ -1103,3 +1103,4 @@ println!("📍 Fund organizer peer: {}", addr);
 ```
 
 **Exception**: Only remove these features if user explicitly requests it or if they're clearly outdated/broken.
+> Legacy document. Current instructions: see README.md in this folder.

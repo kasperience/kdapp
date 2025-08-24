@@ -1,0 +1,269 @@
+diff --git a/applications/kdapps/comment-it/src/main.rs b/applications/kdapps/comment-it/src/main.rs
+index 1111111..2222222 100644
+--- a/applications/kdapps/comment-it/src/main.rs
++++ b/applications/kdapps/comment-it/src/main.rs
+@@
+-use kdapp::proxy::connect_client;
++use kdapp::proxy::{connect_client, connect_options};
++use kaspa_wrpc_client::prelude::RpcApi;
++use kaspa_consensus_core::tx::Transaction;
+@@
+     // Start WebSocket server for frontend communication
+     let listener = TcpListener::bind(&cli.ws_addr).await?;
+     info!("👂 WebSocket server listening on: {}", cli.ws_addr);
+@@
+-    // Clone the event receiver for each new connection
+-    let event_rx_arc = std::sync::Arc::new(tokio::sync::Mutex::new(event_rx));
+-
+-    while let Ok((stream, _)) = listener.accept().await {
+-        let peer_event_rx = event_rx_arc.clone();
+-        tokio::spawn(handle_connection(stream, signer_keypair.clone(), tx_generator.clone(), signer_address.clone(), peer_event_rx));
+-    }
++    // Clone the event receiver for each new connection
++    let event_rx_arc = std::sync::Arc::new(tokio::sync::Mutex::new(event_rx));
++    // Build a shared Kaspa RPC client and reuse it across connections
++    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
++    let shared_kaspad = connect_client(network_id, None).await?;
++    while let Ok((stream, _)) = listener.accept().await {
++        let peer_event_rx = event_rx_arc.clone();
++        let kaspad_client = shared_kaspad.clone();
++        tokio::spawn(handle_connection(
++            stream,
++            signer_keypair.clone(),
++            tx_generator.clone(),
++            signer_address.clone(),
++            kaspad_client,
++            peer_event_rx,
++        ));
++    }
+@@
+-async fn handle_connection(stream: TcpStream, signer_keypair: Keypair, tx_generator: TransactionGenerator, signer_address: String, mut event_rx: std::sync::Arc<tokio::sync::Mutex<mpsc::Receiver<String>>>) -> Result<(), Box<dyn Error>> {
++async fn handle_connection(
++    stream: TcpStream,
++    signer_keypair: Keypair,
++    tx_generator: TransactionGenerator,
++    signer_address: String,
++    kaspad_client: kdapp::proxy::KaspaRpcClient,
++    mut event_rx: std::sync::Arc<tokio::sync::Mutex<mpsc::Receiver<String>>>,
++) -> Result<(), Box<dyn Error>> {
+@@
+-                    // Connect to kaspad for UTXO fetching and transaction submission
+-                    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
+-                    let kaspad_client = connect_client(network_id, None).await?;
+-
+-                    // Fetch UTXOs for the signer's address
+-                    let utxos = kaspad_client.get_utxos_by_addresses(vec![signer_address.clone().try_into()?]).await?.into_iter().map(|x| x.into()).collect();
++                    // Fetch UTXOs for the signer's address
++                    let utxos = kaspad_client
++                        .get_utxos_by_addresses(vec![signer_address.clone().try_into()?])
++                        .await?
++                        .into_iter()
++                        .map(|x| x.into())
++                        .collect();
+@@
+-                    match kaspad_client.submit_transaction(tx.as_ref().into(), false).await {
+-                        Ok(tx_id) => {
+-                            info!("✅ Transaction submitted: {}", tx_id);
+-                            let response = serde_json::to_string(&serde_json::json!({ "status": "submitted", "tx_id": tx_id }))?;
++                    match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
++                        Ok(()) => {
++                            let tx_id = tx.id().to_string();
++                            info!("✅ Transaction submitted: {}", tx_id);
++                            let response = serde_json::to_string(&serde_json::json!({ "status": "submitted", "tx_id": tx_id }))?;
+                             write.send(tokio_tungstenite::tungstenite::Message::text(response)).await?;
+                         },
+                         Err(e) => {
+@@
+-                    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
+-                    let kaspad_client = connect_client(network_id, None).await?;
+-
+-                    let utxos = kaspad_client.get_utxos_by_addresses(vec![signer_address.clone().try_into()?]).await?.into_iter().map(|x| x.into()).collect();
++                    let utxos = kaspad_client
++                        .get_utxos_by_addresses(vec![signer_address.clone().try_into()?])
++                        .await?
++                        .into_iter()
++                        .map(|x| x.into())
++                        .collect();
+@@
+-                    match kaspad_client.submit_transaction(tx.as_ref().into(), false).await {
+-                        Ok(tx_id) => {
+-                            info!("✅ RequestChallenge transaction submitted: {}", tx_id);
++                    match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
++                        Ok(()) => {
++                            let tx_id = tx.id().to_string();
++                            info!("✅ RequestChallenge transaction submitted: {}", tx_id);
+                             let response = serde_json::to_string(
+                                 &serde_json::json!({ "status": "submitted", "tx_id": tx_id, "command": "RequestChallenge" }),
+                             )?;
+                             write.send(tokio_tungstenite::tungstenite::Message::text(response)).await?;
+                         },
+@@
+-                    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
+-                    let kaspad_client = connect_client(network_id, None).await?;
+-
+-                    let utxos = kaspad_client.get_utxos_by_addresses(vec![signer_address.clone().try_into()?]).await?.into_iter().map(|x| x.into()).collect();
++                    let utxos = kaspad_client
++                        .get_utxos_by_addresses(vec![signer_address.clone().try_into()?])
++                        .await?
++                        .into_iter()
++                        .map(|x| x.into())
++                        .collect();
+@@
+-                    match kaspad_client.submit_transaction(tx.as_ref().into(), false).await {
+-                        Ok(tx_id) => {
+-                            info!("✅ SubmitResponse transaction submitted: {}", tx_id);
++                    match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
++                        Ok(()) => {
++                            let tx_id = tx.id().to_string();
++                            info!("✅ SubmitResponse transaction submitted: {}", tx_id);
+                             let response = serde_json::to_string(
+                                 &serde_json::json!({ "status": "submitted", "tx_id": tx_id, "command": "SubmitResponse" }),
+                             )?;
+                             write.send(tokio_tungstenite::tungstenite::Message::text(response)).await?;
+                         },
+@@
+-                    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
+-                    let kaspad_client = connect_client(network_id, None).await?;
+-
+-                    let utxos = kaspad_client.get_utxos_by_addresses(vec![signer_address.clone().try_into()?]).await?.into_iter().map(|x| x.into()).collect();
++                    let utxos = kaspad_client
++                        .get_utxos_by_addresses(vec![signer_address.clone().try_into()?])
++                        .await?
++                        .into_iter()
++                        .map(|x| x.into())
++                        .collect();
+@@
+-                    match kaspad_client.submit_transaction(tx.as_ref().into(), false).await {
+-                        Ok(tx_id) => {
+-                            info!("✅ RevokeSession transaction submitted: {}", tx_id);
++                    match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
++                        Ok(()) => {
++                            let tx_id = tx.id().to_string();
++                            info!("✅ RevokeSession transaction submitted: {}", tx_id);
+                             let response = serde_json::to_string(
+                                 &serde_json::json!({ "status": "submitted", "tx_id": tx_id, "command": "RevokeSession" }),
+                             )?;
+                             write.send(tokio_tungstenite::tungstenite::Message::text(response)).await?;
+                         },
+@@
+     info!("❌ WebSocket connection closed");
+     Ok(())
+ }
+
+async fn submit_tx_retry(kaspad: &kdapp::proxy::KaspaRpcClient, tx: &Transaction, attempts: usize) -> Result<(), String> {
+    let mut tries = 0usize;
+    loop {
+        match kaspad.submit_transaction(tx.into(), false).await {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                tries += 1;
+                let msg = e.to_string();
+                if msg.contains("already accepted") { return Ok(()); }
+                if tries >= attempts { return Err(format!("{}", msg)); }
+                if msg.contains("WebSocket") || msg.contains("not connected") || msg.contains("disconnected") {
+                    let _ = kaspad.connect(Some(connect_options())).await;
+                    continue;
+                }
+                if msg.to_lowercase().contains("orphan") { continue; }
+                return Err(format!("{}", msg));
+            }
+        }
+    }
+}
+
+diff --git a/applications/kdapps/comment-it/src/cli/commands/submit_comment.rs b/applications/kdapps/comment-it/src/cli/commands/submit_comment.rs
+index 3333333..4444444 100644
+--- a/applications/kdapps/comment-it/src/cli/commands/submit_comment.rs
++++ b/applications/kdapps/comment-it/src/cli/commands/submit_comment.rs
+@@
+-use crate::wallet::get_wallet_for_command;
++use crate::wallet::get_wallet_for_command;
++use kdapp::proxy::connect_options;
+@@
+-    // Submit to blockchain
+-    let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await?;
++    // Submit to blockchain with lightweight retry
++    submit_with_retry(&kaspad, tx.as_ref(), 3).await?;
+@@
+     Ok(())
+ }
++
++async fn submit_with_retry(kaspad: &kdapp::proxy::KaspaRpcClient, tx: &kaspa_consensus_core::tx::Transaction, attempts: usize) -> Result<(), Box<dyn std::error::Error>> {
++    let mut tries = 0usize;
++    loop {
++        match kaspad.submit_transaction(tx.into(), false).await {
++            Ok(_) => return Ok(()),
++            Err(e) => {
++                tries += 1;
++                let msg = e.to_string();
++                if msg.contains("already accepted") { return Ok(()); }
++                if tries >= attempts { return Err(msg.into()); }
++                if msg.contains("WebSocket") || msg.contains("not connected") || msg.contains("disconnected") {
++                    let _ = kaspad.connect(Some(connect_options())).await;
++                    continue;
++                }
++                if msg.to_lowercase().contains("orphan") { continue; }
++                return Err(msg.into());
++            }
++        }
++    }
++}
+
+diff --git a/applications/kdapps/comment-it/src/auth/session.rs b/applications/kdapps/comment-it/src/auth/session.rs
+index 5555555..6666666 100644
+--- a/applications/kdapps/comment-it/src/auth/session.rs
++++ b/applications/kdapps/comment-it/src/auth/session.rs
+@@
+-    let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await?;
++    submit_with_retry(&kaspad, tx.as_ref(), 3).await?;
+@@
+     Ok(())
+ }
++
++async fn submit_with_retry(kaspad: &kdapp::proxy::KaspaRpcClient, tx: &kaspa_consensus_core::tx::Transaction, attempts: usize) -> Result<(), Box<dyn std::error::Error>> {
++    use kdapp::proxy::connect_options;
++    let mut tries = 0usize;
++    loop {
++        match kaspad.submit_transaction(tx.into(), false).await {
++            Ok(_) => return Ok(()),
++            Err(e) => {
++                tries += 1;
++                let msg = e.to_string();
++                if msg.contains("already accepted") { return Ok(()); }
++                if tries >= attempts { return Err(msg.into()); }
++                if msg.contains("WebSocket") || msg.contains("not connected") || msg.contains("disconnected") {
++                    let _ = kaspad.connect(Some(connect_options())).await;
++                    continue;
++                }
++                if msg.to_lowercase().contains("orphan") { continue; }
++                return Err(msg.into());
++            }
++        }
++    }
++}
+
+diff --git a/applications/kdapps/comment-it/README.md b/applications/kdapps/comment-it/README.md
+new file mode 100644
+--- /dev/null
++++ b/applications/kdapps/comment-it/README.md
+@@
+#+comment-it (KaspaX copy)
+
+ A kdapp example that exposes a WebSocket API to a frontend and submits signed Episode commands to Kaspa while a local kdapp engine listens for matching transactions and emits application state.
+
+## Features
+- WebSocket server → forwards frontend JSON commands as signed `EpisodeMessage`s.
+- Shared kdapp engine + listener for state updates (pattern/prefix routing).
+- Uses kdapp `TransactionGenerator` to build payload transactions.
+
+## Run
+- `cargo run -p comment_it -- --ws-addr 127.0.0.1:8080`
+- Frontend connects to `ws://127.0.0.1:8080` and sends JSON commands.
+
+## RPC Reliability (dev)
+- Uses a shared Kaspa RPC client instance (reused per connection).
+- Submit retry-on-disconnect/orphan with “already accepted” treated as success.
+- Listener auto-reconnects and resets sink via kdapp core.
+
+See the root `COMMENT_IT_RPC_ASSESSMENT.md` for an analysis and follow-ups.
+

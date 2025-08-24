@@ -78,3 +78,4 @@ A **production-ready P2P comment system** that demonstrates:
 - True peer-to-peer economic model
 
 **This is actually more innovative than Snapchat for the Web3 space!**
+> Legacy document. Current instructions: see README.md in this folder.

@@ -143,3 +143,4 @@ pub enum SimpleCommand {
 *"The current comment-it has grown into a full authentication platform - it deserves to be AUTHENTICATE-IT. Meanwhile, comment-it should return to its educational roots as a simple group commenting example."*
 
 **This architectural evolution represents the natural maturity of successful kdapp projects!** 🚀
+> Legacy document. Current instructions: see README.md in this folder.

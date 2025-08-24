@@ -1,7 +1,4 @@
-use crate::{
-    comments::CommentBoard,
-    episode::board_with_contract::{ContractCommentBoard, ContractState},
-};
+use crate::episode::board_with_contract::{ContractCommentBoard, ContractState};
 use kdapp::{
     episode::{EpisodeEventHandler, EpisodeId},
     pki::PubKey,

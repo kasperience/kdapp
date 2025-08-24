@@ -212,9 +212,9 @@ pub struct VoteResult {
 impl Default for RoomRules {
     fn default() -> Self {
         RoomRules {
-            // Conservative defaults for initial showcase (10x reduced for testing)
-            min_bond: 10_000_000_000, // 100 KAS (reasonable default)
-            max_bond: 10000,          // 0.01 KAS (reasonable max)
+            // Developer-friendly defaults aligned with CLI (1 KAS bond)
+            min_bond: 100_000_000, // 1 KAS
+            max_bond: 10_000_000_000, // 100 KAS ceiling
             penalty_multiplier: 2.0,
             reward_pool_percentage: 0.0,
             bonds_enabled: true,

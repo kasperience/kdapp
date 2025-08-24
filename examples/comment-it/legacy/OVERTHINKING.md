@@ -250,3 +250,4 @@ await kaspaNetwork.submitTransaction(tx);
 **That's it!** The beauty of kdapp is that the blockchain handles all the hard parts. Your HTTP peer just needs to show what's on chain and help users interact with it.
 
 **Remember**: In kdapp, the blockchain is the backend. The HTTP peer is just a helpful UI layer. When in doubt, make the user submit the transaction directly! 🚀
+> Legacy document. Current instructions: see README.md in this folder.

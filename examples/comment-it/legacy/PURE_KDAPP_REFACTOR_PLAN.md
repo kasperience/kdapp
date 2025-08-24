@@ -210,3 +210,4 @@ This is the true kdapp philosophy - pure P2P blockchain applications.
 **Status**: Ready to implement pure kdapp architecture tomorrow
 **Files**: Episode refactored ✅, HTTP removal pending ⏳
 **Goal**: Working comment system in ~500 lines total (like tictactoe)
+> Legacy document. Current instructions: see README.md in this folder.

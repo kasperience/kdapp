@@ -380,3 +380,4 @@ cargo run -- http-peer
 Deploy the Snapchat. The code works. Group chat works. Ship it! 🎉
 
 Want me to help you test the multi-user flow right now?
+> Legacy document. Current instructions: see README.md in this folder.

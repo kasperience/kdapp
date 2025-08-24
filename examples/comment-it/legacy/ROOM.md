@@ -998,3 +998,4 @@
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  > don't worry my frustration keep it logical in SESSION_ROADMAP.md from current folder Opus 4 has some ideas how to   │
 │    make it like Snapchat immediately...                                                                                │
+> Legacy document. Current instructions: see README.md in this folder.
