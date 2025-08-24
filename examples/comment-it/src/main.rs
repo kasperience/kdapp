@@ -7,7 +7,9 @@ use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kdapp::episode::EpisodeMessage;
 use kdapp::generator::TransactionGenerator;
 use kdapp::pki::PubKey;
-use kdapp::proxy::connect_client;
+use kdapp::proxy::{connect_client, connect_options};
+use kaspa_wrpc_client::prelude::RpcApi;
+use kaspa_consensus_core::tx::Transaction;
 use log::{error, info, warn};
 use secp256k1::Keypair;
 use serde::{Deserialize, Serialize};
@@ -58,9 +60,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Clone the event receiver for each new connection
     let event_rx_arc = std::sync::Arc::new(tokio::sync::Mutex::new(event_rx));
 
+    // Initialize a shared kaspad client once and reuse (clone) per connection
+    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
+    let shared_kaspad = connect_client(network_id, None).await?;
+
     while let Ok((stream, _)) = listener.accept().await {
         let peer_event_rx = event_rx_arc.clone();
-        tokio::spawn(handle_connection(stream, signer_keypair.clone(), tx_generator.clone(), signer_address.clone(), peer_event_rx));
+        let kaspad_client = shared_kaspad.clone();
+        tokio::spawn(handle_connection(
+            stream,
+            signer_keypair.clone(),
+            tx_generator.clone(),
+            signer_address.clone(),
+            kaspad_client,
+            peer_event_rx,
+        ));
     }
 
     Ok(())
@@ -80,6 +94,7 @@ async fn handle_connection(
     signer_keypair: Keypair,
     tx_generator: TransactionGenerator,
     signer_address: String,
+    kaspad_client: kdapp::proxy::KaspaRpcClient,
     mut event_rx: std::sync::Arc<tokio::sync::Mutex<mpsc::Receiver<String>>>,
 ) -> Result<(), Box<dyn Error>> {
     let ws_stream = accept_async(stream).await?;
@@ -114,9 +129,6 @@ async fn handle_connection(
                         EpisodeMessage::new_signed_command(episode_id, command, signer_keypair.secret_key(), public_key);
 
                     // Connect to kaspad for UTXO fetching and transaction submission
-                    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
-                    let kaspad_client = connect_client(network_id, None).await?;
-
                     // Fetch UTXOs for the signer's address
                     let utxos = kaspad_client
                         .get_utxos_by_addresses(vec![signer_address.clone().try_into()?])
@@ -128,8 +140,9 @@ async fn handle_connection(
                     let tx =
                         tx_generator.build_command_transaction(utxos, &signer_address.clone().try_into()?, &episode_message, 1000); // 1000 is placeholder fee
 
-                    match kaspad_client.submit_transaction(tx.as_ref().into(), false).await {
-                        Ok(tx_id) => {
+                    match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
+                        Ok(()) => {
+                            let tx_id = tx.id().to_string();
                             info!("✅ Transaction submitted: {}", tx_id);
                             let response = serde_json::to_string(&serde_json::json!({ "status": "submitted", "tx_id": tx_id }))?;
                             write.send(tokio_tungstenite::tungstenite::Message::text(response)).await?;
@@ -150,9 +163,6 @@ async fn handle_connection(
                     let episode_message =
                         EpisodeMessage::new_signed_command(episode_id, command, signer_keypair.secret_key(), public_key);
 
-                    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
-                    let kaspad_client = connect_client(network_id, None).await?;
-
                     let utxos = kaspad_client
                         .get_utxos_by_addresses(vec![signer_address.clone().try_into()?])
                         .await?
@@ -163,8 +173,9 @@ async fn handle_connection(
                     let tx =
                         tx_generator.build_command_transaction(utxos, &signer_address.clone().try_into()?, &episode_message, 1000);
 
-                    match kaspad_client.submit_transaction(tx.as_ref().into(), false).await {
-                        Ok(tx_id) => {
+                    match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
+                        Ok(()) => {
+                            let tx_id = tx.id().to_string();
                             info!("✅ RequestChallenge transaction submitted: {}", tx_id);
                             let response = serde_json::to_string(
                                 &serde_json::json!({ "status": "submitted", "tx_id": tx_id, "command": "RequestChallenge" }),
@@ -187,9 +198,6 @@ async fn handle_connection(
                     let episode_message =
                         EpisodeMessage::new_signed_command(episode_id, command, signer_keypair.secret_key(), public_key);
 
-                    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
-                    let kaspad_client = connect_client(network_id, None).await?;
-
                     let utxos = kaspad_client
                         .get_utxos_by_addresses(vec![signer_address.clone().try_into()?])
                         .await?
@@ -200,8 +208,9 @@ async fn handle_connection(
                     let tx =
                         tx_generator.build_command_transaction(utxos, &signer_address.clone().try_into()?, &episode_message, 1000);
 
-                    match kaspad_client.submit_transaction(tx.as_ref().into(), false).await {
-                        Ok(tx_id) => {
+                    match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
+                        Ok(()) => {
+                            let tx_id = tx.id().to_string();
                             info!("✅ SubmitResponse transaction submitted: {}", tx_id);
                             let response = serde_json::to_string(
                                 &serde_json::json!({ "status": "submitted", "tx_id": tx_id, "command": "SubmitResponse" }),
@@ -224,9 +233,6 @@ async fn handle_connection(
                     let episode_message =
                         EpisodeMessage::new_signed_command(episode_id, command, signer_keypair.secret_key(), public_key);
 
-                    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
-                    let kaspad_client = connect_client(network_id, None).await?;
-
                     let utxos = kaspad_client
                         .get_utxos_by_addresses(vec![signer_address.clone().try_into()?])
                         .await?
@@ -237,8 +243,9 @@ async fn handle_connection(
                     let tx =
                         tx_generator.build_command_transaction(utxos, &signer_address.clone().try_into()?, &episode_message, 1000);
 
-                    match kaspad_client.submit_transaction(tx.as_ref().into(), false).await {
-                        Ok(tx_id) => {
+                    match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
+                        Ok(()) => {
+                            let tx_id = tx.id().to_string();
                             info!("✅ RevokeSession transaction submitted: {}", tx_id);
                             let response = serde_json::to_string(
                                 &serde_json::json!({ "status": "submitted", "tx_id": tx_id, "command": "RevokeSession" }),
@@ -269,4 +276,28 @@ async fn handle_connection(
 
     info!("❌ WebSocket connection closed");
     Ok(())
+}
+
+async fn submit_tx_retry(kaspad: &kdapp::proxy::KaspaRpcClient, tx: &Transaction, attempts: usize) -> Result<(), String> {
+    let mut tries = 0usize;
+    loop {
+        match kaspad.submit_transaction(tx.into(), false).await {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                tries += 1;
+                let msg = e.to_string();
+                if msg.contains("already accepted") { return Ok(()); }
+                if tries >= attempts { return Err(format!("{}", msg)); }
+                if msg.contains("WebSocket") || msg.contains("not connected") || msg.contains("disconnected") {
+                    let _ = kaspad.connect(Some(connect_options())).await;
+                    continue;
+                }
+                if msg.to_lowercase().contains("orphan") {
+                    // brief retry for orphan case
+                    continue;
+                }
+                return Err(format!("{}", msg));
+            }
+        }
+    }
 }
