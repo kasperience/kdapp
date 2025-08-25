@@ -153,15 +153,37 @@ export async function connectWallet() {
 
 // WebSocket connection for real-time updates
 export function connectWebSocket() {
+    // Reuse the shared command WebSocket managed by main.js if available
+    try {
+        if (window.commandWebSocket) {
+            const ws = window.commandWebSocket;
+            // Attach handler (idempotent-ish: guard to avoid double-binding)
+            if (!ws.__authFormBound) {
+                ws.addEventListener('message', (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        handleWebSocketMessage(message);
+                    } catch (error) {
+                        console.error('WebSocket message parsing error:', error);
+                    }
+                });
+                ws.__authFormBound = true;
+            }
+            if (ws.readyState === WebSocket.OPEN) {
+                console.log('✅ WebSocket connected');
+            }
+            return;
+        }
+    } catch {}
+
+    // Fallback: only create a dedicated socket if the global one is not present
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
     webSocket = new WebSocket(wsUrl);
-    
+
     webSocket.onopen = () => {
         console.log('✅ WebSocket connected');
     };
-    
     webSocket.onmessage = (event) => {
         try {
             const message = JSON.parse(event.data);
@@ -170,13 +192,13 @@ export function connectWebSocket() {
             console.error('WebSocket message parsing error:', error);
         }
     };
-    
     webSocket.onclose = () => {
         console.log('❌ WebSocket disconnected');
-        // Attempt to reconnect after 3 seconds
-        setTimeout(connectWebSocket, 3000);
+        // If main.js is not managing the socket, attempt local reconnect
+        if (!window.commandWebSocket) {
+            setTimeout(connectWebSocket, 3000);
+        }
     };
-    
     webSocket.onerror = (error) => {
         console.error('WebSocket error:', error);
     };
@@ -364,6 +386,15 @@ export function handleAuthenticated(sessionToken) {
     window.currentSessionToken = sessionToken;
     window.isAuthenticated = true;
     window.currentEpisodeId = getCurrentEpisodeId();
+
+    // Persist for refresh restore
+    try {
+        localStorage.setItem('last_episode_id', String(window.currentEpisodeId));
+        localStorage.setItem('last_session_token', String(sessionToken));
+        if (currentWallet && currentWallet.publicKey) {
+            localStorage.setItem('participant_pubkey', currentWallet.publicKey);
+        }
+    } catch {}
     
     const button = document.getElementById('authButton');
     button.textContent = '[ EPISODE AUTHENTICATED ]';
@@ -485,11 +516,43 @@ export function handleSessionRevoked() {
     button.disabled = false;
     
     typewriterEffect('SESSION REVOKED. RELOADING PAGE FOR FRESH START...', button.parentElement);
+    // Clear persisted state
+    try {
+        localStorage.removeItem('last_episode_id');
+        localStorage.removeItem('last_session_token');
+    } catch {}
     
     // Force browser restart after logout to clear all state
     setTimeout(() => {
         window.location.reload();
     }, 2000);
+}
+
+// Attempt to restore an authenticated session after page refresh
+export async function tryRestoreSession() {
+    try {
+        const episodeIdStr = localStorage.getItem('last_episode_id');
+        const token = localStorage.getItem('last_session_token');
+        if (!episodeIdStr || !token) return false;
+        const episodeId = parseInt(episodeIdStr, 10);
+        if (!episodeId) return false;
+
+        const res = await resilientFetch(`/auth/status/${episodeId}`);
+        const data = await res.json();
+        if (data && data.authenticated) {
+            setCurrentEpisodeId(episodeId);
+            document.getElementById('episodeId').textContent = episodeId;
+            const disp = document.getElementById('authEpisodeDisplay');
+            if (disp) disp.textContent = episodeId;
+            window.currentSessionToken = token;
+            handleAuthenticated(token);
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.warn('Session restore failed', e);
+        return false;
+    }
 }
 
 // Handle anonymous mode

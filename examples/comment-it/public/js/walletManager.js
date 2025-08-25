@@ -197,6 +197,12 @@ export function changeWallet() {
     document.getElementById('walletPanel').style.display = 'block';
     document.getElementById('authPanel').style.display = 'none';
     document.getElementById('commentForm').style.display = 'none';
+
+    // Reset visible wallet addresses in the status bar and auth panel
+    const statusAddr = document.getElementById('walletAddress');
+    if (statusAddr) statusAddr.textContent = '--';
+    const activeAddr = document.getElementById('activeWalletAddress');
+    if (activeAddr) activeAddr.textContent = '--';
     
     // Reset wallet sections
     document.getElementById('createWalletSection').style.display = 'none';

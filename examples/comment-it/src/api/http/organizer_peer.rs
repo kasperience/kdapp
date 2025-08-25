@@ -24,6 +24,7 @@ use crate::api::http::{
 use axum::Json;
 use kaspa_addresses::{Address, Prefix, Version};
 use serde_json::json;
+use kaspa_wrpc_client::prelude::RpcApi;
 
 // Simple endpoint handlers
 async fn health() -> Json<serde_json::Value> {
@@ -220,6 +221,41 @@ async fn wallet_participant_post(Json(req): Json<serde_json::Value>) -> Json<ser
     }
 }
 
+// Stats endpoint: returns live counts and DAG info
+async fn stats(State(state): State<PeerState>) -> Json<serde_json::Value> {
+    // Count episodes and total comments from blockchain state
+    let (auth_episodes, total_comments) = match state.blockchain_episodes.lock() {
+        Ok(episodes) => {
+            let auth = episodes.len() as u64;
+            let comments: u64 = episodes.values().map(|e| e.comments.len() as u64).sum();
+            (auth as u64, comments)
+        }
+        Err(_) => (0, 0),
+    };
+
+    // Query kaspad for DAA score and possibly other metrics
+    let (daa_score, block_height) = if let Some(kaspad) = &state.kaspad_client {
+        match kaspad.get_block_dag_info().await {
+            Ok(info) => {
+                let vdaa = info.virtual_daa_score;
+                (Some(vdaa as u64), Some(vdaa as u64))
+            }
+            Err(_) => (None, None),
+        }
+    } else {
+        (None, None)
+    };
+
+    Json(json!({
+        "organizer_peers": 1,
+        "auth_episodes": auth_episodes,
+        "comment_episodes": total_comments,
+        "daa_score": daa_score,
+        "block_height": block_height,
+        "kaspa_tps": null
+    }))
+}
+
 async fn sign_challenge(Json(req): Json<serde_json::Value>) -> Json<serde_json::Value> {
     // Extract challenge and handle participant wallet signing
     let challenge = req["challenge"].as_str().unwrap_or("");
@@ -393,6 +429,7 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
         .route("/wallet-participant", get(wallet_participant))
         .route("/wallet-participant", post(wallet_participant_post))
         .route("/wallet/debug", get(wallet_debug))
+        .route("/stats", get(stats))
         .route("/auth/start", post(start_auth))
         .route("/auth/request-challenge", post(request_challenge))
         .route("/auth/sign-challenge", post(sign_challenge))
@@ -401,6 +438,7 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
         .route("/auth/status/{episode_id}", get(get_status))
         .route("/episodes", get(list_episodes))
         .route("/api/comments", post(comment::submit_comment))
+        .route("/api/comments/simple", post(comment::submit_comment_simple))
         .route("/internal/episode-authenticated", post(episode_authenticated))
         .route("/internal/session-revoked", post(session_revoked))
         .fallback_service(ServeDir::new("public"))

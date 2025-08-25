@@ -33,6 +33,19 @@
                 <span class="status-value" id="walletAddress">kaspa:qrxx...v8wz</span>
             </div>
             <div class="status-item">
+                <span class="status-label">Backend</span>
+                <span class="status-value">
+                    <select id="backendSelect" style="background: transparent; color: var(--bright-cyan); border: 1px solid rgba(20, 184, 166, 0.4); border-radius: 3px; padding: 2px 6px;">
+                        <option value="http">HTTP</option>
+                        <option value="ws">WS</option>
+                    </select>
+                </span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">WS</span>
+                <span class="status-value"><span id="wsStatus" title="WebSocket status">disconnected</span></span>
+            </div>
+            <div class="status-item">
                 <span class="status-label">Block</span>
                 <span class="status-value" id="blockHeight">7,531,843</span>
             </div>
@@ -157,6 +170,11 @@
             <!-- Active Rooms Panel -->
             <div id="activeRoomsPanel" style="margin-bottom: 20px; display: none;">
                 <h3 style="color: var(--bright-teal); font-size: 1rem; margin-bottom: 15px; border-bottom: 1px solid var(--primary-teal); padding-bottom: 5px;">JOIN EXISTING COMMENT ROOM</h3>
+                <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+                    <input id="joinEpisodeInput" type="text" placeholder="Enter Episode ID (e.g., 511466637)"
+                        style="flex:1; padding:8px; background: var(--bg-black); border:1px solid var(--primary-teal); color:#fff; border-radius:4px; font-family: monospace;" />
+                    <button class="connect-button" id="joinEpisodeBtn" style="white-space:nowrap;">[ JOIN ROOM ]</button>
+                </div>
                 <div id="activeRoomsList" style="max-height: 150px; overflow-y: auto; padding-right: 10px;">
                     <!-- JS will populate this -->
                     <p style="color: var(--primary-teal);">Fetching active rooms...</p>

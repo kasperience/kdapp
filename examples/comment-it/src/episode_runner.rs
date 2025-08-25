@@ -204,6 +204,7 @@ pub struct AuthServerConfig {
     pub network: NetworkId,
     pub rpc_url: Option<String>,
     pub name: String,
+    pub rpc_retry: Option<usize>,
 }
 
 /// Simple HTTP coordination structures
@@ -238,7 +239,7 @@ pub struct CoordinationState {
 
 impl AuthServerConfig {
     pub fn new(signer: Keypair, name: String, rpc_url: Option<String>) -> Self {
-        Self { signer, network: NetworkId::with_suffix(NetworkType::Testnet, 10), rpc_url, name }
+        Self { signer, network: NetworkId::with_suffix(NetworkType::Testnet, 10), rpc_url, name, rpc_retry: None }
     }
 }
 

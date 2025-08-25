@@ -163,6 +163,11 @@ body {
     opacity: 0.8;
 }
 
+/* WebSocket status color helpers */
+#wsStatus.ws-connecting { color: var(--warning); }
+#wsStatus.ws-ok { color: var(--success); }
+#wsStatus.ws-bad { color: var(--error); }
+
 /* Status bar */
 .status-bar {
     display: flex;

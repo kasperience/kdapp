@@ -10,6 +10,7 @@ use axum::{
 };
 use kdapp::engine::EpisodeMessage;
 use log::{error, info};
+use secp256k1::Keypair;
 
 pub async fn submit_comment(
     State(state): State<PeerState>,
@@ -43,6 +44,65 @@ pub async fn submit_comment(
             }
             Err(e) => {
                 error!("❌ Comment submission failed: {}", e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    } else {
+        error!("❌ AuthHttpPeer not available");
+        Err(StatusCode::INTERNAL_SERVER_ERROR)
+    }
+}
+
+// Convenience JSON API: accept simple JSON and construct/sign EpisodeMessage server-side
+#[derive(serde::Deserialize)]
+pub struct SimpleSubmitRequest {
+    pub episode_id: u64,
+    pub text: String,
+    pub session_token: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct SimpleSubmitResponse {
+    pub episode_id: u64,
+    pub transaction_id: Option<String>,
+    pub status: String,
+}
+
+pub async fn submit_comment_simple(
+    State(state): State<PeerState>,
+    Json(request): Json<SimpleSubmitRequest>,
+) -> Result<ResponseJson<SimpleSubmitResponse>, StatusCode> {
+    info!("💬 HTTP COMMENT SIMPLE: episode_id={}, len(text)={}", request.episode_id, request.text.len());
+
+    // Load participant wallet (created/imported via web UI)
+    let wallet = match crate::wallet::get_wallet_for_command("web-participant", None) {
+        Ok(w) => w,
+        Err(e) => {
+            error!("❌ No participant wallet available: {}", e);
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
+    let signer: Keypair = wallet.keypair;
+
+    // Build EpisodeMessage for SubmitComment command
+    let public_key = kdapp::pki::PubKey(signer.public_key());
+    let cmd = crate::core::UnifiedCommand::SubmitComment { text: request.text.clone(), session_token: request.session_token.unwrap_or_default() };
+    let episode_message = EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(
+        request.episode_id as u32,
+        cmd,
+        signer.secret_key(),
+        public_key,
+    );
+
+    // Submit to blockchain via existing helper
+    if let Some(auth_peer) = &state.auth_http_peer {
+        match auth_peer.submit_episode_message_transaction(episode_message).await {
+            Ok(tx_id) => {
+                info!("✅ SIMPLE COMMENT SUBMITTED: episode_id={}, tx_id={}", request.episode_id, tx_id);
+                Ok(ResponseJson(SimpleSubmitResponse { episode_id: request.episode_id, transaction_id: Some(tx_id), status: "submitted".to_string() }))
+            }
+            Err(e) => {
+                error!("❌ Simple comment submission failed: {}", e);
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
             }
         }

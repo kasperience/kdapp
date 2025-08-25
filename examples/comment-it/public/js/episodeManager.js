@@ -53,20 +53,27 @@ export async function fetchAndDisplayActiveEpisodes() {
     }
 }
 
-function joinEpisode(episodeId) {
+export function joinEpisode(episodeId) {
     console.log(`Joining episode: ${episodeId}`);
+    const numericEpisodeId = parseInt(episodeId, 10);
+
+    if (isNaN(numericEpisodeId)) {
+        console.error('Invalid episode ID:', episodeId);
+        alert('Error: Invalid room code provided.');
+        return;
+    }
     
     // Set the current episode ID to join the existing episode
-    window.currentEpisodeId = episodeId;
+    window.currentEpisodeId = numericEpisodeId;
     
     // Use proper setter function from authForm module
     import('./authForm.js').then(module => {
-        module.setCurrentEpisodeId(episodeId);
+        module.setCurrentEpisodeId(numericEpisodeId);
     });
     
     // Update UI to reflect joined episode
-    document.getElementById('episodeId').textContent = episodeId;
-    document.getElementById('authEpisodeDisplay').textContent = episodeId;
+    document.getElementById('episodeId').textContent = numericEpisodeId;
+    document.getElementById('authEpisodeDisplay').textContent = numericEpisodeId;
     
     // Connect WebSocket to listen for episode events
     import('./authForm.js').then(module => {
@@ -80,7 +87,7 @@ function joinEpisode(episodeId) {
         // Already authenticated - can participate immediately
         document.getElementById('authPanel').style.display = 'none';
         document.getElementById('commentForm').style.display = 'block';
-        alert(`✅ Joined comment room ${episodeId}! You're already authenticated and can submit comments.`);
+        alert(`✅ Joined comment room ${numericEpisodeId}! You're already authenticated and can submit comments.`);
     } else {
         // Not authenticated - need to authenticate for this episode
         // Show auth panel but don't create new episode - join existing one
@@ -89,7 +96,18 @@ function joinEpisode(episodeId) {
         
         const authButton = document.getElementById('authButton');
         authButton.textContent = '[ AUTHENTICATE FOR ROOM ]';
-        
-        alert(`Joined comment room ${episodeId}. Click "AUTHENTICATE FOR ROOM" to participate in authenticated comments.`);
+
+        // If a wallet is already present, proactively kick off the auth flow
+        try {
+            if (window.currentWallet && (window.currentWallet.publicKey || window.currentWallet.kaspaAddress)) {
+                console.log('🔁 Auto-initiating authentication for joined room');
+                import('./authForm.js').then(m => m.connectWallet());
+            } else {
+                alert(`Joined comment room ${numericEpisodeId}. Click "AUTHENTICATE FOR ROOM" to participate in authenticated comments.`);
+            }
+        } catch {
+            // Fallback to manual
+            alert(`Joined comment room ${numericEpisodeId}. Click "AUTHENTICATE FOR ROOM" to participate in authenticated comments.`);
+        }
     }
 }

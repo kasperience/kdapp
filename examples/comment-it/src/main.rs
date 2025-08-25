@@ -1,5 +1,5 @@
 use clap::Parser;
-use comment_it::episode_runner::{create_auth_generator, run_auth_server, AuthServerConfig};
+use comment_it::episode_runner::{create_auth_generator};
 use comment_it::wallet;
 use futures_util::sink::SinkExt;
 use futures_util::stream::StreamExt;
@@ -18,10 +18,30 @@ use tokio_tungstenite::accept_async;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct Cli {
-    /// WebSocket server address to listen on
-    #[arg(long, default_value = "127.0.0.1:8080")]
-    ws_addr: String,
+enum Cli {
+    /// Legacy pure-kdapp WebSocket peer (kept for dev)
+    #[command(name = "ws-peer")]
+    WsPeer {
+        /// WebSocket server address to listen on
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        ws_addr: String,
+    },
+    /// HTTP coordination peer (organizer) serving UI and API
+    #[command(name = "http-peer")]
+    HttpPeer {
+        /// Port for HTTP server
+        #[arg(long, default_value = "8080")]
+        port: u16,
+        /// Optional private key (hex) for signer wallet
+        #[arg(long)]
+        key: Option<String>,
+        /// Optional Kaspa wRPC URL
+        #[arg(long, value_name = "URL")]
+        wrpc_url: Option<String>,
+        /// Retry count for RPC submits
+        #[arg(long, value_name = "N", default_value_t = 3)]
+        rpc_retry: usize,
+    },
 }
 
 #[tokio::main]
@@ -30,41 +50,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let cli = Cli::parse();
 
-    info!("🚀 Starting pure kdapp comment-it peer...");
-
     // Get a persistent wallet for the peer
     let signer_wallet = wallet::get_wallet_for_command("comment-it-peer", None)?;
     let signer_keypair = signer_wallet.keypair;
     let signer_address = signer_wallet.get_kaspa_address();
 
-    // Create a transaction generator
-    let tx_generator = create_auth_generator(signer_keypair.clone(), NetworkId::with_suffix(NetworkType::Testnet, 10));
+    // WS peer builds transactions directly; HTTP peer sets up its own engine.
 
-    // Start the kdapp engine and listener
-    let auth_config = AuthServerConfig::new(
-        signer_keypair.clone(),
-        "comment-it-peer".to_string(),
-        None, // No specific RPC URL, use default
-    );
-    tokio::spawn(async move { let _ = run_auth_server(auth_config).await; });
+    match cli {
+        Cli::HttpPeer { port, key, wrpc_url: _wrpc_url, rpc_retry: _rpc_retry } => {
+            // Dispatch directly to HTTP organizer peer server
+            info!("👂 HTTP organizer peer listening on: 0.0.0.0:{}", port);
+            comment_it::api::http::organizer_peer::run_http_peer(key.as_deref(), port).await?;
+            return Ok(());
+        }
+        Cli::WsPeer { ws_addr } => {
+            // Start WebSocket server for frontend communication
+            let listener = TcpListener::bind(&ws_addr).await?;
+            info!("👂 WebSocket server listening on: {}", ws_addr);
 
-    // Start WebSocket server for frontend communication
-    let listener = TcpListener::bind(&cli.ws_addr).await?;
-    info!("👂 WebSocket server listening on: {}", cli.ws_addr);
+            // Initialize a shared kaspad client once and reuse (clone) per connection
+            let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
+            let shared_kaspad = connect_client(network_id, None).await?;
 
-    // Initialize a shared kaspad client once and reuse (clone) per connection
-    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
-    let shared_kaspad = connect_client(network_id, None).await?;
-
-    while let Ok((stream, _)) = listener.accept().await {
-        let kaspad_client = shared_kaspad.clone();
-        tokio::spawn(handle_connection(
-            stream,
-            signer_keypair.clone(),
-            signer_address.clone(),
-            kaspad_client,
-            network_id,
-        ));
+            while let Ok((stream, _)) = listener.accept().await {
+                let kaspad_client = shared_kaspad.clone();
+                tokio::spawn(handle_connection(
+                    stream,
+                    signer_keypair.clone(),
+                    signer_address.clone(),
+                    kaspad_client,
+                    network_id,
+                ));
+            }
+        }
+        // close match cli
     }
 
     Ok(())

@@ -54,22 +54,37 @@ export async function submitComment() {
     button.textContent = '[ SUBMITTING TO BLOCKCHAIN... ]';
 
     try {
-        // Construct the SubmitComment command as a JSON object
-        const command = {
-            SubmitComment: {
-                text: commentText,
-                episode_id: getCurrentEpisodeId() || 0 // Use 0 for initial episode creation if not set
-            }
-        };
-
-        // Send the command over the WebSocket to the backend
-        if (window.commandWebSocket && window.commandWebSocket.readyState === WebSocket.OPEN) {
-            window.commandWebSocket.send(JSON.stringify(command));
-            console.log('Command sent to backend via WebSocket:', command);
-            button.textContent = '[ COMMAND SENT TO BACKEND ]';
+        // Prefer HTTP simple API when using HTTP backend; WS fallback remains for pure ws backend
+        const usingHttp = (localStorage.getItem('backend') || 'http') === 'http';
+        if (usingHttp) {
+            const episodeId = getCurrentEpisodeId() || 0;
+            const sessionToken = window.currentSessionToken || '';
+            const resp = await fetch('/api/comments/simple', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ episode_id: episodeId, text: commentText, session_token: sessionToken })
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            console.log('✅ Comment submitted via HTTP:', data);
+            button.textContent = '[ SUBMITTED ]';
             document.getElementById('commentInput').value = '';
         } else {
-            throw new Error('WebSocket connection not open. Please ensure the backend is running.');
+            // Send the command over the WebSocket to the backend (pure ws peer)
+            const command = {
+                SubmitComment: {
+                    text: commentText,
+                    episode_id: getCurrentEpisodeId() || 0
+                }
+            };
+            if (window.commandWebSocket && window.commandWebSocket.readyState === WebSocket.OPEN) {
+                window.commandWebSocket.send(JSON.stringify(command));
+                console.log('Command sent to backend via WebSocket:', command);
+                button.textContent = '[ COMMAND SENT TO BACKEND ]';
+                document.getElementById('commentInput').value = '';
+            } else {
+                throw new Error('WebSocket connection not open. Please ensure the backend is running.');
+            }
         }
 
     } catch (error) {
@@ -129,7 +144,7 @@ export function handleNewComment(message) {
         </div>
         <div class="comment-body">
             ${message.comment.text}
-        }
+        </div>
         <div style="font-size: 0.7rem; color: var(--success); margin-top: 10px;">
             💬 REAL-TIME P2P COMMENT FROM BLOCKCHAIN
         </div>
@@ -144,3 +159,6 @@ export function handleNewComment(message) {
     
     console.log('✅ P2P comment added to UI successfully!');
 }
+
+// Backward-compatible alias expected by main.js
+export { handleNewComment as addNewComment };
