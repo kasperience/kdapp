@@ -178,7 +178,20 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                     continue;
                 }
             };
-            assert_eq!(verbose.selected_parent_hash, verbose.merge_set_blues_hashes[0]);
+            // Be resilient to occasional RPC anomalies; avoid panicking on structure assumptions
+            if verbose.merge_set_blues_hashes.is_empty() {
+                warn!(
+                    "Accepting block {} has empty merge set blues; skipping structural assertion",
+                    accepting_hash
+                );
+            } else if verbose.selected_parent_hash != verbose.merge_set_blues_hashes[0] {
+                warn!(
+                    "Selected parent does not match first mergeset blue (accepting block {}): sp={}, first_blue={}",
+                    accepting_hash,
+                    verbose.selected_parent_hash,
+                    verbose.merge_set_blues_hashes[0]
+                );
+            }
             debug!(
                 "accepting block: {}, selected parent: {}, mergeset len: {}",
                 accepting_hash,
@@ -228,7 +241,15 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                     }
                 }
             }
-            assert_eq!(0, required_num, "kaspad is misbehaving");
+            if required_num != 0 {
+                warn!(
+                    "kaspad returned inconsistent mergeset ({} remaining required txs not found) for accepting block {}. Continuing...",
+                    required_num,
+                    accepting_hash
+                );
+                // Skip dispatching for this accepting block to avoid partial delivery
+                continue;
+            }
             // info!("Tx payloads: {:?}", required_payloads);
 
             let mut consumed_txs = 0;
