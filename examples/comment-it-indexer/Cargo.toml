@@ -1,0 +1,24 @@
+[package]
+name = "comment-it-indexer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kdapp = { path = "../../kdapp" }
+kaspa-wrpc-client = { workspace = true }
+kaspa-rpc-core = { workspace = true }
+kaspa-addresses = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "signal"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = "1.0"
+axum = { version = "0.8", features = ["http1", "json", "tokio"] }
+tower-http = { version = "0.6", features = ["cors"] }
+thiserror = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+
+[features]
+default = ["mem-store"]
+mem-store = []
+rocksdb-store = []
+
