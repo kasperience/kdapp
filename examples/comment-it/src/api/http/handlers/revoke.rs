@@ -36,7 +36,7 @@ pub async fn revoke_session(
         }
     };
 
-    let (participant_pubkey, current_session_token) = match episode {
+    let (participant_pubkey, _current_session_token) = match episode {
         Some(ref ep) => {
             let pubkey = ep.owner().unwrap_or_else(|| {
                 println!("❌ Episode has no owner public key");
@@ -51,16 +51,10 @@ pub async fn revoke_session(
         }
     };
 
-    // Verify that the session token matches the current episode session
-    if let Some(ref current_token) = current_session_token {
-        if req.session_token != *current_token {
-            println!("❌ MATRIX UI ERROR: Session token mismatch for logout");
-            return Err(StatusCode::BAD_REQUEST);
-        }
-    } else {
-        println!("❌ MATRIX UI ERROR: No active session found for logout");
-        return Err(StatusCode::BAD_REQUEST);
-    }
+    // Pure P2P mode: no server-side session token storage. We rely on engine checks:
+    // - participant must be authenticated
+    // - signature must verify against provided token
+    // Therefore, do not enforce a stored session token here.
 
     // 🎯 TRUE P2P: Participant funds their own session revocation transaction
     let participant_wallet = crate::wallet::get_wallet_for_command("web-participant", None).map_err(|e| {

@@ -1,11 +1,7 @@
 use kaspa_addresses::Address;
 use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
 use kaspa_wrpc_client::prelude::*;
-use kdapp::{
-    engine::EpisodeMessage,
-    episode::EpisodeId,
-    generator,
-};
+use kdapp::{engine::EpisodeMessage, episode::EpisodeId, generator};
 use log::*;
 use rand::Rng;
 use secp256k1::Keypair;
@@ -70,10 +66,7 @@ pub async fn initialize_participant(
         println!("🔧 Registering episode with local engine for command processing...");
         println!("💰 You pay for your own comments with address: {}", kaspa_addr);
 
-        let register_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode {
-            episode_id: room_id,
-            participants: vec![],
-        };
+        let register_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode { episode_id: room_id, participants: vec![] };
         let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &register_episode, FEE);
         info!("Submitting episode registration for room {}: {}", room_id, tx.id());
         crate::utils::submit_tx_retry(kaspad, tx.as_ref(), 3).await.map_err(|e| format!("{}", e))?;
@@ -86,10 +79,7 @@ pub async fn initialize_participant(
         println!("⚠️  IMPORTANT: Friends must start their terminals BEFORE you create this room!");
         println!("💰 You pay for room creation with address: {}", kaspa_addr);
 
-        let new_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode {
-            episode_id: new_episode_id,
-            participants: vec![],
-        };
+        let new_episode = EpisodeMessage::<ContractCommentBoard>::NewEpisode { episode_id: new_episode_id, participants: vec![] };
         let tx = generator.build_command_transaction(utxo.clone(), &kaspa_addr, &new_episode, FEE);
         info!("Submitting room creation: {}", tx.id());
         crate::utils::submit_tx_retry(kaspad, tx.as_ref(), 3).await.map_err(|e| format!("{}", e))?;
@@ -107,14 +97,7 @@ pub async fn initialize_participant(
     }
     println!("========================");
 
-    let init_state = ParticipantInitState {
-        utxo_manager,
-        generator,
-        episode_id,
-        received_episode_id,
-        board_state,
-        utxo,
-    };
+    let init_state = ParticipantInitState { utxo_manager, generator, episode_id, received_episode_id, board_state, utxo };
 
     Ok((init_state, response_receiver))
 }

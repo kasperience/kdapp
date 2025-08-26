@@ -213,7 +213,7 @@ impl Default for RoomRules {
     fn default() -> Self {
         RoomRules {
             // Developer-friendly defaults aligned with CLI (1 KAS bond)
-            min_bond: 100_000_000, // 1 KAS
+            min_bond: 100_000_000,    // 1 KAS
             max_bond: 10_000_000_000, // 100 KAS ceiling
             penalty_multiplier: 2.0,
             reward_pool_percentage: 0.0,

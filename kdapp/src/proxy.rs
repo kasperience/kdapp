@@ -180,16 +180,11 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
             };
             // Be resilient to occasional RPC anomalies; avoid panicking on structure assumptions
             if verbose.merge_set_blues_hashes.is_empty() {
-                warn!(
-                    "Accepting block {} has empty merge set blues; skipping structural assertion",
-                    accepting_hash
-                );
+                warn!("Accepting block {} has empty merge set blues; skipping structural assertion", accepting_hash);
             } else if verbose.selected_parent_hash != verbose.merge_set_blues_hashes[0] {
                 warn!(
                     "Selected parent does not match first mergeset blue (accepting block {}): sp={}, first_blue={}",
-                    accepting_hash,
-                    verbose.selected_parent_hash,
-                    verbose.merge_set_blues_hashes[0]
+                    accepting_hash, verbose.selected_parent_hash, verbose.merge_set_blues_hashes[0]
                 );
             }
             debug!(

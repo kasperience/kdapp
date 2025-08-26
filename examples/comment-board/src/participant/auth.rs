@@ -1,12 +1,7 @@
 use kaspa_addresses::Address;
 use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
 use kaspa_wrpc_client::prelude::*;
-use kdapp::{
-    engine::EpisodeMessage,
-    episode::EpisodeId,
-    generator,
-    pki::PubKey,
-};
+use kdapp::{engine::EpisodeMessage, episode::EpisodeId, generator, pki::PubKey};
 use log::*;
 use secp256k1::{Message, SecretKey};
 use std::sync::{

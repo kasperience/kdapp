@@ -5,27 +5,20 @@ pub mod main_loop;
 
 use crate::{
     cli::Args,
-    episode::{
-        board_with_contract::ContractCommentBoard,
-        handler::CommentHandler,
-    },
+    episode::{board_with_contract::ContractCommentBoard, handler::CommentHandler},
     utils::{PATTERN, PREFIX},
 };
+use kaspa_addresses::{Address, Prefix, Version};
+use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kdapp::{
     engine,
     pki::PubKey,
     proxy::{self, connect_client},
 };
-use kaspa_addresses::{Address, Prefix, Version};
-use kaspa_consensus_core::network::{NetworkId, NetworkType};
 
 use log::*;
 use secp256k1::Keypair;
-use std::sync::{
-    atomic::{AtomicBool},
-    mpsc::channel,
-    Arc,
-};
+use std::sync::{atomic::AtomicBool, mpsc::channel, Arc};
 
 pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let (network, prefix) = if args.mainnet {

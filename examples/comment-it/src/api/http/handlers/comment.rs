@@ -86,20 +86,23 @@ pub async fn submit_comment_simple(
 
     // Build EpisodeMessage for SubmitComment command
     let public_key = kdapp::pki::PubKey(signer.public_key());
-    let cmd = crate::core::UnifiedCommand::SubmitComment { text: request.text.clone(), session_token: request.session_token.unwrap_or_default() };
-    let episode_message = EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(
-        request.episode_id as u32,
-        cmd,
-        signer.secret_key(),
-        public_key,
-    );
+    let cmd = crate::core::UnifiedCommand::SubmitComment {
+        text: request.text.clone(),
+        session_token: request.session_token.unwrap_or_default(),
+    };
+    let episode_message =
+        EpisodeMessage::<AuthWithCommentsEpisode>::new_signed_command(request.episode_id as u32, cmd, signer.secret_key(), public_key);
 
     // Submit to blockchain via existing helper
     if let Some(auth_peer) = &state.auth_http_peer {
         match auth_peer.submit_episode_message_transaction(episode_message).await {
             Ok(tx_id) => {
                 info!("✅ SIMPLE COMMENT SUBMITTED: episode_id={}, tx_id={}", request.episode_id, tx_id);
-                Ok(ResponseJson(SimpleSubmitResponse { episode_id: request.episode_id, transaction_id: Some(tx_id), status: "submitted".to_string() }))
+                Ok(ResponseJson(SimpleSubmitResponse {
+                    episode_id: request.episode_id,
+                    transaction_id: Some(tx_id),
+                    status: "submitted".to_string(),
+                }))
             }
             Err(e) => {
                 error!("❌ Simple comment submission failed: {}", e);

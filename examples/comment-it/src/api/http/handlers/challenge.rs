@@ -1,5 +1,6 @@
 // src/api/http/handlers/challenge.rs
 use axum::{extract::State, http::StatusCode, response::Json};
+use axum::extract::rejection::JsonRejection;
 
 use crate::api::http::{
     state::PeerState,
@@ -12,10 +13,27 @@ use std::sync::Arc;
 
 pub async fn request_challenge(
     State(state): State<PeerState>,
-    Json(req): Json<ChallengeRequest>,
+    payload: Result<Json<ChallengeRequest>, JsonRejection>,
 ) -> Result<Json<ChallengeResponse>, StatusCode> {
     println!("🎭 MATRIX UI ACTION: User requested authentication challenge");
     println!("📨 Sending RequestChallenge command to blockchain...");
+
+    // Be tolerant to early/empty/invalid JSON bodies from the UI. If JSON parsing fails,
+    // return 200 with a neutral status so the UI doesn't show errors; the websocket will
+    // deliver the actual challenge shortly after episode creation.
+    let req = match payload {
+        Ok(json) => json.0,
+        Err(err) => {
+            println!("⚠️ Tolerating invalid challenge request payload: {}", err);
+            return Ok(Json(ChallengeResponse {
+                episode_id: 0,
+                // Return a non-empty placeholder to avoid frontend treating it as an error immediately
+                nonce: "pending".to_string(),
+                transaction_id: None,
+                status: "request_in_progress".to_string(),
+            }));
+        }
+    };
 
     // 🚨 CRITICAL: Request-level deduplication to prevent race conditions
     let request_key = format!("challenge_{}", req.episode_id);
@@ -33,18 +51,33 @@ pub async fn request_challenge(
         pending.insert(request_key.clone());
     }
 
-    // Parse the participant's public key (like CLI does)
-    let participant_pubkey = match hex::decode(&req.public_key) {
-        Ok(bytes) => match secp256k1::PublicKey::from_slice(&bytes) {
-            Ok(pk) => PubKey(pk),
+    // Resolve participant public key: prefer request, else episode owner
+    let participant_pubkey = if let Some(pk_hex) = &req.public_key {
+        match hex::decode(pk_hex) {
+            Ok(bytes) => match secp256k1::PublicKey::from_slice(&bytes) {
+                Ok(pk) => PubKey(pk),
+                Err(e) => {
+                    println!("❌ Public key parsing failed: {}", e);
+                    return Err(StatusCode::BAD_REQUEST);
+                }
+            },
             Err(e) => {
-                println!("❌ Public key parsing failed: {}", e);
+                println!("❌ Hex decode failed: {}", e);
                 return Err(StatusCode::BAD_REQUEST);
             }
-        },
-        Err(e) => {
-            println!("❌ Hex decode failed: {}", e);
-            return Err(StatusCode::BAD_REQUEST);
+        }
+    } else {
+        // Fallback: use episode owner from blockchain state
+        let owner = match state.blockchain_episodes.lock() {
+            Ok(episodes) => episodes.get(&req.episode_id).and_then(|ep| ep.owner()),
+            Err(_) => None,
+        };
+        match owner {
+            Some(pk) => pk,
+            None => {
+                println!("❌ Missing public_key and episode owner unknown for episode {}", req.episode_id);
+                return Err(StatusCode::BAD_REQUEST);
+            }
         }
     };
 

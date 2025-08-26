@@ -397,11 +397,7 @@ mod tests {
         let _rb1 = board.execute(&CommentCommand::RequestChallenge, Some(pk1), &metadata).unwrap();
         let challenge = board.challenge.clone().expect("challenge should be set");
         let _rb2 = board
-            .execute(
-                &CommentCommand::SubmitResponse { signature: "sig".to_string(), nonce: challenge },
-                Some(pk1),
-                &metadata,
-            )
+            .execute(&CommentCommand::SubmitResponse { signature: "sig".to_string(), nonce: challenge }, Some(pk1), &metadata)
             .unwrap();
         assert!(board.authenticated_users.contains(&format!("{}", pk1)));
         assert!(!board.authenticated_users.contains(&format!("{}", pk2)));
@@ -424,11 +420,7 @@ mod tests {
         board.execute(&CommentCommand::RequestChallenge, Some(pk1), &metadata).unwrap();
         let challenge = board.challenge.clone().expect("challenge should be set");
         board
-            .execute(
-                &CommentCommand::SubmitResponse { signature: "sig".to_string(), nonce: challenge },
-                Some(pk1),
-                &metadata,
-            )
+            .execute(&CommentCommand::SubmitResponse { signature: "sig".to_string(), nonce: challenge }, Some(pk1), &metadata)
             .unwrap();
 
         // Join room before commenting

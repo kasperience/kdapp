@@ -8,9 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::episode::{
     commands::{format_kas_amount, ContractCommand, ContractError},
-    contract::{
-        CommentRoomContract, ContractStats, EconomicComment, ModerationStatus, RoomRules,
-    },
+    contract::{CommentRoomContract, ContractStats, EconomicComment, ModerationStatus, RoomRules},
 };
 
 /// Enhanced Comment Board with Episode Contract Integration

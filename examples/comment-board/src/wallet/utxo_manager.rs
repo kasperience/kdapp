@@ -78,8 +78,12 @@ impl UtxoLockManager {
                 Err(e) => {
                     attempts += 1;
                     let msg = e.to_string();
-                    if msg.contains("already accepted") { return Ok(()); }
-                    if attempts >= 3 { return Err(format!("{}", msg)); }
+                    if msg.contains("already accepted") {
+                        return Ok(());
+                    }
+                    if attempts >= 3 {
+                        return Err(format!("{}", msg));
+                    }
                     if msg.contains("WebSocket") || msg.contains("not connected") || msg.contains("disconnected") {
                         let _ = self.kaspad_client.connect(Some(kdapp::proxy::connect_options())).await;
                         continue;
@@ -332,7 +336,8 @@ impl UtxoLockManager {
 
         let bond_payload = format!("SCRIPT_BOND:{}:{}:{}", comment_id, bond_amount, script_pubkey.script().len());
 
-        let unsigned_tx = Transaction::new_non_finalized(TX_VERSION, tx_inputs, outputs, 0, SUBNETWORK_ID_NATIVE, 0, bond_payload.into_bytes());
+        let unsigned_tx =
+            Transaction::new_non_finalized(TX_VERSION, tx_inputs, outputs, 0, SUBNETWORK_ID_NATIVE, 0, bond_payload.into_bytes());
 
         let selected_entries: Vec<UtxoEntry> = selected_inputs.iter().map(|(_, e)| e.clone()).collect();
         let signed_tx = sign(MutableTransaction::with_entries(unsigned_tx, selected_entries), self.keypair).tx;
@@ -450,7 +455,12 @@ impl UtxoLockManager {
             // Inputs (multi-input)
             let tx_inputs: Vec<TransactionInput> = selected_inputs
                 .iter()
-                .map(|(op, _e)| TransactionInput { previous_outpoint: op.clone(), signature_script: vec![], sequence: 0, sig_op_count: 1 })
+                .map(|(op, _e)| TransactionInput {
+                    previous_outpoint: op.clone(),
+                    signature_script: vec![],
+                    sequence: 0,
+                    sig_op_count: 1,
+                })
                 .collect();
 
             // Payload with kdapp header for pattern/prefix and episode message
@@ -462,13 +472,28 @@ impl UtxoLockManager {
             if let Some(co) = change_output.clone() {
                 outputs.push(co);
             }
-            let mut unsigned =
-                Transaction::new_non_finalized(TX_VERSION, tx_inputs.clone(), outputs.clone(), 0, SUBNETWORK_ID_NATIVE, 0, payload.clone());
+            let mut unsigned = Transaction::new_non_finalized(
+                TX_VERSION,
+                tx_inputs.clone(),
+                outputs.clone(),
+                0,
+                SUBNETWORK_ID_NATIVE,
+                0,
+                payload.clone(),
+            );
             unsigned.finalize();
             while !check_pattern(unsigned.id(), &pattern) {
                 nonce = nonce.checked_add(1).ok_or_else(|| "nonce overflow".to_string())?;
                 Payload::set_nonce(&mut payload, nonce);
-                unsigned = Transaction::new_non_finalized(TX_VERSION, tx_inputs.clone(), outputs.clone(), 0, SUBNETWORK_ID_NATIVE, 0, payload.clone());
+                unsigned = Transaction::new_non_finalized(
+                    TX_VERSION,
+                    tx_inputs.clone(),
+                    outputs.clone(),
+                    0,
+                    SUBNETWORK_ID_NATIVE,
+                    0,
+                    payload.clone(),
+                );
                 unsigned.finalize();
             }
 
@@ -749,12 +774,7 @@ impl UtxoLockManager {
     }
 
     /// Ensure we have at least `min_count` micro-UTXOs (<= max_utxo_size), performing staged splits
-    pub async fn ensure_micro_utxos(
-        &mut self,
-        min_count: usize,
-        max_utxo_size: u64,
-        target_chunk_size: u64,
-    ) -> Result<(), String> {
+    pub async fn ensure_micro_utxos(&mut self, min_count: usize, max_utxo_size: u64, target_chunk_size: u64) -> Result<(), String> {
         use tokio::time::{sleep, Duration};
 
         let mut attempts: usize = 0;

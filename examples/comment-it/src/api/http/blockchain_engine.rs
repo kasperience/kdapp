@@ -59,6 +59,7 @@ impl AuthHttpPeer {
             auth_http_peer: None,                                              // Will be set after AuthHttpPeer is created
             pending_requests: Arc::new(std::sync::Mutex::new(HashSet::new())), // NEW - request deduplication
             used_utxos: Arc::new(std::sync::Mutex::new(HashSet::new())),       // NEW - UTXO tracking
+            utxo_cache: kdapp::utils::utxo_cache::UtxoCache::new(750),         // NEW - shared short-lived UTXO cache
         };
 
         let exit_signal = Arc::new(AtomicBool::new(false));
@@ -175,8 +176,8 @@ impl AuthHttpPeer {
             println!("🎯 Using REAL participant address: {}", participant_addr);
             println!("🔑 Participant pubkey: {}", hex::encode(participant_pubkey.0.serialize()));
 
-            // Get UTXOs for participant
-            let entries = kaspad.get_utxos_by_addresses(vec![participant_addr.clone()]).await?;
+            // Get UTXOs for participant (with short-lived cache)
+            let entries = self.peer_state.utxo_cache.get(kaspad, &participant_addr).await?;
             if entries.is_empty() {
                 return Err("No UTXOs found for participant wallet. Please fund the wallet.".into());
             }
@@ -341,7 +342,27 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
             return; // Don't process as auth command
         }
 
-        // Check what kind of update this is
+        // First, detect session revocation regardless of challenge presence
+        if let Some(prev_episode) = previous_episode {
+            if prev_episode.is_authenticated() && !episode.is_authenticated() {
+                println!("🎭 MATRIX UI SUCCESS: User session revoked (logout completed)");
+                let message = WebSocketMessage {
+                    message_type: "session_revoked".to_string(),
+                    episode_id: Some(episode_id.into()),
+                    authenticated: Some(false),
+                    challenge: episode.challenge(),
+                    session_token: None,
+                    comment: None,
+                    comments: None,
+                };
+                let receiver_count = self.websocket_tx.receiver_count();
+                let _ = self.websocket_tx.send(message);
+                println!("📡 Sent session_revoked WebSocket message for episode {} to {} client(s)", episode_id, receiver_count);
+                return; // Done handling revocation update
+            }
+        }
+
+        // Otherwise, check what kind of update this is
         if episode.is_authenticated() {
             // Authentication successful - Pure P2P style
             println!("🎭 MATRIX UI SUCCESS: User authenticated successfully (Pure P2P)");
@@ -356,27 +377,6 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
             };
             let _ = self.websocket_tx.send(message);
         } else if !episode.is_authenticated() && episode.challenge().is_some() {
-            // Check if this was a session revocation by comparing with previous state
-            if let Some(prev_episode) = previous_episode {
-                if prev_episode.is_authenticated() {
-                    // Previous state was authenticated, now it's not -> session revoked
-                    println!("🎭 MATRIX UI SUCCESS: User session revoked (logout completed)");
-                    let message = WebSocketMessage {
-                        message_type: "session_revoked".to_string(),
-                        episode_id: Some(episode_id.into()),
-                        authenticated: Some(false),
-                        challenge: episode.challenge(),
-                        session_token: None,
-                        comment: None,
-                        comments: None,
-                    };
-                    let receiver_count = self.websocket_tx.receiver_count();
-                    let _ = self.websocket_tx.send(message);
-                    println!("📡 Sent session_revoked WebSocket message for episode {} to {} client(s)", episode_id, receiver_count);
-                    return; // Don't send challenge_issued message
-                }
-            }
-
             // Challenge was issued (initial state)
             println!("🎭 MATRIX UI SUCCESS: Authentication challenge issued to user");
 

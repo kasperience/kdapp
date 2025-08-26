@@ -1,14 +1,14 @@
 use clap::Parser;
-use comment_it::episode_runner::{create_auth_generator};
+use comment_it::episode_runner::create_auth_generator;
 use comment_it::wallet;
 use futures_util::sink::SinkExt;
 use futures_util::stream::StreamExt;
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
+use kaspa_consensus_core::tx::Transaction;
+use kaspa_wrpc_client::prelude::RpcApi;
 use kdapp::engine::EpisodeMessage;
 use kdapp::pki::PubKey;
 use kdapp::proxy::{connect_client, connect_options};
-use kaspa_wrpc_client::prelude::RpcApi;
-use kaspa_consensus_core::tx::Transaction;
 use log::{info, warn};
 use secp256k1::Keypair;
 use serde::{Deserialize, Serialize};
@@ -75,16 +75,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             while let Ok((stream, _)) = listener.accept().await {
                 let kaspad_client = shared_kaspad.clone();
-                tokio::spawn(handle_connection(
-                    stream,
-                    signer_keypair.clone(),
-                    signer_address.clone(),
-                    kaspad_client,
-                    network_id,
-                ));
+                tokio::spawn(handle_connection(stream, signer_keypair.clone(), signer_address.clone(), kaspad_client, network_id));
             }
-        }
-        // close match cli
+        } // close match cli
     }
 
     Ok(())
@@ -125,8 +118,12 @@ async fn handle_connection(
 
                     let command = comment_it::core::UnifiedCommand::SubmitComment { text: text.clone(), session_token: String::new() };
                     let public_key = PubKey(signer_keypair.public_key());
-                    let episode_message = EpisodeMessage::<comment_it::core::AuthWithCommentsEpisode>
-                        ::new_signed_command(episode_id.try_into().unwrap(), command, signer_keypair.secret_key(), public_key);
+                    let episode_message = EpisodeMessage::<comment_it::core::AuthWithCommentsEpisode>::new_signed_command(
+                        episode_id.try_into().unwrap(),
+                        command,
+                        signer_keypair.secret_key(),
+                        public_key,
+                    );
 
                     // Connect to kaspad for UTXO fetching and transaction submission
                     // Fetch UTXOs for the signer's address
@@ -138,8 +135,7 @@ async fn handle_connection(
                     );
 
                     let tx_generator = create_auth_generator(signer_keypair.clone(), network_id);
-                    let tx = tx_generator
-                        .build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000); // 1000 is placeholder fee
+                    let tx = tx_generator.build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000); // 1000 is placeholder fee
 
                     match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
                         Ok(()) => {
@@ -161,8 +157,12 @@ async fn handle_connection(
                     info!("Processing RequestChallenge command for episode {}", episode_id);
                     let command = comment_it::core::UnifiedCommand::RequestChallenge;
                     let public_key = PubKey(signer_keypair.public_key());
-                    let episode_message = EpisodeMessage::<comment_it::core::AuthWithCommentsEpisode>
-                        ::new_signed_command(episode_id.try_into().unwrap(), command, signer_keypair.secret_key(), public_key);
+                    let episode_message = EpisodeMessage::<comment_it::core::AuthWithCommentsEpisode>::new_signed_command(
+                        episode_id.try_into().unwrap(),
+                        command,
+                        signer_keypair.secret_key(),
+                        public_key,
+                    );
 
                     let entries = kaspad_client.get_utxos_by_addresses(vec![signer_address.clone()]).await?;
                     let first = entries.first().ok_or("No UTXOs found. Wallet needs funding.")?;
@@ -172,8 +172,7 @@ async fn handle_connection(
                     );
 
                     let tx_generator = create_auth_generator(signer_keypair.clone(), network_id);
-                    let tx = tx_generator
-                        .build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000);
+                    let tx = tx_generator.build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000);
 
                     match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
                         Ok(()) => {
@@ -197,8 +196,12 @@ async fn handle_connection(
                     info!("Processing SubmitResponse command for episode {}", episode_id);
                     let command = comment_it::core::UnifiedCommand::SubmitResponse { signature, nonce };
                     let public_key = PubKey(signer_keypair.public_key());
-                    let episode_message = EpisodeMessage::<comment_it::core::AuthWithCommentsEpisode>
-                        ::new_signed_command(episode_id.try_into().unwrap(), command, signer_keypair.secret_key(), public_key);
+                    let episode_message = EpisodeMessage::<comment_it::core::AuthWithCommentsEpisode>::new_signed_command(
+                        episode_id.try_into().unwrap(),
+                        command,
+                        signer_keypair.secret_key(),
+                        public_key,
+                    );
 
                     let entries = kaspad_client.get_utxos_by_addresses(vec![signer_address.clone()]).await?;
                     let first = entries.first().ok_or("No UTXOs found. Wallet needs funding.")?;
@@ -208,8 +211,7 @@ async fn handle_connection(
                     );
 
                     let tx_generator = create_auth_generator(signer_keypair.clone(), network_id);
-                    let tx = tx_generator
-                        .build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000);
+                    let tx = tx_generator.build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000);
 
                     match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
                         Ok(()) => {
@@ -233,8 +235,12 @@ async fn handle_connection(
                     info!("Processing RevokeSession command for episode {}", episode_id);
                     let command = comment_it::core::UnifiedCommand::RevokeSession { session_token: String::new(), signature };
                     let public_key = PubKey(signer_keypair.public_key());
-                    let episode_message = EpisodeMessage::<comment_it::core::AuthWithCommentsEpisode>
-                        ::new_signed_command(episode_id.try_into().unwrap(), command, signer_keypair.secret_key(), public_key);
+                    let episode_message = EpisodeMessage::<comment_it::core::AuthWithCommentsEpisode>::new_signed_command(
+                        episode_id.try_into().unwrap(),
+                        command,
+                        signer_keypair.secret_key(),
+                        public_key,
+                    );
 
                     let entries = kaspad_client.get_utxos_by_addresses(vec![signer_address.clone()]).await?;
                     let first = entries.first().ok_or("No UTXOs found. Wallet needs funding.")?;
@@ -244,8 +250,7 @@ async fn handle_connection(
                     );
 
                     let tx_generator = create_auth_generator(signer_keypair.clone(), network_id);
-                    let tx = tx_generator
-                        .build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000);
+                    let tx = tx_generator.build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000);
 
                     match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
                         Ok(()) => {
@@ -290,8 +295,12 @@ async fn submit_tx_retry(kaspad: &kaspa_wrpc_client::KaspaRpcClient, tx: &Transa
             Err(e) => {
                 tries += 1;
                 let msg = e.to_string();
-                if msg.contains("already accepted") { return Ok(()); }
-                if tries >= attempts { return Err(format!("{}", msg)); }
+                if msg.contains("already accepted") {
+                    return Ok(());
+                }
+                if tries >= attempts {
+                    return Err(format!("{}", msg));
+                }
                 if msg.contains("WebSocket") || msg.contains("not connected") || msg.contains("disconnected") {
                     let _ = kaspad.connect(Some(connect_options())).await;
                     continue;

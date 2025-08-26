@@ -23,8 +23,8 @@ use crate::api::http::{
 };
 use axum::Json;
 use kaspa_addresses::{Address, Prefix, Version};
-use serde_json::json;
 use kaspa_wrpc_client::prelude::RpcApi;
+use serde_json::json;
 
 // Simple endpoint handlers
 async fn health() -> Json<serde_json::Value> {
@@ -417,6 +417,7 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
         auth_http_peer: Some(auth_peer.clone()), // Pass the Arc<AuthHttpPeer> here
         pending_requests: auth_peer.peer_state.pending_requests.clone(),
         used_utxos: auth_peer.peer_state.used_utxos.clone(),
+        utxo_cache: auth_peer.peer_state.utxo_cache.clone(),
     };
 
     let cors = CorsLayer::new().allow_origin(Any).allow_methods(tower_http::cors::AllowMethods::any()).allow_headers(Any);

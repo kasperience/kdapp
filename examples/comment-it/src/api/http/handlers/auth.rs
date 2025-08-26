@@ -70,13 +70,10 @@ pub async fn start_auth(State(state): State<PeerState>, Json(req): Json<AuthRequ
     // Quick UTXO check (detailed UTXO handling happens in blockchain engine)
     if let Some(ref kaspad) = state.kaspad_client {
         println!("🔍 Quick check for participant wallet funding...");
-        let entries = match kaspad.get_utxos_by_addresses(vec![participant_funding_addr.clone()]).await {
-            Ok(entries) => entries,
-            Err(e) => {
-                println!("❌ Failed to fetch UTXOs: {}", e);
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        };
+        let entries = state.utxo_cache.get(kaspad, &participant_funding_addr).await.map_err(|e| {
+            println!("❌ Failed to fetch UTXOs: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
         if entries.is_empty() {
             println!("❌ No UTXOs found! Participant wallet needs funding.");

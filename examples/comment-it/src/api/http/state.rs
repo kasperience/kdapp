@@ -28,6 +28,8 @@ pub struct PeerState {
     pub auth_http_peer: Option<Arc<crate::api::http::blockchain_engine::AuthHttpPeer>>, // Reference to the main peer
     pub pending_requests: Arc<Mutex<HashSet<String>>>, // NEW - Track pending requests by operation+episode_id
     pub used_utxos: Arc<Mutex<HashSet<String>>>,    // NEW - Track used UTXOs to prevent double-spending
+    // Short-lived UTXO cache provided by kdapp utils
+    pub utxo_cache: std::sync::Arc<kdapp::utils::utxo_cache::UtxoCache>,
 }
 
 // WebSocket message for real-time blockchain updates

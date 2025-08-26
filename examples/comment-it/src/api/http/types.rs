@@ -19,8 +19,24 @@ pub struct AuthResponse {
 
 #[derive(Deserialize)]
 pub struct ChallengeRequest {
+    #[serde(deserialize_with = "deserialize_u64_flexible")]
     pub episode_id: u64,
-    pub public_key: String,
+    // Make optional to avoid 422 when omitted; fallback to episode owner
+    pub public_key: Option<String>,
+}
+
+fn deserialize_u64_flexible<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{Error as DeError, Unexpected};
+    use serde_json::Value;
+    let v = Value::deserialize(deserializer)?;
+    match v {
+        Value::Number(n) => n.as_u64().ok_or_else(|| DeError::invalid_type(Unexpected::Other("non-u64 number"), &"u64")),
+        Value::String(s) => s.parse::<u64>().map_err(|_| DeError::invalid_value(Unexpected::Str(&s), &"u64 string")),
+        other => Err(DeError::invalid_type(Unexpected::Other(other.to_string().as_str()), &"u64 or string")),
+    }
 }
 
 #[derive(Serialize)]

@@ -74,11 +74,7 @@ pub async fn handle_command(command: &str, utxo_manager: &mut UtxoLockManager) {
                                 ..
                             } => {
                                 println!("  ⏰ Unlock time: {} OR moderator consensus", unlock_time);
-                                println!(
-                                    "  👥 Moderators: {} (require {} signatures)",
-                                    moderator_pubkeys.len(),
-                                    required_signatures
-                                );
+                                println!("  👥 Moderators: {} (require {} signatures)", moderator_pubkeys.len(), required_signatures);
                             }
                             _ => {
                                 println!("  🛡️ Complex unlock conditions");

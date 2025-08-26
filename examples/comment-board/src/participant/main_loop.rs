@@ -33,13 +33,14 @@ pub async fn run_comment_board(
     args: Args,
 ) {
     // 1. Initialize
-    let (mut init_state, mut response_receiver) = match init::initialize_participant(&kaspad, kaspa_signer, kaspa_addr.clone(), response_receiver, target_episode_id).await {
-        Ok(state) => state,
-        Err(e) => {
-            println!("❌ Initialization failed: {}", e);
-            return;
-        }
-    };
+    let (mut init_state, mut response_receiver) =
+        match init::initialize_participant(&kaspad, kaspa_signer, kaspa_addr.clone(), response_receiver, target_episode_id).await {
+            Ok(state) => state,
+            Err(e) => {
+                println!("❌ Initialization failed: {}", e);
+                return;
+            }
+        };
 
     // 2. Authenticate
     let (mut board_state, new_response_receiver) = match auth::perform_authentication(
@@ -53,7 +54,9 @@ pub async fn run_comment_board(
         init_state.episode_id,
         &mut init_state.utxo,
         &kaspa_addr,
-    ).await {
+    )
+    .await
+    {
         Ok(state) => state,
         Err(e) => {
             println!("❌ Authentication failed: {}", e);
@@ -71,9 +74,7 @@ pub async fn run_comment_board(
             participant_sk,
             participant_pk,
         );
-        let tx = init_state
-            .generator
-            .build_command_transaction(init_state.utxo.clone(), &kaspa_addr, &join_step, crate::utils::FEE);
+        let tx = init_state.generator.build_command_transaction(init_state.utxo.clone(), &kaspa_addr, &join_step, crate::utils::FEE);
         let _ = crate::utils::submit_tx_retry(&kaspad, tx.as_ref(), 3).await;
         init_state.utxo = kdapp::generator::get_first_output_utxo(&tx);
     }
@@ -95,9 +96,13 @@ pub async fn run_comment_board(
         let mut line = String::new();
         loop {
             line.clear();
-            if stdin.read_line(&mut line).is_err() { break; }
+            if stdin.read_line(&mut line).is_err() {
+                break;
+            }
             let s = line.trim().to_string();
-            if in_tx.send(s).is_err() { break; }
+            if in_tx.send(s).is_err() {
+                break;
+            }
         }
     });
 
