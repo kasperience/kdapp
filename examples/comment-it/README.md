@@ -30,3 +30,18 @@ Mode B — HTTP organizer peer (full UI)
 ## Notes
 - Uses testnet-10 by default; provide a `--wrpc-url` in engine/runner if you need a stable node.
 - See `COMMENT_IT_RPC_ASSESSMENT.md` for deeper analysis and planned follow-ups.
+
+## Kaspa‑Auth Model (Quick Guide)
+- Episode‑scoped authorization enforced by on‑chain signed commands.
+- No centralized cookie/session; the HTTP peer is a UX bridge.
+- The “session token” is a capability handle within an episode and is revocable on‑chain.
+
+## Remembering Sessions (Recommended UX)
+- Persist `episode_id` and your pubkey in `localStorage`.
+- On page load: call `GET /auth/status/{episode_id}` and subscribe to WebSocket.
+- If authenticated, restore authenticated UI immediately and skip the challenge flow.
+- On `session_revoked`, clear only the authenticated flag (optionally keep last `episode_id`).
+
+## Roadmap: Optional Bonds & Indexing
+- Optional anti‑spam bonds (like in comment‑board) can be added to require a small stake per room.
+- A lightweight indexer can persist episode snapshots and provide fast boot APIs for quick room discovery and state restore.

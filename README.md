@@ -109,6 +109,30 @@ This is a set of related tasks that build on each other to provide increasing le
   * `[ ]` **Stage 2: Full Reorg Protection (State Persistency):** Building on Stage 1, this task introduces a persistent database (e.g., RocksDB) to store rollback objects for arbitrary depths. This ensures that even very deep chain reorgs can be handled correctly. However, this stage does not solve for full history, as a new kdapp node would still be unable to sync a completed episode from scratch.
   * `[ ]` **Stage 3: Full History Sync (Archival Support):** The final stage, providing maximum flexibility. This involves designing a mechanism for dedicated archival nodes to store and serve the complete history of episodes. This would allow new kdapp nodes to join the network at any time and fully sync an episode's history, drawing inspiration from concepts like Kaspa's KIP-15 (ATAN).
 
+-----
+
+## Kaspa‑Auth: What It Is and Isn’t
+
+Kaspa‑auth in this repository (e.g., comment‑it, comment‑board) is not a browser cookie/session system. It provides episode‑scoped authorization enforced on‑chain via signed commands.
+
+- On‑chain identity: Privileged actions are authorized by a Kaspa key and materialized as transactions with kdapp payloads.
+- Episode‑scoped auth: “Login” and “Logout” are state transitions inside an Episode, validated by the engine and visible to all peers.
+- Session token: A UX/capability handle within an episode. Not a bearer secret; authorization is enforced by signatures + episode state. It is explicitly revocable on‑chain.
+- P2P‑ready: No centralized cookie store required. The HTTP peer is a convenience layer; the engine + proxy enforce rules.
+
+What it is not:
+- Not web SSO/cookies, and not a generic cross‑site session mechanism.
+- Not a replacement for standard browser security models.
+
+Recommended UX pattern (remembered sessions):
+- Persist `episode_id` and user pubkey in local storage on the client.
+- On page load, call `GET /auth/status/{episode_id}` and subscribe to WebSocket updates.
+- If already authenticated for that episode, restore authenticated UI without redoing challenge/response.
+- On `session_revoked`, update UI and clear only the authenticated flag (optionally keep the last episode id).
+
+Roadmap toward indexing/persistence:
+- Stage 1–3 above outline progressively more durable storage. An indexer module can persist episode snapshots and provide fast boot APIs like `GET /index/my-episodes/{pubkey}` and `GET /index/episode/{id}` for quick UI restoration across devices.
+
 #### **Advanced Research & Future Goals**
 
   * `[ ]` **Lay the Groundwork for AI-Assisted Development:** Building on the **decoupled client-server architecture**, the ultimate vision is to enable developers to generate `Episode` trait implementations from natural language prompts. This is a major exploration area with several key components:
