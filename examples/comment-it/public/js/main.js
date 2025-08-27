@@ -153,28 +153,30 @@ function reconnectWebSocket() {
             };
 
             window.commandWebSocket.onmessage = (event) => {
-        console.log('📨 Command WebSocket message from backend:', event.data);
-        try {
-            const message = JSON.parse(event.data);
-            // Dispatch to appropriate handler
-            if (message.type === 'new_comment') {
-                addNewComment(message);
-            } else if (message.type === 'authentication_successful') {
-                handleAuthenticated(message.session_token);
-            } else if (message.type === 'authentication_failed') {
-                handleAuthenticationFailed(message.error);
-            } else if (message.type === 'session_revoked') {
-                handleSessionRevoked();
-            } else if (message.type === 'episode_rolled_back') {
-                console.warn('Episode rolled back:', message);
-            } else if (message.status === 'submitted') {
-                console.log(`Transaction submitted! TxId: ${message.tx_id}`);
-            } else if (message.status === 'error') {
-                console.error(`Backend error: ${message.message}`);
-            }
-        } catch (e) {
-            console.error("Error parsing WebSocket message:", e);
-        }
+                try {
+                    const message = JSON.parse(event.data);
+                    // Central dispatcher: only this handler processes messages
+                    if (message.type === 'new_comment') {
+                        addNewComment(message);
+                    } else if (message.type === 'authentication_successful') {
+                        handleAuthenticated(message.session_token);
+                    } else if (message.type === 'authentication_failed') {
+                        handleAuthenticationFailed(message.error);
+                    } else if (message.type === 'session_revoked') {
+                        handleSessionRevoked();
+                    } else if (message.type === 'episode_rolled_back') {
+                        console.warn('Episode rolled back:', message);
+                    } else if (message.status === 'submitted') {
+                        console.log(`Transaction submitted! TxId: ${message.tx_id}`);
+                    } else if (message.status === 'error') {
+                        console.error(`Backend error: ${message.message}`);
+                    } else {
+                        // Pass remaining auth-related messages to authForm handler
+                        handleWebSocketMessage(message);
+                    }
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e);
+                }
             };
 
             window.commandWebSocket.onerror = (error) => {

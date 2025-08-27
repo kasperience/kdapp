@@ -159,20 +159,9 @@ export function connectWebSocket() {
     try {
         if (window.commandWebSocket) {
             const ws = window.commandWebSocket;
-            // Attach handler (idempotent-ish: guard to avoid double-binding)
-            if (!ws.__authFormBound) {
-                ws.addEventListener('message', (event) => {
-                    try {
-                        const message = JSON.parse(event.data);
-                        handleWebSocketMessage(message);
-                    } catch (error) {
-                        console.error('WebSocket message parsing error:', error);
-                    }
-                });
-                ws.__authFormBound = true;
-            }
+            // Do not attach another message listener here; main.js is the central dispatcher
             if (ws.readyState === WebSocket.OPEN) {
-                console.log('✅ WebSocket connected');
+                console.log('✅ WebSocket connected (shared)');
             }
             return;
         }
@@ -260,10 +249,8 @@ export function handleWebSocketMessage(message) {
             break;
             
         case 'new_comment':
-            // Real-time P2P comment received from blockchain
-            console.log('💬 NEW COMMENT received from blockchain:', message.comment);
-            handleNewComment(message);
-            break;
+            // Defer rendering to main.js to avoid duplicate handling
+            return;
     }
 }
 
