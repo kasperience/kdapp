@@ -53,6 +53,8 @@ document.addEventListener('DOMContentLoaded', () => {
     checkExistingWallet();
     // Try to restore previous authenticated session
     tryRestoreSession();
+    // Attempt indexer-based membership restore even without token
+    autoMembershipRestore();
     // UI enhancements: indexer status + resume last room if possible
     renderIndexerStatusChip();
     renderResumeLastRoom();
@@ -184,6 +186,45 @@ async function renderResumeLastRoom() {
         bar.appendChild(span);
         bar.appendChild(btn);
         bar.appendChild(close);
+    } catch {}
+}
+
+async function autoMembershipRestore() {
+    try {
+        const last = localStorage.getItem('last_episode_id');
+        if (!last) return;
+        const episodeId = parseInt(last, 10);
+        if (!Number.isFinite(episodeId)) return;
+        let pub = localStorage.getItem('participant_pubkey');
+        if (!pub) {
+            // Try to fetch existing wallet pubkey without creating anything
+            try {
+                const r = await fetch('/wallet-participant', { cache: 'no-store' });
+                if (r.ok) {
+                    const j = await r.json();
+                    if (j && j.public_key && j.public_key !== 'none' && !j.error) {
+                        pub = j.public_key;
+                        localStorage.setItem('participant_pubkey', pub);
+                    }
+                }
+            } catch {}
+        }
+        if (!pub) return;
+
+        // Check indexer membership
+        const base = getIndexerUrl();
+        try {
+            const r = await fetch(`${base}/index/me/${episodeId}?pubkey=${pub}`);
+            if (r.ok) {
+                const j = await r.json();
+                if (j && j.member) {
+                    // Ensure episode id is reflected in UI
+                    try { document.getElementById('episodeId').textContent = episodeId; } catch {}
+                    // Auto-auth UI
+                    handleAuthenticated('pure_p2p');
+                }
+            }
+        } catch {}
     } catch {}
 }
 
