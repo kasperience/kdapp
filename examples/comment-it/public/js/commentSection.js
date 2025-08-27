@@ -181,6 +181,8 @@ export async function loadFeedForEpisode(episodeId) {
     // Reset current view and deduper so we can re-render snapshot
     container.innerHTML = '';
     try { displayedComments.clear(); } catch {}
+    // Ensure feed is visible when loading from indexer
+    try { container.style.display = 'block'; } catch {}
 
     try {
         // Snapshot

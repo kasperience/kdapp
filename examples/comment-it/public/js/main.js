@@ -59,8 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderIndexerStatusChip();
     renderResumeLastRoom();
 
-    // Start with feed hidden; reveal after membership/auth confirmed
-    try { const c = document.getElementById('commentsContainer'); if (c) c.style.display = 'none'; } catch {}
+    // Do not force-hide feed; it will be shown when data loads or membership is confirmed
     fetchAndDisplayActiveEpisodes();
     startStatsPolling();
 
