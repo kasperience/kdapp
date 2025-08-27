@@ -58,6 +58,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // UI enhancements: indexer status + resume last room if possible
     renderIndexerStatusChip();
     renderResumeLastRoom();
+
+    // Start with feed hidden; reveal after membership/auth confirmed
+    try { const c = document.getElementById('commentsContainer'); if (c) c.style.display = 'none'; } catch {}
     fetchAndDisplayActiveEpisodes();
     startStatsPolling();
 

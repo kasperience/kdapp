@@ -407,6 +407,9 @@ export function handleAuthenticated(sessionToken) {
     // Show comment form with authenticated features
     showCommentForm(true);
 
+    // Reveal feed panel now that membership/auth is confirmed
+    try { const c = document.getElementById('commentsContainer'); if (c) c.style.display = 'block'; } catch {}
+
     // Visual cue: authenticated via indexer/chain
     try {
         let badge = document.getElementById('authRestoredBadge');
