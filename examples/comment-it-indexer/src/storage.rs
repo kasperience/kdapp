@@ -54,7 +54,7 @@ impl StoreTrait for Mem {
             None => return Ok(None),
         };
         let mut rows = Vec::new();
-        for ((_eid, cid), row) in self.comments.lock().map_err(|_| StoreError::Internal)?.iter().rev() {
+        for ((_eid, _cid), row) in self.comments.lock().map_err(|_| StoreError::Internal)?.iter().rev() {
             if *_eid == id {
                 rows.push(row.clone());
                 if rows.len() >= recent { break; }
@@ -102,4 +102,3 @@ pub fn new_store() -> Result<Store, StoreError> {
     #[allow(unreachable_code)]
     Err(StoreError::Internal)
 }
-

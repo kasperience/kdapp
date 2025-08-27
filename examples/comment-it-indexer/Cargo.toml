@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 kdapp = { path = "../../kdapp" }
+comment-it = { path = "../comment-it" }
 kaspa-wrpc-client = { workspace = true }
 kaspa-rpc-core = { workspace = true }
 kaspa-addresses = { workspace = true }
@@ -21,4 +22,3 @@ env_logger = { workspace = true }
 default = ["mem-store"]
 mem-store = []
 rocksdb-store = []
-

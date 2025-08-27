@@ -27,9 +27,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/index/health", get(api::health))
         .route("/index/recent", get(api::recent_episodes))
-        .route("/index/episode/:id", get(api::episode_snapshot))
-        .route("/index/comments/:id", get(api::episode_comments))
-        .route("/index/my-episodes/:pubkey", get(api::my_episodes))
+        .route("/index/episode/{id}", get(api::episode_snapshot))
+        .route("/index/comments/{id}", get(api::episode_comments))
+        .route("/index/my-episodes/{pubkey}", get(api::my_episodes))
         .with_state(store)
         .layer(cors);
 
@@ -38,4 +38,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(tokio::net::TcpListener::bind(addr).await?, app).await?;
     Ok(())
 }
-

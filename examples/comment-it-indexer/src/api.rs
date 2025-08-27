@@ -2,7 +2,7 @@ use axum::{extract::Path, http::StatusCode, response::Json};
 use serde::Serialize;
 
 use crate::models::{EpisodeDetail, EpisodeSnapshot};
-use crate::storage::{Store, StoreTrait};
+use crate::storage::Store;
 
 #[derive(Clone)]
 pub struct AppState(pub Store);
@@ -34,4 +34,3 @@ pub async fn my_episodes(axum::extract::State(store): axum::extract::State<Store
     let eps = store.get_my_episodes(&pubkey, 100).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(eps))
 }
-
