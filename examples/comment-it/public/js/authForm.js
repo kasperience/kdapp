@@ -392,6 +392,10 @@ export function handleAuthenticated(sessionToken) {
     button.style.color = 'var(--bg-black)';
     button.disabled = true; // Disable button to prevent multiple authentication attempts
     
+    // Hide auth panel and show comment form
+    const authPanel = document.getElementById('authPanel');
+    if (authPanel) authPanel.style.display = 'none';
+
     // Show logout button
     const logoutBtn = document.getElementById('logoutButton');
     if (logoutBtn) {
@@ -402,6 +406,20 @@ export function handleAuthenticated(sessionToken) {
     
     // Show comment form with authenticated features
     showCommentForm(true);
+
+    // Visual cue: authenticated via indexer/chain
+    try {
+        let badge = document.getElementById('authRestoredBadge');
+        if (!badge) {
+            badge = document.createElement('div');
+            badge.id = 'authRestoredBadge';
+            badge.style.cssText = 'margin-top:8px;padding:6px 10px;border:1px solid #15e6d1;color:#15e6d1;background:rgba(21,230,209,0.06);border-radius:6px;font:12px monospace;display:inline-block;';
+            const container = document.getElementById('commentForm') || document.body;
+            container.parentElement?.insertBefore(badge, container);
+        }
+        const via = sessionToken === 'pure_p2p' || sessionToken === 'pure_p2p_authenticated' ? 'indexer/chain' : 'session';
+        badge.textContent = `✅ Authenticated (${via}) — ready to comment`;
+    } catch {}
     
     typewriterEffect(`LOGIN SUCCESSFUL! WELCOME TO KASPA NETWORK.`, button.parentElement);
 }

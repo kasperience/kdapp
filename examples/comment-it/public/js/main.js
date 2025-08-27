@@ -233,6 +233,18 @@ function startStatsPolling() {
             // Block height display in status bar
             const bh = document.getElementById('blockHeight');
             if (bh && typeof s.block_height !== 'undefined' && s.block_height !== null) bh.textContent = Number(s.block_height).toLocaleString();
+
+            // Merge kdapp-indexer metrics if available (persistence-aware)
+            try {
+                const idxUrl = (localStorage.getItem('indexerUrl') || 'http://127.0.0.1:8090') + '/index/metrics';
+                const ir = await fetch(idxUrl);
+                if (ir.ok) {
+                    const im = await ir.json();
+                    // Map: episodes -> authEpisodes, comments -> commentEpisodes
+                    if (ae && typeof im.episodes === 'number') ae.textContent = im.episodes.toLocaleString();
+                    if (ce && typeof im.comments === 'number') ce.textContent = im.comments.toLocaleString();
+                }
+            } catch {}
         } catch (e) {
             console.warn('Failed to fetch /stats', e);
         }
