@@ -178,7 +178,9 @@ export async function loadFeedForEpisode(episodeId) {
     if (!episodeId) return;
     const container = document.getElementById('commentsContainer');
     if (!container) return;
+    // Reset current view and deduper so we can re-render snapshot
     container.innerHTML = '';
+    try { displayedComments.clear(); } catch {}
 
     try {
         // Snapshot
