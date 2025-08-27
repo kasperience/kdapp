@@ -157,6 +157,9 @@ export async function proceedWithWallet() {
             currentWallet.kaspaAddress = data.kaspa_address;
             currentWallet.publicKey = data.public_key;
         }
+
+        // Persist pubkey for session restore flows that don't use session tokens (pure P2P)
+        try { localStorage.setItem('participant_pubkey', currentWallet.publicKey || ''); } catch {}
         
         // Show authentication panel
         showAuthPanel();

@@ -535,23 +535,45 @@ export async function tryRestoreSession() {
     try {
         const episodeIdStr = localStorage.getItem('last_episode_id');
         const token = localStorage.getItem('last_session_token');
-        if (!episodeIdStr || !token) return false;
+        const myPub = localStorage.getItem('participant_pubkey');
+        if (!episodeIdStr) return false;
         const episodeId = parseInt(episodeIdStr, 10);
         if (!episodeId) return false;
 
-        const res = await resilientFetch(`/auth/status/${episodeId}`);
-        const data = await res.json();
-        if (data && data.authenticated) {
-            setCurrentEpisodeId(episodeId);
-            document.getElementById('episodeId').textContent = episodeId;
-            const disp = document.getElementById('authEpisodeDisplay');
-            if (disp) disp.textContent = episodeId;
-            window.currentSessionToken = token;
-            handleAuthenticated(token);
-            try { loadFeedForEpisode(episodeId); } catch {}
-            return true;
+        // Always restore feed view via indexer
+        setCurrentEpisodeId(episodeId);
+        document.getElementById('episodeId').textContent = episodeId;
+        const disp = document.getElementById('authEpisodeDisplay');
+        if (disp) disp.textContent = episodeId;
+        try { (await import('./commentSection.js')).loadFeedForEpisode(episodeId); } catch {}
+
+        // If a token exists, attempt backend status restore
+        if (token) {
+            const res = await resilientFetch(`/auth/status/${episodeId}`);
+            const data = await res.json();
+            if (data && data.authenticated) {
+                window.currentSessionToken = token;
+                handleAuthenticated(token);
+                return true;
+            }
         }
-        return false;
+
+        // Pure P2P: check membership via indexer
+        if (myPub) {
+            const base = localStorage.getItem('indexerUrl') || 'http://127.0.0.1:8090';
+            try {
+                const resp = await fetch(`${base}/index/me/${episodeId}?pubkey=${myPub}`);
+                if (resp.ok) {
+                    const j = await resp.json();
+                    if (j && j.member) {
+                        handleAuthenticated('pure_p2p');
+                        return true;
+                    }
+                }
+            } catch {}
+        }
+
+        return true; // feed restored
     } catch (e) {
         console.warn('Session restore failed', e);
         return false;
