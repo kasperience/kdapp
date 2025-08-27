@@ -7,9 +7,9 @@ use kdapp::engine::{self};
 use kdapp::episode::{EpisodeEventHandler, EpisodeId, PayloadMetadata};
 use kdapp::pki::PubKey;
 use kdapp::proxy::{self, connect_client};
-use kaspa_wrpc_client::prelude::{NetworkId, NetworkType};
+use kaspa_wrpc_client::prelude::NetworkId;
 use log::{info, warn};
-use std::sync::{atomic::AtomicBool, mpsc::channel, Arc};
+use std::sync::{mpsc::channel, Arc};
 
 // Main listener: wires kdapp proxy + engine and persists events to the store
 pub async fn run_with_config(store: Store, network_id: NetworkId, wrpc_url: Option<String>, exit_signal: Arc<std::sync::atomic::AtomicBool>) -> Result<(), StoreError> {

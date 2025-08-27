@@ -6,7 +6,7 @@ mod listener;
 use axum::{routing::get, Router};
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
-use http::HeaderValue;
+use axum::http::HeaderValue;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 #[tokio::main]
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = "0.0.0.0:8090".parse()?;
     println!("comment-it indexer on http://{}/", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    let shutdown = async {
+    let shutdown = async move {
         let _ = tokio::signal::ctrl_c().await;
         exit_signal.store(true, Ordering::Relaxed);
     };
@@ -62,7 +62,7 @@ fn build_cors_from_env() -> CorsLayer {
     if let Ok(origins) = std::env::var("INDEX_CORS_ORIGINS") {
         let list = origins
             .split(',')
-            .filter_map(|s| http::HeaderValue::from_str(s.trim()).ok())
+            .filter_map(|s| HeaderValue::from_str(s.trim()).ok())
             .collect::<Vec<_>>();
         if !list.is_empty() {
             return CorsLayer::new()

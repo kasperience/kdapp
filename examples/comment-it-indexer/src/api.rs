@@ -2,7 +2,7 @@ use axum::{extract::{Path, Query}, http::StatusCode, response::Json};
 use serde::Serialize;
 
 use crate::models::{EpisodeDetail, EpisodeSnapshot};
-use crate::storage::{Store, StoreTrait};
+use crate::storage::Store;
 
 #[derive(Clone)]
 pub struct AppState(pub Store);
