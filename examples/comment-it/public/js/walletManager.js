@@ -176,7 +176,25 @@ export function showAuthPanel() {
     
     // Show auth panel
     document.getElementById('authPanel').style.display = 'block';
-    document.getElementById('authButton').addEventListener('click', connectWallet);
+    const btn = document.getElementById('authButton');
+    if (window.indexerMember) {
+        btn.textContent = '[ START COMMENTING ]';
+        btn.onclick = () => {
+            document.getElementById('authPanel').style.display = 'none';
+            showCommentForm(true);
+        };
+        const hintId = 'authIndexerHint';
+        if (!document.getElementById(hintId)) {
+            const hint = document.createElement('div');
+            hint.id = hintId;
+            hint.style.cssText = 'margin-top:6px;font:12px monospace;color:#15e6d1;';
+            hint.textContent = '✓ Membership confirmed via kdapp-indexer — no authentication needed';
+            btn.parentElement?.appendChild(hint);
+        }
+    } else {
+        btn.textContent = '[ AUTHENTICATE FOR ROOM ]';
+        btn.onclick = connectWallet;
+    }
     
     // Update active wallet display with truncated address
     const truncatedAddress = truncateKaspaAddress(currentWallet.kaspaAddress);
