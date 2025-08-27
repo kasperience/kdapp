@@ -194,6 +194,29 @@ export function showAuthPanel() {
     } else {
         btn.textContent = '[ AUTHENTICATE FOR ROOM ]';
         btn.onclick = connectWallet;
+        // Async membership re-check when wallet is known (fix ordering on load)
+        (async () => {
+            try {
+                const last = localStorage.getItem('last_episode_id');
+                if (!last) return;
+                const episodeId = parseInt(last, 10);
+                if (!Number.isFinite(episodeId)) return;
+                const pub = currentWallet && currentWallet.publicKey ? currentWallet.publicKey : (localStorage.getItem('participant_pubkey') || '');
+                if (!pub) return;
+                const base = (localStorage.getItem('indexerUrl') || 'http://127.0.0.1:8090');
+                const r = await fetch(`${base}/index/me/${episodeId}?pubkey=${pub}`);
+                if (r.ok) {
+                    const j = await r.json();
+                    if (j && j.member) {
+                        window.indexerMember = true;
+                        try { window.currentEpisodeId = episodeId; document.getElementById('episodeId').textContent = episodeId; } catch {}
+                        // Auto switch to comment form
+                        document.getElementById('authPanel').style.display = 'none';
+                        showCommentForm(true);
+                    }
+                }
+            } catch {}
+        })();
     }
     
     // Update active wallet display with truncated address
