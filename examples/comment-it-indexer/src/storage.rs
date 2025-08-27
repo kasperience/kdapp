@@ -18,7 +18,12 @@ pub trait StoreTrait {
     fn get_comments_after(&self, id: u64, after_ts: u64, limit: usize) -> Result<Vec<CommentRow>, StoreError>;
     fn get_recent(&self, limit: usize) -> Result<Vec<EpisodeSnapshot>, StoreError>;
     fn get_my_episodes(&self, pubkey: &str, limit: usize) -> Result<Vec<u64>, StoreError>;
+
+    fn stats(&self) -> Result<StoreStats, StoreError>;
 }
+
+#[derive(Default, Clone, Copy)]
+pub struct StoreStats { pub episodes: usize, pub comments: usize, pub memberships: usize }
 
 #[cfg(feature = "mem-store")]
 #[derive(Default)]
@@ -91,6 +96,13 @@ impl StoreTrait for Mem {
             None => return Ok(vec![]),
         };
         Ok(set.iter().copied().take(limit).collect())
+    }
+
+    fn stats(&self) -> Result<StoreStats, StoreError> {
+        let episodes = self.episodes.lock().map_err(|_| StoreError::Internal)?.len();
+        let comments = self.comments.lock().map_err(|_| StoreError::Internal)?.len();
+        let memberships = self.memberships.lock().map_err(|_| StoreError::Internal)?.len();
+        Ok(StoreStats { episodes, comments, memberships })
     }
 }
 

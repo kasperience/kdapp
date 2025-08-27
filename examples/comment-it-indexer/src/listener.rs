@@ -12,7 +12,7 @@ use log::{info, warn};
 use std::sync::{atomic::AtomicBool, mpsc::channel, Arc};
 
 // Main listener: wires kdapp proxy + engine and persists events to the store
-pub async fn run(store: Store) -> Result<(), StoreError> {
+pub async fn run_with_config(store: Store, network_id: NetworkId, wrpc_url: Option<String>, exit_signal: Arc<std::sync::atomic::AtomicBool>) -> Result<(), StoreError> {
     // Channel for engine events
     let (sender, receiver) = channel();
 
@@ -28,12 +28,9 @@ pub async fn run(store: Store) -> Result<(), StoreError> {
     let engines = std::iter::once((AUTH_PREFIX, (AUTH_PATTERN, sender))).collect();
 
     // Connect to kaspad and start proxy listener
-    let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
-    let kaspad = connect_client(network_id, None)
+    let kaspad = connect_client(network_id, wrpc_url)
         .await
         .map_err(|_| StoreError::Internal)?;
-
-    let exit_signal = Arc::new(AtomicBool::new(false));
     info!("Indexer listener connected. Following AUTH_PREFIX transactions...");
     proxy::run_listener(kaspad, engines, exit_signal).await;
     Ok(())
