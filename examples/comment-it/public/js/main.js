@@ -191,9 +191,17 @@ async function renderResumeLastRoom() {
 
 async function autoMembershipRestore() {
     try {
-        const last = localStorage.getItem('last_episode_id');
+        let last = localStorage.getItem('last_episode_id');
         if (!last) return;
-        const episodeId = parseInt(last, 10);
+        let episodeId = parseInt(last, 10);
+        if (!Number.isFinite(episodeId)) {
+            // Fallback: read from current UI if present
+            try {
+                const t = (document.getElementById('episodeId')?.textContent || '').trim();
+                const n = parseInt(t, 10);
+                if (Number.isFinite(n)) { episodeId = n; }
+            } catch {}
+        }
         if (!Number.isFinite(episodeId)) return;
         let pub = localStorage.getItem('participant_pubkey');
         if (!pub) {
@@ -218,9 +226,11 @@ async function autoMembershipRestore() {
             if (r.ok) {
                 const j = await r.json();
                 if (j && j.member) {
-                    // Ensure episode id is reflected in UI
+                    // Ensure episode id is reflected in UI and global state
                     try { document.getElementById('episodeId').textContent = episodeId; } catch {}
+                    try { window.currentEpisodeId = episodeId; } catch {}
                     // Auto-auth UI
+                    window.indexerMember = true;
                     handleAuthenticated('pure_p2p');
                 }
             }
