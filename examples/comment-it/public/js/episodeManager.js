@@ -74,6 +74,9 @@ export function joinEpisode(episodeId) {
     // Update UI to reflect joined episode
     document.getElementById('episodeId').textContent = numericEpisodeId;
     document.getElementById('authEpisodeDisplay').textContent = numericEpisodeId;
+
+    // Load persistent feed from indexer
+    import('./commentSection.js').then(m => m.loadFeedForEpisode(numericEpisodeId)).catch(()=>{});
     
     // Connect WebSocket to listen for episode events
     import('./authForm.js').then(module => {

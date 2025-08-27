@@ -1,5 +1,5 @@
 import { resilientFetch, typewriterEffect, truncateKaspaAddress } from './utils.js';
-import { showCommentForm, handleNewComment } from './commentSection.js';
+import { showCommentForm, handleNewComment, loadFeedForEpisode } from './commentSection.js';
 import { currentWallet, showAuthPanel, showFundingInfo } from './walletManager.js'; // Added comment to force refresh
 
 // Use window.currentEpisodeId as the single source of truth across modules
@@ -127,6 +127,8 @@ export async function connectWallet() {
                 console.log('🔍 DEBUG: Logout button hidden during challenge wait');
             }
             
+            // Load persistent feed from indexer and connect WebSocket for real-time updates
+            loadFeedForEpisode(getCurrentEpisodeId());
             // Connect WebSocket for real-time updates (even if initial submission failed)
             connectWebSocket();
         } else {
@@ -546,6 +548,7 @@ export async function tryRestoreSession() {
             if (disp) disp.textContent = episodeId;
             window.currentSessionToken = token;
             handleAuthenticated(token);
+            try { loadFeedForEpisode(episodeId); } catch {}
             return true;
         }
         return false;

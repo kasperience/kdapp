@@ -160,5 +160,91 @@ export function handleNewComment(message) {
     console.log('✅ P2P comment added to UI successfully!');
 }
 
+// ===== Indexer integration for persistent feed =====
+const INDEXER_DEFAULT = 'http://127.0.0.1:8090';
+function indexerBase() {
+    try { return localStorage.getItem('indexerUrl') || INDEXER_DEFAULT; } catch { return INDEXER_DEFAULT; }
+}
+
+function lastSeenKey(episodeId) { return `last_seen_ts:${episodeId}`; }
+function getLastSeenTs(episodeId) {
+    try { return parseInt(localStorage.getItem(lastSeenKey(episodeId)) || '0', 10) || 0; } catch { return 0; }
+}
+function setLastSeenTs(episodeId, ts) {
+    try { localStorage.setItem(lastSeenKey(episodeId), String(ts)); } catch {}
+}
+
+export async function loadFeedForEpisode(episodeId) {
+    if (!episodeId) return;
+    const container = document.getElementById('commentsContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    try {
+        // Snapshot
+        const snapRes = await fetch(`${indexerBase()}/index/episode/${episodeId}`);
+        if (snapRes.ok) {
+            const snap = await snapRes.json();
+            if (snap && snap.recent_comments) {
+                const sorted = [...snap.recent_comments].sort((a,b)=>a.timestamp-b.timestamp);
+                for (const c of sorted) renderIndexerComment(c);
+                const maxTs = sorted.length ? sorted[sorted.length-1].timestamp : 0;
+                if (maxTs) setLastSeenTs(episodeId, maxTs);
+            }
+        }
+        await pollNewComments(episodeId);
+        startPolling(episodeId);
+    } catch (e) { console.warn('indexer feed load failed', e); }
+}
+
+async function pollNewComments(episodeId) {
+    const after = getLastSeenTs(episodeId) || 0;
+    const res = await fetch(`${indexerBase()}/index/comments/${episodeId}?after_ts=${after}&limit=200`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data || !data.comments) return;
+    let maxTs = after;
+    for (const c of data.comments) { renderIndexerComment(c); if (c.timestamp > maxTs) maxTs = c.timestamp; }
+    if (maxTs > after) setLastSeenTs(episodeId, maxTs);
+}
+
+let pollTimer = null;
+function startPolling(episodeId) {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(() => { pollNewComments(episodeId).catch(()=>{}); }, 6000);
+}
+
+function renderIndexerComment(row) {
+    const container = document.getElementById('commentsContainer');
+    if (!container) return;
+    const key = `${row.episode_id}_${row.comment_id}`;
+    if (displayedComments.has(key)) return;
+    displayedComments.add(key);
+    const div = document.createElement('div');
+    div.className = 'comment-card comment-authenticated';
+    div.style.borderLeft = '4px solid var(--bright-cyan)';
+    div.style.background = 'rgba(20, 184, 166, 0.06)';
+    const timeString = new Date(row.timestamp).toLocaleString();
+    div.innerHTML = `
+        <div class="comment-header">
+            <span class="comment-author">${row.author}</span>
+            <div class="comment-meta">
+                <span>EPISODE: ${row.episode_id}</span>
+                <span>TIME: ${timeString}</span>
+            </div>
+        </div>
+        <div class="comment-body">${escapeHtml(row.text)}</div>
+    `;
+    container.insertBefore(div, container.firstChild);
+}
+
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 // Backward-compatible alias expected by main.js
 export { handleNewComment as addNewComment };
