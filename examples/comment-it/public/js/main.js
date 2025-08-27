@@ -53,6 +53,9 @@ document.addEventListener('DOMContentLoaded', () => {
     checkExistingWallet();
     // Try to restore previous authenticated session
     tryRestoreSession();
+    // UI enhancements: indexer status + resume last room if possible
+    renderIndexerStatusChip();
+    renderResumeLastRoom();
     fetchAndDisplayActiveEpisodes();
     startStatsPolling();
 
@@ -111,6 +114,78 @@ document.addEventListener('DOMContentLoaded', () => {
     reconnectWebSocket();
 
 });
+
+function getIndexerUrl() {
+    try { return localStorage.getItem('indexerUrl') || 'http://127.0.0.1:8090'; } catch { return 'http://127.0.0.1:8090'; }
+}
+
+function renderIndexerStatusChip() {
+    let chip = document.getElementById('indexerStatusChip');
+    if (!chip) {
+        chip = document.createElement('div');
+        chip.id = 'indexerStatusChip';
+        chip.style.cssText = 'position:fixed;top:8px;right:8px;background:#082e2e;color:#a6ffef;border:1px solid #15e6d1;border-radius:8px;padding:6px 10px;font:12px monospace;z-index:9999;display:flex;gap:8px;align-items:center;';
+        document.body.appendChild(chip);
+    }
+    async function refresh() {
+        const base = getIndexerUrl();
+        let status = 'offline';
+        try {
+            const r = await fetch(base + '/index/health', { cache: 'no-store' });
+            status = r.ok ? 'online' : 'offline';
+        } catch {}
+        chip.textContent = `kdapp-indexer: ${status} @ ${base}`;
+    }
+    refresh();
+    setInterval(refresh, 7000);
+}
+
+async function renderResumeLastRoom() {
+    try {
+        const last = localStorage.getItem('last_episode_id');
+        const pub = localStorage.getItem('participant_pubkey');
+        if (!last) return; // Nothing to resume
+        const episodeId = parseInt(last, 10);
+        if (!Number.isFinite(episodeId)) return;
+
+        // Query indexer membership if we have a pubkey; otherwise still offer resume to just load feed
+        let member = false;
+        if (pub) {
+            try {
+                const base = getIndexerUrl();
+                const r = await fetch(`${base}/index/me/${episodeId}?pubkey=${pub}`);
+                if (r.ok) { const j = await r.json(); member = !!j.member; }
+            } catch {}
+        }
+
+        let bar = document.getElementById('resumeLastRoomBar');
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.id = 'resumeLastRoomBar';
+            bar.style.cssText = 'position:fixed;bottom:8px;left:50%;transform:translateX(-50%);background:#062424;color:#a6ffef;border:1px solid #15e6d1;border-radius:10px;padding:8px 12px;font:12px monospace;z-index:9999;display:flex;gap:10px;align-items:center;';
+            document.body.appendChild(bar);
+        }
+        bar.innerHTML = '';
+        const span = document.createElement('span');
+        span.textContent = member ? `Resume room ${episodeId} (authenticated)` : `Resume room ${episodeId}`;
+        const btn = document.createElement('button');
+        btn.textContent = 'Resume';
+        btn.style.cssText = 'padding:4px 8px;border:1px solid #15e6d1;background:transparent;color:#15e6d1;cursor:pointer;border-radius:6px;';
+        btn.onclick = () => {
+            // Programmatically join the room and let existing flows load feed/auth state
+            joinEpisode(String(episodeId));
+            // Hide bar after action
+            bar.style.display = 'none';
+        };
+        const close = document.createElement('button');
+        close.textContent = 'Dismiss';
+        close.style.cssText = 'padding:4px 8px;border:1px solid #0a4848;background:transparent;color:#0a9d9d;cursor:pointer;border-radius:6px;';
+        close.onclick = () => { bar.style.display = 'none'; };
+        bar.appendChild(span);
+        bar.appendChild(btn);
+        bar.appendChild(close);
+    } catch {}
+}
 
 function currentWsUrl() {
     const base = `ws://localhost:${wsPort}`;
