@@ -276,6 +276,12 @@ impl AuthHttpPeer {
         let json: serde_json::Value = resp.json().await?;
         let episodes = json.get("episodes").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
+        // Fetch current DAA score to prevent immediate lifetime filter purge
+        let current_daa = match &self.peer_state.kaspad_client {
+            Some(k) => match k.get_block_dag_info().await { Ok(info) => info.virtual_daa_score as u64, Err(_) => 0 },
+            None => 0,
+        };
+
         // Build a set of already-loaded episodes to avoid duplicates
         let existing: std::collections::HashSet<u64> = match self.peer_state.blockchain_episodes.lock() {
             Ok(map) => map.keys().cloned().collect(),
@@ -302,9 +308,9 @@ impl AuthHttpPeer {
             // Serialize a synthetic NewEpisode payload
             let action = kdapp::engine::EpisodeMessage::<crate::core::AuthWithCommentsEpisode>::NewEpisode { episode_id: id_u32, participants: vec![pk] };
             let payload = borsh::to_vec(&action).unwrap_or_default();
-            // Minimal metadata
+            // Minimal metadata — use a fresh accepting_daa to avoid immediate filtering
             let accepting_hash = KaspaHash::from_bytes([0u8; 32]);
-            let accepting_daa = 0u64;
+            let accepting_daa = if current_daa > 0 { current_daa } else { 1 };
             // Use created_at if present for a nicer timestamp
             let accepting_time = ep.get("created_at").and_then(|v| v.as_u64()).unwrap_or(0);
             let msg = kdapp::engine::EngineMsg::BlkAccepted { accepting_hash, accepting_daa, accepting_time, associated_txs: vec![(KaspaHash::from_bytes([0u8;32]), payload, None)] };

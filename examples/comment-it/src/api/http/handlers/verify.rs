@@ -38,7 +38,7 @@ pub async fn verify_auth(State(state): State<PeerState>, Json(req): Json<VerifyR
     // Ensure we remove the request key when done (RAII-style cleanup)
     let _cleanup_guard = RequestCleanupGuard { pending_requests: state.pending_requests.clone(), request_key: request_key.clone() };
 
-    // Find the participant public key from the episode
+    // Read episode for quick state checks (not for pubkey)
     let episode = match state.blockchain_episodes.lock() {
         Ok(episodes) => episodes.get(&episode_id).cloned(),
         Err(e) => {
@@ -46,36 +46,27 @@ pub async fn verify_auth(State(state): State<PeerState>, Json(req): Json<VerifyR
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
-
-    let participant_pubkey = match episode {
-        Some(ep) => {
-            // 🚨 CRITICAL: Check episode state BEFORE submitting duplicate transactions
-            if ep.is_authenticated() {
-                println!("🔄 Episode {} already authenticated - blocking duplicate transaction submission", episode_id);
-                return Ok(Json(VerifyResponse {
-                    episode_id,
-                    authenticated: true,
-                    status: "already_authenticated".to_string(),
-                    transaction_id: None,
-                }));
-            }
-
-            ep.owner().unwrap_or_else(|| {
-                println!("❌ Episode has no owner public key");
-                // This shouldn't happen, but let's continue anyway
-                PubKey(secp256k1::PublicKey::from_slice(&[2; 33]).unwrap())
-            })
+    if let Some(ep) = &episode {
+        // If episode already has authenticated participants, skip duplicate submissions
+        if ep.is_authenticated() {
+            println!("🔄 Episode {} already authenticated - blocking duplicate transaction submission", episode_id);
+            return Ok(Json(VerifyResponse {
+                episode_id,
+                authenticated: true,
+                status: "already_authenticated".to_string(),
+                transaction_id: None,
+            }));
         }
-        None => {
-            println!("❌ Episode {} not found in blockchain state", episode_id);
-            return Err(StatusCode::NOT_FOUND);
-        }
-    };
+    } else {
+        println!("⚠️ Episode {} not found in blockchain state (rehydrating or pending)", episode_id);
+        // Continue anyway — engine will initialize on first commands
+    }
 
     // 🎯 TRUE P2P: Participant funds their own transactions (like CLI)
     let participant_wallet =
         crate::wallet::get_wallet_for_command("web-participant", None).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let participant_secret_key = participant_wallet.keypair.secret_key();
+    let participant_pubkey = PubKey(participant_wallet.keypair.public_key());
 
     // Create participant's Kaspa address for transaction funding (True P2P!)
     let _participant_addr = kaspa_addresses::Address::new(

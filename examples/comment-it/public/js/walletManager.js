@@ -171,11 +171,18 @@ export async function proceedWithWallet() {
 }
 
 export function showAuthPanel() {
+    // Update status bar wallet addresses even if panel is deferred
+    try {
+        const truncatedAddress = truncateKaspaAddress(currentWallet.kaspaAddress);
+        document.getElementById('activeWalletAddress').textContent = truncatedAddress;
+        document.getElementById('walletAddress').textContent = truncatedAddress;
+    } catch {}
+
     // If a restore attempt is in progress, avoid flashing the auth panel
     if (window.deferAuthPanel) return;
     // Hide wallet panel
     document.getElementById('walletPanel').style.display = 'none';
-    
+
     // Show auth panel
     document.getElementById('authPanel').style.display = 'block';
     const btn = document.getElementById('authButton');
@@ -221,10 +228,7 @@ export function showAuthPanel() {
         })();
     }
     
-    // Update active wallet display with truncated address
-    const truncatedAddress = truncateKaspaAddress(currentWallet.kaspaAddress);
-    document.getElementById('activeWalletAddress').textContent = truncatedAddress;
-    document.getElementById('walletAddress').textContent = truncatedAddress;
+    // (addresses already updated above)
     
     // Show funding info if wallet was just created
     if (currentWallet.wasCreated) {
