@@ -54,39 +54,19 @@ export async function submitComment() {
     button.textContent = '[ SUBMITTING TO BLOCKCHAIN... ]';
 
     try {
-        // Prefer HTTP simple API when using HTTP backend; WS fallback remains for pure ws backend
-        const usingHttp = (localStorage.getItem('backend') || 'http') === 'http';
-        if (usingHttp) {
-            const episodeId = getCurrentEpisodeId() || 0;
-            const sessionToken = window.currentSessionToken || '';
-            const resp = await fetch('/api/comments/simple', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ episode_id: episodeId, text: commentText, session_token: sessionToken })
-            });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const data = await resp.json();
-            console.log('✅ Comment submitted via HTTP:', data);
-            button.textContent = '[ SUBMITTED ]';
-            document.getElementById('commentInput').value = '';
-        } else {
-            // Send the command over the WebSocket to the backend (pure ws peer)
-            const command = {
-                SubmitComment: {
-                    text: commentText,
-                    episode_id: getCurrentEpisodeId() || 0
-                }
-            };
-            if (window.commandWebSocket && window.commandWebSocket.readyState === WebSocket.OPEN) {
-                window.commandWebSocket.send(JSON.stringify(command));
-                console.log('Command sent to backend via WebSocket:', command);
-                button.textContent = '[ COMMAND SENT TO BACKEND ]';
-                document.getElementById('commentInput').value = '';
-            } else {
-                throw new Error('WebSocket connection not open. Please ensure the backend is running.');
-            }
-        }
-
+        // Always use HTTP simple API; backend enforces auth and signs with participant wallet
+        const episodeId = getCurrentEpisodeId() || 0;
+        const sessionToken = window.currentSessionToken || '';
+        const resp = await fetch('/api/comments/simple', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ episode_id: episodeId, text: commentText, session_token: sessionToken })
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        console.log('✅ Comment submitted via HTTP:', data);
+        button.textContent = '[ SUBMITTED ]';
+        document.getElementById('commentInput').value = '';
     } catch (error) {
         console.error('Comment submission failed:', error);
         button.textContent = '[ ERROR - TRY AGAIN ]';
