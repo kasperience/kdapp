@@ -71,6 +71,8 @@ Run HTTP peer with indexer integration:
 - Duplicate comments: Hard refresh to load the latest JS; WS and indexer dedup keys are unified.
 - Wrong time: WS now uses millisecond timestamps; both WS and indexer display local date/time consistently.
 
+See also: `TROUBLESHOOTING.md` for deeper checks, status meanings, and common fixes.
+
 ## Kaspa‑Auth Model (Quick Guide)
 - Episode‑scoped authorization enforced by on‑chain signed commands.
 - No centralized cookie/session; the HTTP peer is a UX bridge.
