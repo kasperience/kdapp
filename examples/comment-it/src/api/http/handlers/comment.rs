@@ -11,6 +11,7 @@ use axum::{
 use kdapp::engine::EpisodeMessage;
 use log::{error, info};
 use secp256k1::Keypair;
+use std::env;
 
 pub async fn submit_comment(
     State(state): State<PeerState>,
@@ -84,8 +85,36 @@ pub async fn submit_comment_simple(
     };
     let signer: Keypair = wallet.keypair;
 
-    // Build EpisodeMessage for SubmitComment command
+    // Participant public key
     let public_key = kdapp::pki::PubKey(signer.public_key());
+
+    // If episode is known but this participant isn't marked authenticated, consult kdapp-indexer membership
+    // and populate the in-memory auth set to allow commenting without re-running challenge flow.
+    let needs_auth = {
+        let episodes = state.blockchain_episodes.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        match episodes.get(&request.episode_id) {
+            Some(ep) => !ep.is_participant_authenticated(&public_key),
+            None => false,
+        }
+    };
+    if needs_auth {
+        let base = env::var("INDEXER_URL").unwrap_or_else(|_| "http://127.0.0.1:8090".to_string());
+        let url = format!("{}/index/me/{}?pubkey={}", base.trim_end_matches('/'), request.episode_id, hex::encode(public_key.0.serialize()));
+        if let Ok(resp) = reqwest::Client::new().get(url).send().await {
+            if resp.status().is_success() {
+                if let Ok(val) = resp.json::<serde_json::Value>().await {
+                    if val.get("member").and_then(|m| m.as_bool()) == Some(true) {
+                        if let Ok(mut episodes) = state.blockchain_episodes.lock() {
+                            if let Some(ep) = episodes.get_mut(&request.episode_id) {
+                                ep.authenticated_participants.insert(format!("{}", public_key));
+                                info!("🔐 Populated in-memory auth for ep {} via indexer membership", request.episode_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     let cmd = crate::core::UnifiedCommand::SubmitComment {
         text: request.text.clone(),
         session_token: request.session_token.unwrap_or_default(),
