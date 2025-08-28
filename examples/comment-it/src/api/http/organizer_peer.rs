@@ -12,15 +12,12 @@ use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
-use crate::api::http::websocket::websocket_handler;
-use crate::api::http::{
-    blockchain_engine::AuthHttpPeer,
-    handlers::{
-        auth::start_auth, challenge::request_challenge, comment, list_episodes::list_episodes, revoke::revoke_session,
-        status::get_status, verify::verify_auth,
-    },
-    state::{PeerState, WebSocketMessage},
-};
+    use crate::api::http::websocket::websocket_handler;
+    use crate::api::http::{
+        blockchain_engine::AuthHttpPeer,
+        handlers::{auth::start_auth, challenge::request_challenge, comment, list_episodes::list_episodes, revoke::revoke_session, verify::verify_auth},
+        state::{PeerState, WebSocketMessage},
+    };
 use axum::Json;
 use kaspa_addresses::{Address, Prefix, Version};
 use kaspa_wrpc_client::prelude::RpcApi;
@@ -436,7 +433,16 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
         .route("/auth/sign-challenge", post(sign_challenge))
         .route("/auth/verify", post(verify_auth))
         .route("/auth/revoke-session", post(revoke_session))
-        .route("/auth/status/{episode_id}", get(get_status))
+        .route(
+            "/auth/status/{episode_id}",
+            get(|
+                state: axum::extract::State<crate::api::http::state::PeerState>,
+                path: axum::extract::Path<u64>,
+                query: axum::extract::Query<crate::api::http::handlers::status::StatusQuery>,
+            | async move {
+                crate::api::http::handlers::status::get_status(state, path, query).await
+            }),
+        )
         .route("/episodes", get(list_episodes))
         .route("/api/comments", post(comment::submit_comment))
         .route("/api/comments/simple", post(comment::submit_comment_simple))

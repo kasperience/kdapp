@@ -86,31 +86,18 @@ export function joinEpisode(episodeId) {
     });
     
     // Check if user is already authenticated - if so, show comment form immediately
-    if (window.isAuthenticated && window.currentSessionToken) {
-        // Already authenticated - can participate immediately
-        document.getElementById('authPanel').style.display = 'none';
-        document.getElementById('commentForm').style.display = 'block';
-        alert(`✅ Joined comment room ${numericEpisodeId}! You're already authenticated and can submit comments.`);
-    } else {
-        // Not authenticated - need to authenticate for this episode
-        // Show auth panel but don't create new episode - join existing one
-        document.getElementById('authPanel').style.display = 'block';
-        document.getElementById('commentForm').style.display = 'none';
-        
-        const authButton = document.getElementById('authButton');
-        authButton.textContent = '[ AUTHENTICATE FOR ROOM ]';
+    // Always show comment form; backend enforces auth. Use top bar for auth status.
+    try { document.getElementById('authPanel').style.display = 'none'; } catch {}
+    try { document.getElementById('commentForm').style.display = 'block'; } catch {}
+    try { if (window.updateTopBarAuth) window.updateTopBarAuth(window.isAuthenticated && !!window.currentSessionToken); } catch {}
 
-        // If a wallet is already present, proactively kick off the auth flow
+    // Start silent auth if wallet is available and not already authenticated
+    if (!(window.isAuthenticated && window.currentSessionToken)) {
         try {
             if (window.currentWallet && (window.currentWallet.publicKey || window.currentWallet.kaspaAddress)) {
-                console.log('🔁 Auto-initiating authentication for joined room');
-                import('./authForm.js').then(m => m.connectWallet());
-            } else {
-                alert(`Joined comment room ${numericEpisodeId}. Click "AUTHENTICATE FOR ROOM" to participate in authenticated comments.`);
+                console.log('🔁 Starting silent authentication for joined room');
+                import('./authForm.js').then(m => m.requestChallengeAfterEpisodeCreation());
             }
-        } catch {
-            // Fallback to manual
-            alert(`Joined comment room ${numericEpisodeId}. Click "AUTHENTICATE FOR ROOM" to participate in authenticated comments.`);
-        }
+        } catch {}
     }
 }

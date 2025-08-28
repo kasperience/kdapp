@@ -15,13 +15,15 @@ use crate::api::http::state::{PeerState, SharedEpisodeState, WebSocketMessage};
 use crate::core::{AuthWithCommentsEpisode, UnifiedCommand};
 use crate::episode_runner::{AUTH_PATTERN, AUTH_PREFIX};
 use kaspa_wrpc_client::prelude::RpcApi;
+use kaspa_consensus_core::Hash as KaspaHash;
+use std::sync::Mutex as StdMutex;
 
 /// The main HTTP coordination peer that runs a real kdapp engine
-#[derive(Clone)]
 pub struct AuthHttpPeer {
     pub peer_state: PeerState,
     pub network: NetworkId,
     pub exit_signal: Arc<AtomicBool>,
+    pub engine_sender: StdMutex<Option<std::sync::mpsc::Sender<kdapp::engine::EngineMsg>>>,
 }
 
 impl AuthHttpPeer {
@@ -64,17 +66,18 @@ impl AuthHttpPeer {
 
         let exit_signal = Arc::new(AtomicBool::new(false));
 
-        let auth_http_peer = AuthHttpPeer { peer_state: peer_state.clone(), network, exit_signal };
-
-        // Set the self reference after the struct is created
-        peer_state.auth_http_peer = Some(Arc::new(auth_http_peer.clone()));
-
-        Ok(auth_http_peer)
+        // Build the peer; organizer code will set auth_http_peer reference
+        Ok(AuthHttpPeer { peer_state, network, exit_signal, engine_sender: StdMutex::new(None) })
     }
 
     /// Start the blockchain listener - this makes HTTP coordination peer a real kdapp node!
     pub async fn start_blockchain_listener(self: Arc<Self>) -> Result<(), Box<dyn std::error::Error>> {
         let (tx, rx) = mpsc::channel();
+        // Expose the engine sender for rehydration
+        {
+            let mut guard = self.engine_sender.lock().unwrap();
+            *guard = Some(tx.clone());
+        }
 
         // Create the episode handler that will process blockchain updates
         let auth_handler = HttpAuthHandler {
@@ -102,6 +105,11 @@ impl AuthHttpPeer {
         });
 
         println!("🔗 kdapp engine started - HTTP coordination peer is now a real blockchain node!");
+
+        // Optional: Rehydrate known episodes from kdapp-indexer so commands for old episodes don't get dropped after restart
+        if let Err(e) = self.rehydrate_from_indexer().await {
+            println!("⚠️ Rehydrate from indexer failed: {}", e);
+        }
 
         // Wait for either task to complete
         tokio::select! {
@@ -256,6 +264,58 @@ impl AuthHttpPeer {
     }
 }
 
+impl AuthHttpPeer {
+    async fn rehydrate_from_indexer(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // Only attempt if an engine sender is available
+        let sender = match self.engine_sender.lock().unwrap().as_ref().cloned() { Some(s) => s, None => return Ok(()) };
+        let base = std::env::var("INDEXER_URL").unwrap_or_else(|_| "http://127.0.0.1:8090".to_string());
+        let url = format!("{}/index/recent?limit=200", base.trim_end_matches('/'));
+        let client = reqwest::Client::new();
+        let resp = client.get(url).send().await?;
+        if !resp.status().is_success() { return Ok(()); }
+        let json: serde_json::Value = resp.json().await?;
+        let episodes = json.get("episodes").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+        // Build a set of already-loaded episodes to avoid duplicates
+        let existing: std::collections::HashSet<u64> = match self.peer_state.blockchain_episodes.lock() {
+            Ok(map) => map.keys().cloned().collect(),
+            Err(_) => Default::default(),
+        };
+
+        let mut count = 0usize;
+        for ep in episodes {
+            let id = match ep.get("episode_id").and_then(|v| v.as_u64()) { Some(v) => v, None => continue };
+            if existing.contains(&id) { continue; }
+            // Parse creator pubkey if present; otherwise skip
+            let creator = match ep.get("creator_pubkey").and_then(|v| v.as_str()) {
+                Some(s) if !s.is_empty() => s,
+                _ => continue,
+            };
+            // Try to parse as hex; also accept wrapped PublicKey(hex) format
+            let hex_str = if creator.starts_with("PublicKey(") && creator.ends_with(")") {
+                &creator[10..creator.len()-1]
+            } else { creator };
+            let pk_bytes = match hex::decode(hex_str) { Ok(b) => b, Err(_) => continue };
+            let pk = match secp256k1::PublicKey::from_slice(&pk_bytes) { Ok(p) => kdapp::pki::PubKey(p), Err(_) => continue };
+            let id_u32: u32 = match id.try_into() { Ok(v) => v, Err(_) => continue };
+
+            // Serialize a synthetic NewEpisode payload
+            let action = kdapp::engine::EpisodeMessage::<crate::core::AuthWithCommentsEpisode>::NewEpisode { episode_id: id_u32, participants: vec![pk] };
+            let payload = borsh::to_vec(&action).unwrap_or_default();
+            // Minimal metadata
+            let accepting_hash = KaspaHash::from_bytes([0u8; 32]);
+            let accepting_daa = 0u64;
+            // Use created_at if present for a nicer timestamp
+            let accepting_time = ep.get("created_at").and_then(|v| v.as_u64()).unwrap_or(0);
+            let msg = kdapp::engine::EngineMsg::BlkAccepted { accepting_hash, accepting_daa, accepting_time, associated_txs: vec![(KaspaHash::from_bytes([0u8;32]), payload, None)] };
+            let _ = sender.send(msg);
+            count += 1;
+        }
+        if count > 0 { println!("🔄 Rehydrated {} episode(s) from kdapp-indexer", count); }
+        Ok(())
+    }
+}
+
 /// Episode event handler that broadcasts updates to WebSocket clients
 pub struct HttpAuthHandler {
     pub websocket_tx: broadcast::Sender<WebSocketMessage>,
@@ -366,12 +426,14 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
         if episode.is_authenticated() {
             // Authentication successful - Pure P2P style
             println!("🎭 MATRIX UI SUCCESS: User authenticated successfully (Pure P2P)");
+            // Compute deterministic session handle if we know which pubkey authenticated
+            let session_handle = authorization.map(|pk| deterministic_handle(episode_id.into(), &pk));
             let message = WebSocketMessage {
                 message_type: "authentication_successful".to_string(),
                 episode_id: Some(episode_id.into()),
                 authenticated: Some(true),
                 challenge: episode.challenge(),
-                session_token: Some("pure_p2p_authenticated".to_string()), // Fake token for frontend compatibility
+                session_token: session_handle,
                 comment: None,
                 comments: None,
             };
@@ -404,4 +466,14 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
         println!("🎭 MATRIX UI ERROR: Authentication episode {} rolled back on blockchain", episode_id);
         println!("🔄 Episode {} rolled back on blockchain", episode_id);
     }
+}
+
+fn deterministic_handle(episode_id: u64, pubkey: &kdapp::pki::PubKey) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(b"KDAPP/COMMENT-IT/SESSION");
+    hasher.update(&episode_id.to_be_bytes());
+    hasher.update(&pubkey.0.serialize());
+    let out = hasher.finalize();
+    hex::encode(out)
 }

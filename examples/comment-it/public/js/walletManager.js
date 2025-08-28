@@ -171,6 +171,8 @@ export async function proceedWithWallet() {
 }
 
 export function showAuthPanel() {
+    // If a restore attempt is in progress, avoid flashing the auth panel
+    if (window.deferAuthPanel) return;
     // Hide wallet panel
     document.getElementById('walletPanel').style.display = 'none';
     

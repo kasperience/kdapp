@@ -111,8 +111,9 @@ export function handleNewComment(message) {
         return;
     }
     
-    // Create unique comment ID for deduplication
-    const commentId = `${message.episode_id}_${message.comment.id}_${message.comment.timestamp}`;
+    // Create unique comment ID for deduplication (align with indexer keying)
+    // Use episode_id + comment.id only so WS and indexer snapshots match
+    const commentId = `${message.episode_id}_${message.comment.id}`;
     
     // Check if we've already displayed this comment
     if (displayedComments.has(commentId)) {
@@ -130,8 +131,15 @@ export function handleNewComment(message) {
     comment.style.animation = 'comment-appear 0.5s ease-out';
     
     // Create timestamp display
-    const timestamp = new Date(message.comment.timestamp * 1000);
-    const timeString = timestamp.toLocaleTimeString();
+    // Backend sends UNIX milliseconds as a string; coerce to number safely
+    let tsMs = 0;
+    try {
+        // message.comment.timestamp can be a string (e.g. "1756366681633") due to server-side stringified u64
+        tsMs = Number(message.comment.timestamp);
+        if (!Number.isFinite(tsMs)) tsMs = 0;
+    } catch {}
+    const timestamp = tsMs > 0 ? new Date(tsMs) : new Date();
+    const timeString = timestamp.toLocaleString();
     
     comment.innerHTML = `
         <div class="comment-header">
@@ -139,7 +147,7 @@ export function handleNewComment(message) {
             <div class="comment-meta">
                 <span>EPISODE: ${message.episode_id}</span>
                 <span>TIME: ${timeString}</span>
-                <span class="author-badge" style="background: linear-gradient(45deg, var(--success), var(--bright-cyan)); padding: 2px 8px; border-radius: 12px; font-size: 0.6rem; text-transform: uppercase;">P2P VERIFIED</span>
+                <span class="author-badge" style="background: linear-gradient(45deg, var(--success), var(--bright-cyan)); color:#fff; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; text-shadow: 0 1px 1px rgba(0,0,0,0.35);">P2P VERIFIED</span>
             </div>
         </div>
         <div class="comment-body">

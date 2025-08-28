@@ -201,15 +201,16 @@ export function handleWebSocketMessage(message) {
     
     switch (message.type) {
         case 'episode_created':
-            // Only ignore if we've already processed this specific episode AND we're not starting fresh
-            if (getCurrentEpisodeId() === message.episode_id && isProcessingChallenge) {
-                console.log('🔄 Duplicate episode_created message ignored - already processing');
+            // Only respond to episode_created if we initiated creation in this tab
+            if (!isProcessingEpisodeCreation) {
+                console.log('ℹ️ Episode_created received (rehydrate or external); ignoring auto-challenge');
+                // Optionally update current episode id if not set
+                if (!getCurrentEpisodeId()) setCurrentEpisodeId(message.episode_id);
                 return;
             }
-            console.log('🎯 Episode created, requesting challenge...');
-            setCurrentEpisodeId(message.episode_id); // Ensure episode ID is set
-            isProcessingEpisodeCreation = false; // Reset episode creation lock - episode now exists
-            // Only request challenge if we're not already authenticated
+            console.log('🎯 Episode created (local flow), requesting challenge...');
+            setCurrentEpisodeId(message.episode_id);
+            isProcessingEpisodeCreation = false;
             if (!isAuthenticated) {
                 requestChallengeAfterEpisodeCreation();
             }
@@ -261,15 +262,27 @@ export async function requestChallengeAfterEpisodeCreation() {
         console.log('🔄 Challenge request already in progress - ignoring duplicate');
         return;
     }
-    
+
     isProcessingChallenge = true;
     console.log('🎯 Episode created, requesting challenge...');
-    
+
     const button = document.getElementById('authButton');
     button.textContent = '[ REQUESTING CHALLENGE... ]';
     button.disabled = true; // Prevent multiple clicks
-    
+
     try {
+        // Ensure we have the real participant public key loaded
+        try {
+            if (!currentWallet || !currentWallet.publicKey || currentWallet.publicKey === 'from_file') {
+                const walletResponse = await resilientFetch('/wallet-participant');
+                const walletData = await walletResponse.json();
+                if (walletData && walletData.public_key && walletData.public_key !== 'none' && !walletData.error) {
+                    if (!window.currentWallet) window.currentWallet = {};
+                    currentWallet.publicKey = walletData.public_key;
+                }
+            }
+        } catch {}
+
         const response = await resilientFetch('/auth/request-challenge', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -375,6 +388,7 @@ export function handleAuthenticated(sessionToken) {
     window.currentSessionToken = sessionToken;
     window.isAuthenticated = true;
     window.currentEpisodeId = getCurrentEpisodeId();
+    try { window.silentAuthInProgress = false; window.deferAuthPanel = false; } catch {}
 
     // Persist for refresh restore
     try {
@@ -406,6 +420,9 @@ export function handleAuthenticated(sessionToken) {
     
     // Show comment form with authenticated features
     showCommentForm(true);
+
+    // Update top bar auth indicator
+    try { if (window.updateTopBarAuth) window.updateTopBarAuth(true); } catch {}
 
     // Reveal feed panel now that membership/auth is confirmed
     try { const c = document.getElementById('commentsContainer'); if (c) c.style.display = 'block'; } catch {}
@@ -526,6 +543,7 @@ export function handleSessionRevoked() {
     button.disabled = false;
     
     typewriterEffect('SESSION REVOKED. RELOADING PAGE FOR FRESH START...', button.parentElement);
+    try { if (window.updateTopBarAuth) window.updateTopBarAuth(false); } catch {}
     // Clear persisted state
     try {
         localStorage.removeItem('last_episode_id');
@@ -541,9 +559,10 @@ export function handleSessionRevoked() {
 // Attempt to restore an authenticated session after page refresh
 export async function tryRestoreSession() {
     try {
+        try { window.deferAuthPanel = true; } catch {}
         const episodeIdStr = localStorage.getItem('last_episode_id');
-        const token = localStorage.getItem('last_session_token');
-        const myPub = localStorage.getItem('participant_pubkey');
+        let token = localStorage.getItem('last_session_token');
+        let myPub = localStorage.getItem('participant_pubkey');
         if (!episodeIdStr) return false;
         const episodeId = parseInt(episodeIdStr, 10);
         if (!episodeId) return false;
@@ -555,16 +574,55 @@ export async function tryRestoreSession() {
         if (disp) disp.textContent = episodeId;
         try { (await import('./commentSection.js')).loadFeedForEpisode(episodeId); } catch {}
 
-        // If a token exists, attempt backend status restore
-        if (token) {
-            const res = await resilientFetch(`/auth/status/${episodeId}`);
+        // Show comment form proactively; backend will enforce auth
+        try {
+            const authPanel = document.getElementById('authPanel');
+            if (authPanel) authPanel.style.display = 'none';
+            showCommentForm(true);
+            if (window.updateTopBarAuth) window.updateTopBarAuth(false);
+        } catch {}
+
+        // Ensure we have a pubkey (load from backend if needed, without creating a new wallet)
+        if (!myPub) {
+            try {
+                const r = await resilientFetch('/wallet-participant');
+                const j = await r.json();
+                if (j && j.public_key && j.public_key !== 'none' && !j.error) {
+                    myPub = j.public_key;
+                    localStorage.setItem('participant_pubkey', myPub);
+                }
+            } catch {}
+        }
+
+        // Always attempt backend status restore first (this may return deterministic session handle)
+        try {
+            const qs = myPub ? `?pubkey=${encodeURIComponent(myPub)}` : '';
+            const res = await resilientFetch(`/auth/status/${episodeId}${qs}`);
             const data = await res.json();
             if (data && data.authenticated) {
-                window.currentSessionToken = token;
-                handleAuthenticated(token);
+                const newToken = (data.session_token && String(data.session_token)) || (myPub ? await computeDeterministicHandle(episodeId, myPub) : (token || ''));
+                if (newToken) {
+                    try { localStorage.setItem('last_session_token', newToken); } catch {}
+                    window.currentSessionToken = newToken;
+                }
+                window.indexerMember = true;
+                handleAuthenticated(newToken || '');
+                try { window.deferAuthPanel = false; } catch {}
                 return true;
+            } else {
+                // Start a silent re-auth in the background if we have a wallet and pubkey
+                try {
+                    if (window.currentWallet && (window.currentWallet.publicKey || myPub)) {
+                        if (!window.currentWallet.publicKey || window.currentWallet.publicKey === 'from_file') {
+                            window.currentWallet = window.currentWallet || {};
+                            window.currentWallet.publicKey = myPub || window.currentWallet.publicKey;
+                        }
+                        console.log('🔁 Starting silent re-auth to restore session');
+                        requestChallengeAfterEpisodeCreation();
+                    }
+                } catch {}
             }
-        }
+        } catch {}
 
         // Pure P2P: check membership via indexer
         if (myPub) {
@@ -574,17 +632,54 @@ export async function tryRestoreSession() {
                 if (resp.ok) {
                     const j = await resp.json();
                     if (j && j.member) {
-                        handleAuthenticated('pure_p2p');
+                        // Compute deterministic handle on client as fallback
+                        const h = await computeDeterministicHandle(episodeId, myPub);
+                        try { localStorage.setItem('last_session_token', h); } catch {}
+                        window.currentSessionToken = h;
+                        window.indexerMember = true;
+                        handleAuthenticated(h);
+                        try { window.deferAuthPanel = false; } catch {}
                         return true;
                     }
                 }
             } catch {}
         }
 
-        return true; // feed restored
+        // Feed restored, but not authenticated; allow panel to show now
+        try { window.deferAuthPanel = false; } catch {}
+        // If we have a wallet loaded, show the auth panel explicitly
+        try { if (!window.isAuthenticated && (window.currentWallet || (await (async()=>false)()))) { (await import('./walletManager.js')).showAuthPanel(); } } catch {}
+        return true; // feed restored, even if not authenticated
     } catch (e) {
         console.warn('Session restore failed', e);
+        try { window.deferAuthPanel = false; } catch {}
+        // If restore fails entirely, and wallet exists, show auth panel
+        try { if (!window.isAuthenticated && window.currentWallet) { (await import('./walletManager.js')).showAuthPanel(); } } catch {}
         return false;
+    }
+}
+
+async function computeDeterministicHandle(episodeId, pubkeyHex) {
+    // Simple SHA-256( "KDAPP/COMMENT-IT/SESSION" || u64_be(episodeId) || pubkey_hex ) in JS
+    try {
+        const enc = new TextEncoder();
+        const prefix = enc.encode('KDAPP/COMMENT-IT/SESSION');
+        const buf = new ArrayBuffer(8);
+        const view = new DataView(buf);
+        view.setUint32(0, Math.floor(episodeId / 2 ** 32));
+        view.setUint32(4, episodeId >>> 0);
+        const idBytes = new Uint8Array(buf);
+        const pubBytes = enc.encode(pubkeyHex);
+        const toHash = new Uint8Array(prefix.length + idBytes.length + pubBytes.length);
+        toHash.set(prefix, 0);
+        toHash.set(idBytes, prefix.length);
+        toHash.set(pubBytes, prefix.length + idBytes.length);
+        const digest = await crypto.subtle.digest('SHA-256', toHash);
+        const hex = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+        return hex;
+    } catch {
+        // Fallback: stable string
+        return `h_${episodeId}_${pubkeyHex.slice(0,16)}`;
     }
 }
 

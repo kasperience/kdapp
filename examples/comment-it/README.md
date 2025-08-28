@@ -31,6 +31,9 @@ Mode B — HTTP organizer peer (full UI)
 - Uses testnet-10 by default; provide a `--wrpc-url` in engine/runner if you need a stable node.
 - See `COMMENT_IT_RPC_ASSESSMENT.md` for deeper analysis and planned follow-ups.
 
+Tips
+- Indexer URL: set `INDEXER_URL` (default `http://127.0.0.1:8090`) so `/auth/status/:id` can fall back to kdapp-indexer membership on restart and avoid re‑authentication prompts.
+
 ## Kaspa‑Auth Model (Quick Guide)
 - Episode‑scoped authorization enforced by on‑chain signed commands.
 - No centralized cookie/session; the HTTP peer is a UX bridge.

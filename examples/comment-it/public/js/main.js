@@ -34,6 +34,8 @@ let wsPort = getPortPreference();
 
 // Initialize functions on DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
+    // Defer showing auth panel until session restore attempts complete
+    try { window.deferAuthPanel = true; } catch {}
     // Expose functions to the global scope for onclick attributes
     window.showCreateWallet = showCreateWallet;
     window.showImportWallet = showImportWallet;
@@ -51,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initKonamiCode();
     initCommentForm();
     checkExistingWallet();
-    // Try to restore previous authenticated session
+    // Try to restore previous authenticated session (will unset defer flag when done)
     tryRestoreSession();
     // Attempt indexer-based membership restore even without token
     autoMembershipRestore();
@@ -70,6 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Manual join existing episode by ID
     const joinInput = document.getElementById('joinEpisodeInput');
     const joinBtn = document.getElementById('joinEpisodeBtn');
+    // Top bar join controls
+    const topJoinInput = document.getElementById('topJoinEpisodeInput');
+    const topJoinBtn = document.getElementById('topJoinEpisodeBtn');
     if (joinBtn && joinInput) {
         joinBtn.addEventListener('click', () => {
             const val = (joinInput.value || '').trim();
@@ -84,6 +89,17 @@ document.addEventListener('DOMContentLoaded', () => {
         joinInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') joinBtn.click();
         });
+    }
+    if (topJoinBtn && topJoinInput) {
+        const handler = () => {
+            const val = (topJoinInput.value || '').trim();
+            if (!val) return;
+            const episodeId = parseInt(val, 10);
+            if (!Number.isFinite(episodeId)) { alert('Invalid episode id'); return; }
+            joinEpisode(String(episodeId));
+        };
+        topJoinBtn.addEventListener('click', handler);
+        topJoinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handler(); });
     }
 
     // Anonymous mode toggle
@@ -116,6 +132,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     reconnectWebSocket();
+
+    // Wire top bar logout and auth indicator
+    try {
+        const logoutBtn = document.getElementById('topLogoutBtn');
+        if (logoutBtn) logoutBtn.onclick = logout;
+        window.updateTopBarAuth = (authed) => {
+            const ind = document.getElementById('topAuthIndicator');
+            const btn = document.getElementById('topLogoutBtn');
+            if (ind) ind.textContent = authed ? 'Auth: authenticated' : 'Auth: guest';
+            if (btn) btn.style.display = authed ? 'inline-block' : 'none';
+        };
+        window.updateTopBarAuth(false);
+    } catch {}
 
 });
 

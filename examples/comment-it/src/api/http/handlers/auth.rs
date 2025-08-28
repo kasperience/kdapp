@@ -2,7 +2,6 @@
 use axum::{extract::State, http::StatusCode, response::Json};
 use kaspa_addresses::{Address, Prefix, Version};
 
-use kaspa_wrpc_client::prelude::RpcApi;
 use kdapp::{engine::EpisodeMessage, pki::PubKey};
 use rand::Rng;
 

@@ -54,6 +54,20 @@
                 <span class="status-value" id="episodeId">--</span>
             </div>
         </div>
+
+        <!-- Top bar: quick join/search + auth status -->
+        <div id="topBar" class="top-bar" style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:8px 12px;margin:10px 0;border:1px solid rgba(20,184,166,0.3);border-radius:8px;background:rgba(2,32,32,0.5);">
+            <div class="top-left" style="display:flex;gap:8px;align-items:center;">
+                <input id="topJoinEpisodeInput" type="text" placeholder="Enter Episode ID (e.g., 511466637)" style="width:240px;padding:6px 10px;background:var(--bg-black);border:1px solid var(--primary-teal);color:#fff;border-radius:6px;font-family:monospace;">
+                <button id="topJoinEpisodeBtn" class="connect-button" style="padding:6px 12px;">JOIN</button>
+                <input id="topSearchInput" type="text" placeholder="Search (coming soon)" style="width:220px;padding:6px 10px;background:var(--bg-black);border:1px solid rgba(20,184,166,0.4);color:#a6ffef;border-radius:6px;font-family:monospace;">
+                <button id="topSearchBtn" class="connect-button" style="padding:6px 12px;opacity:0.6;cursor:not-allowed;">SEARCH</button>
+            </div>
+            <div class="top-right" style="display:flex;gap:10px;align-items:center;">
+                <span id="topAuthIndicator" style="font:12px monospace;color:#a6ffef;">Auth: restoring…</span>
+                <button id="topLogoutBtn" class="connect-button" style="padding:6px 12px;background:#f7931a;border-color:#f7931a;display:none;">LOGOUT</button>
+            </div>
+        </div>
         
         <!-- Wallet Management Panel -->
         <div class="auth-panel" id="walletPanel">
