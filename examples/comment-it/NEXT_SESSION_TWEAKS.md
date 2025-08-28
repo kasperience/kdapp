@@ -10,6 +10,13 @@
 - Docs: Added kaspa-auth model section; remembered session UX; indexing roadmap. [DONE]
 - Minimal Indexer Skeleton: New crate `examples/kdapp-indexer` (in-memory store, basic API). [DONE]
 
+Completed This Iteration
+- Deterministic Session Handle: Implemented end-to-end. Backend returns handle on WS auth_success and `/auth/status?pubkey=…`; frontend computes as fallback and persists. [DONE]
+- Session Restore UX: Restore via `/auth/status?pubkey=…` or indexer membership; hide AuthPanel during restore; unlock comment-form on success. [DONE]
+- Engine Rehydrate: On organizer start, rehydrate episodes from kdapp-indexer to avoid "Episode not found" after restarts. [DONE]
+- Top Bar UI: Added horizontal top bar (join field + auth indicator + logout); island AuthPanel kept only as fallback. [DONE]
+- WS/Indexer Consistency: Unified comment dedup keys; fixed WS timestamp units; brighter author badge; ignore rehydrate `episode_created` for auto-challenge. [DONE]
+
 ## Next Session Roadmap
 - Indexer Listener: Implemented real listener wiring kdapp proxy+engine, persisting snapshots/memberships/comments. [DONE]
 - Optional RocksDB Store: Added `rocksdb-store` feature with on-disk persistence and bincode serialization. [DONE]
@@ -20,12 +27,14 @@
 - Docs Hygiene: Added deterministic handle design doc; plan to link from README.
 
 ## New Next Session Roadmap
-- Deterministic Handle: Expose computed session handle in `/index/me` and add `/index/members/{episode_id}`.
-- Engine Rehydrate: On organizer start, rehydrate recent episodes from indexer to avoid "Episode not found" after restarts.
+- Deterministic Handle: Expose handle via a small `/auth/handle/{episode_id}?pubkey=…` endpoint and/or `/index/members/{episode_id}`. [PLANNED]
+- Engine Rehydrate: Completed as above. [DONE]
 - Single-Tab Guard: Add BroadcastChannel leader election to prevent duplicate WS/polling across tabs.
-- CLI/Env: Add flags for kdapp-indexer (wrpc-url, network) and optional runtime storage selection.
+- CLI/Env: Add flags for kdapp-indexer (wrpc-url, network) and optional runtime storage selection; today uses `INDEXER_URL`. [PARTIAL]
 - Kaspax Patch: Prepare patches/PKGBUILD for kdapp-indexer (rocksdb-store) on Linux, add systemd unit sample.
-- Docs: Link `docs/DETERMINISTIC_SESSION_HANDLE.md` from README; add short "What kaspa-auth is/isn't" section.
+- Docs: Link deterministic handle doc from README; add "What kaspa-auth is/isn't" section; describe top bar UX. [PLANNED]
+- Top Bar Search: Add simple indexer-backed free-text search (by author/text) to top bar. [PLANNED]
+- Submit Gate (optional): Disable submit button until authenticated; show inline hint; backend remains source of truth. [PLANNED]
 
 ## Notes
 - WS peer remains as a lightweight runner.
