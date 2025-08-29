@@ -8,7 +8,8 @@ members = [
     "examples/comment-board",
     "examples/kdapp-wallet",
     "examples/kdapp-mcp-server",
-    "examples/comment-it-indexer",
+    "examples/kdapp-indexer",
+    "examples/kas-draw",
 ]
 
 
