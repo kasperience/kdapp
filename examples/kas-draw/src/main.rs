@@ -12,6 +12,7 @@ use tokio::signal;
 
 mod episode;
 mod handler;
+mod offchain;
 mod tlv;
 mod watchtower;
 
@@ -43,6 +44,12 @@ enum Commands {
     Claim { #[arg(long)] episode_id: u32, #[arg(long)] ticket_id: u64, #[arg(long)] round: u64 },
     /// Start engine + proxy listener (L1 mode). Stop with Ctrl+C.
     Engine { #[arg(long)] mainnet: bool, #[arg(long)] wrpc_url: Option<String> },
+    /// Start off-chain engine + in-proc UDP router. Stop with Ctrl+C.
+    OffchainEngine {
+        #[arg(long, default_value_t = String::from("127.0.0.1:18181"))] bind: String,
+        #[arg(long)] no_ack: bool,
+        #[arg(long)] no_close: bool,
+    },
     /// Submit a NewEpisode transaction carrying participants (your pubkey)
     SubmitNew {
         #[arg(long)] episode_id: u32,
@@ -75,6 +82,23 @@ enum Commands {
         #[arg(long)] wrpc_url: Option<String>,
         #[arg(long)] ticket_id: u64,
         #[arg(long)] round: u64,
+    },
+    /// Send a TLV v1 message to the off-chain router
+    OffchainSend {
+        #[arg(long)] r#type: String, // new|cmd|close
+        #[arg(long)] episode_id: u32,
+        #[arg(long)] router: Option<String>,
+        #[arg(long)] force_seq: Option<u64>,
+        #[arg(long)] no_ack: bool,
+        #[arg(long)] kaspa_private_key: Option<String>,
+        // For Buy
+        #[arg(long)] amount: Option<u64>,
+        #[arg(value_name = "N", num_args = 5)] numbers: Vec<u8>,
+        // For Draw
+        #[arg(long)] entropy: Option<String>,
+        // For Claim
+        #[arg(long)] ticket_id: Option<u64>,
+        #[arg(long)] round: Option<u64>,
     },
 }
 
@@ -121,11 +145,12 @@ async fn main() {
             let (sender, receiver) = mpsc::channel::<EngineMsg>();
             let mut engine: Engine<LotteryEpisode, crate::handler::Handler> = Engine::new(receiver);
             let engine_thread = thread::spawn(move || {
-                engine.start(vec![crate::handler::Handler]);
+                engine.start(vec![crate::handler::Handler::new()]);
             });
 
             let network = if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
-            let kaspad = kdapp::proxy::connect_client(network, wrpc_url).await.expect("kaspad connect");
+            let url_opt = get_wrpc_url(wrpc_url);
+            let kaspad = kdapp::proxy::connect_client(network, url_opt).await.expect("kaspad connect");
             let exit = Arc::new(AtomicBool::new(false));
             let exit2 = exit.clone();
             let listener = tokio::spawn(async move {
@@ -149,6 +174,75 @@ async fn main() {
         }
         Commands::SubmitClaim { episode_id, kaspa_private_key, mainnet, wrpc_url, ticket_id, round } => {
             submit_tx_flow(SubmitKind::Claim { episode_id, ticket_id, round }, &kaspa_private_key, mainnet, wrpc_url).await;
+        }
+        Commands::OffchainEngine { bind, no_ack, no_close } => {
+            use std::sync::mpsc;
+            let (sender, receiver) = mpsc::channel::<EngineMsg>();
+            let mut engine: Engine<LotteryEpisode, crate::handler::Handler> = Engine::new(receiver);
+            let handler = crate::handler::Handler::with_tower(crate::watchtower::SimTower::new());
+            let engine_thread = thread::spawn(move || {
+                engine.start(vec![handler]);
+            });
+
+            // Start router in this thread
+            let router = crate::offchain::OffchainRouter::new(sender, !no_ack, !no_close);
+            // Run until process is terminated (Ctrl+C)
+            router.run_udp(&bind);
+            let _ = engine_thread.join();
+        }
+        Commands::OffchainSend { r#type, episode_id, router, force_seq, no_ack, kaspa_private_key, amount, numbers, entropy, ticket_id, round } => {
+            if r#type != "new" && r#type != "cmd" && r#type != "close" {
+                eprintln!("--type must be one of: new|cmd|close");
+                return;
+            }
+            let dest = router.unwrap_or_else(|| "127.0.0.1:18181".to_string());
+            let seq = match force_seq { Some(s) => s, None => auto_seq(episode_id as u64, &r#type) };
+            if r#type == "close" {
+                send_tlv_close(&dest, episode_id as u64, seq, !no_ack);
+                return;
+            }
+            if r#type == "new" {
+                // If a private key is provided, include its pubkey as an authorized participant
+                let participants = if let Some(sk_hex) = kaspa_private_key.as_ref() {
+                    let mut private_key_bytes = [0u8; 32];
+                    if faster_hex::hex_decode(sk_hex.as_bytes(), &mut private_key_bytes).is_err() {
+                        eprintln!("invalid --kaspa-private-key hex");
+                        return;
+                    }
+                    let keypair = Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).expect("invalid sk");
+                    vec![kdapp::pki::PubKey(keypair.public_key())]
+                } else {
+                    vec![]
+                };
+                let cmd = EpisodeMessage::<LotteryEpisode>::NewEpisode { episode_id, participants };
+                send_tlv_new(&dest, episode_id as u64, seq, cmd, !no_ack);
+                return;
+            }
+            // cmd
+            let emsg = if let (Some(a), ns) = (amount, &numbers) {
+                if ns.len() != 5 { eprintln!("provide exactly 5 numbers for --amount mode"); return; }
+                let nums = [ns[0], ns[1], ns[2], ns[3], ns[4]];
+                let cmd = LotteryCommand::BuyTicket { numbers: nums, entry_amount: a };
+                if let Some(sk_hex) = kaspa_private_key.as_ref() {
+                    let mut private_key_bytes = [0u8; 32];
+                    if faster_hex::hex_decode(sk_hex.as_bytes(), &mut private_key_bytes).is_err() { eprintln!("invalid --kaspa-private-key hex"); return; }
+                    let keypair = Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).expect("invalid sk");
+                    let pk = kdapp::pki::PubKey(keypair.public_key());
+                    EpisodeMessage::<LotteryEpisode>::new_signed_command(episode_id, cmd, keypair.secret_key(), pk)
+                } else {
+                    EpisodeMessage::<LotteryEpisode>::UnsignedCommand { episode_id, cmd }
+                }
+            } else if let Some(ent) = entropy {
+                let cmd = LotteryCommand::ExecuteDraw { entropy_source: ent };
+                EpisodeMessage::<LotteryEpisode>::UnsignedCommand { episode_id, cmd }
+            } else if let (Some(tid), Some(r)) = (ticket_id, round) {
+                let cmd = LotteryCommand::ClaimPrize { ticket_id: tid, round: r };
+                EpisodeMessage::<LotteryEpisode>::UnsignedCommand { episode_id, cmd }
+            } else {
+                eprintln!("specify one of: --amount <u64> <5 nums> | --entropy <str> | --ticket-id <u64> --round <u64>");
+                return;
+            };
+            send_tlv_cmd(&dest, episode_id as u64, seq, emsg, !no_ack);
         }
     }
 }
@@ -176,7 +270,8 @@ async fn submit_tx_flow(kind: SubmitKind, sk_hex: &str, mainnet: bool, wrpc_url:
     info!("funding address: {}", addr);
 
     // Connect and fetch UTXOs
-    let kaspad = kdapp::proxy::connect_client(network, wrpc_url).await.expect("kaspad connect");
+    let url_opt = get_wrpc_url(wrpc_url);
+    let kaspad = kdapp::proxy::connect_client(network, url_opt).await.expect("kaspad connect");
     let utxos = kaspad
         .get_utxos_by_addresses(vec![addr.clone()])
         .await
@@ -229,6 +324,13 @@ async fn submit_tx_flow(kind: SubmitKind, sk_hex: &str, mainnet: bool, wrpc_url:
     }
 }
 
+fn get_wrpc_url(flag: Option<String>) -> Option<String> {
+    if flag.is_some() {
+        return flag;
+    }
+    std::env::var("WRPC_URL").ok()
+}
+
 async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx::Transaction, attempts: usize) -> Result<(), String> {
     let mut tries = 0usize;
     loop {
@@ -245,6 +347,109 @@ async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx:
                 else if msg.contains("already accepted") { return Ok(()); }
                 else { return Err(format!("submit failed: {}", msg)); }
             }
+        }
+    }
+}
+
+fn seq_store_path() -> std::path::PathBuf {
+    let mut p = std::path::PathBuf::from("target");
+    let _ = std::fs::create_dir_all(&p);
+    p.push("kas_draw_offchain_seq.txt");
+    p
+}
+
+fn read_seq_store() -> std::collections::HashMap<u64, u64> {
+    use std::io::Read;
+    let mut m = std::collections::HashMap::new();
+    let path = seq_store_path();
+    if let Ok(mut f) = std::fs::File::open(path) {
+        let mut s = String::new();
+        if f.read_to_string(&mut s).is_ok() {
+            for line in s.lines() {
+                let parts: Vec<&str> = line.trim().split(',').collect();
+                if parts.len() == 2 {
+                    if let (Ok(eid), Ok(seq)) = (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
+                        m.insert(eid, seq);
+                    }
+                }
+            }
+        }
+    }
+    m
+}
+
+fn write_seq_store(m: &std::collections::HashMap<u64, u64>) {
+    use std::io::Write;
+    let mut s = String::new();
+    let mut keys: Vec<_> = m.keys().copied().collect();
+    keys.sort_unstable();
+    for k in keys {
+        let v = m.get(&k).copied().unwrap_or(0);
+        s.push_str(&format!("{},{}\n", k, v));
+    }
+    let path = seq_store_path();
+    if let Ok(mut f) = std::fs::File::create(path) {
+        let _ = f.write_all(s.as_bytes());
+    }
+}
+
+fn auto_seq(episode_id: u64, typ: &str) -> u64 {
+    let mut store = read_seq_store();
+    let next = match (store.get(&episode_id).copied(), typ) {
+        (Some(last), _) => last.saturating_add(1),
+        (None, "new") => 0,
+        _ => 1,
+    };
+    store.insert(episode_id, next);
+    write_seq_store(&store);
+    next
+}
+
+fn send_tlv_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<LotteryEpisode>, wait_ack: bool) {
+    let payload = borsh::to_vec(&msg).unwrap();
+    // State hash is opaque to router; handler recomputes actual state after applying
+    let tlv = crate::tlv::TlvMsg { version: crate::tlv::TLV_VERSION, msg_type: crate::tlv::MsgType::Cmd as u8, episode_id, seq, state_hash: [0u8; 32], payload };
+    send_with_ack(dest, tlv, false, wait_ack);
+}
+
+fn send_tlv_new(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<LotteryEpisode>, wait_ack: bool) {
+    let payload = borsh::to_vec(&msg).unwrap();
+    let tlv = crate::tlv::TlvMsg { version: crate::tlv::TLV_VERSION, msg_type: crate::tlv::MsgType::New as u8, episode_id, seq, state_hash: [0u8; 32], payload };
+    send_with_ack(dest, tlv, false, wait_ack);
+}
+
+fn send_tlv_close(dest: &str, episode_id: u64, seq: u64, wait_ack: bool) {
+    let tlv = crate::tlv::TlvMsg { version: crate::tlv::TLV_VERSION, msg_type: crate::tlv::MsgType::Close as u8, episode_id, seq, state_hash: [0u8; 32], payload: vec![] };
+    send_with_ack(dest, tlv, true, wait_ack);
+}
+
+fn send_with_ack(dest: &str, tlv: crate::tlv::TlvMsg, expect_close_ack: bool, wait_ack: bool) {
+    use std::net::UdpSocket;
+    use std::time::Duration;
+    let sock = UdpSocket::bind("0.0.0.0:0").expect("bind sender");
+    let expected_type = if expect_close_ack { crate::tlv::MsgType::AckClose as u8 } else { crate::tlv::MsgType::Ack as u8 };
+
+    let attempts = if wait_ack { 3 } else { 1 };
+    let mut timeout_ms = 300u64;
+    let bytes = tlv.encode();
+    for attempt in 0..attempts {
+        let _ = sock.send_to(&bytes, dest);
+        if !wait_ack { break; }
+        let _ = sock.set_read_timeout(Some(Duration::from_millis(timeout_ms)));
+        let mut buf = [0u8; 1024];
+        if let Ok((n, _from)) = sock.recv_from(&mut buf) {
+            if let Some(ack) = crate::tlv::TlvMsg::decode(&buf[..n]) {
+                if ack.msg_type == expected_type && ack.episode_id == tlv.episode_id && ack.seq == tlv.seq {
+                    println!("ack received for ep {} seq {}", tlv.episode_id, tlv.seq);
+                    return;
+                }
+            }
+        }
+        if attempt + 1 < attempts {
+            timeout_ms = timeout_ms.saturating_mul(2);
+            println!("ack timeout, retrying (attempt {} of {})", attempt + 2, attempts);
+        } else {
+            eprintln!("ack failed for ep {} seq {} (no response)", tlv.episode_id, tlv.seq);
         }
     }
 }

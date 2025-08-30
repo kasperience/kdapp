@@ -9,6 +9,20 @@ pub enum MsgType {
     Cmd = 1,
     Ack = 2,
     Close = 3,
+    AckClose = 4,
+}
+
+impl MsgType {
+    pub fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(MsgType::New),
+            1 => Some(MsgType::Cmd),
+            2 => Some(MsgType::Ack),
+            3 => Some(MsgType::Close),
+            4 => Some(MsgType::AckClose),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -35,6 +49,22 @@ impl TlvMsg {
         v.extend_from_slice(&self.payload);
         v
     }
+
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < 1 + 1 + 8 + 8 + 32 + 2 { return None; }
+        let version = bytes[0];
+        let msg_type = bytes[1];
+        if version != TLV_VERSION { return None; }
+        if MsgType::from_u8(msg_type).is_none() { return None; }
+        let episode_id = u64::from_le_bytes(bytes[2..10].try_into().ok()?);
+        let seq = u64::from_le_bytes(bytes[10..18].try_into().ok()?);
+        let mut state_hash = [0u8; 32];
+        state_hash.copy_from_slice(&bytes[18..50]);
+        let payload_len = u16::from_le_bytes(bytes[50..52].try_into().ok()?);
+        if bytes.len() < 52 + payload_len as usize { return None; }
+        let payload = bytes[52..(52 + payload_len as usize)].to_vec();
+        Some(Self { version, msg_type, episode_id, seq, state_hash, payload })
+    }
 }
 
 /// state_hash = BLAKE2b(root(serialized Episode state)) truncated to 32 bytes
@@ -46,4 +76,3 @@ pub fn hash_state(bytes: &[u8]) -> [u8; 32] {
     arr.copy_from_slice(&out[..32]);
     arr
 }
-

@@ -11,6 +11,7 @@ pub enum LotteryCommand {
     BuyTicket { numbers: [u8; 5], entry_amount: u64 },
     ExecuteDraw { entropy_source: String },
     ClaimPrize { ticket_id: u64, round: u64 },
+    CloseEpisode,
 }
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
@@ -18,6 +19,7 @@ pub enum LotteryRollback {
     UndoBuyTicket { ticket_id: u64 },
     UndoExecuteDraw { round_before: u64, prize_pool_before: u64 },
     UndoClaimPrize { ticket_id: u64 },
+    UndoClose,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -86,7 +88,7 @@ impl Episode for LotteryEpisode {
             draw_interval_secs: 15, // M1 demo: short interval for quick draw
             current_round: 0,
             round_start_time: metadata.accepting_time,
-            next_draw_time: metadata.accepting_time + 3600,
+            next_draw_time: metadata.accepting_time + 15, // align with draw_interval_secs for quick demo
             prize_pool: 0,
             authorized: participants,
             tickets: HashMap::new(),
@@ -153,6 +155,12 @@ impl Episode for LotteryEpisode {
                     _ => Err(EpisodeError::InvalidCommand(LotteryError::NoTicket)),
                 }
             }
+            LotteryCommand::CloseEpisode => {
+                // Off-chain demo: allow close without auth.
+                if self.paused { return Err(EpisodeError::InvalidCommand(LotteryError::Unauthorized)); }
+                self.paused = true;
+                Ok(LotteryRollback::UndoClose)
+            }
         }
     }
 
@@ -175,6 +183,10 @@ impl Episode for LotteryEpisode {
                 // M1: restore prize pool to one ticket worth
                 self.prize_pool = self.ticket_price;
                 self.winner_paid = false;
+                true
+            }
+            LotteryRollback::UndoClose => {
+                self.paused = false;
                 true
             }
         }

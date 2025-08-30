@@ -39,3 +39,50 @@ impl WatchtowerClient for NoopTower {
     async fn watch_utxo(&self, _watch: UtxoWatch) -> anyhow::Result<()> { Ok(()) }
 }
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use log::{info, warn};
+
+/// A simple in-process tower simulator for off-chain testing.
+#[derive(Default, Clone)]
+pub struct SimTower {
+    inner: Arc<Mutex<HashMap<u64, (u64, [u8; 32])>>>,
+}
+
+impl SimTower {
+    pub fn new() -> Self { Self { inner: Arc::new(Mutex::new(HashMap::new())) } }
+
+    /// Record a new state and log: OK if strictly newer; warn on stale/out-of-order.
+    pub fn on_state(&self, episode_id: u64, state_num: u64, state_hash: [u8; 32]) {
+        let mut m = self.inner.lock().unwrap();
+        match m.get(&episode_id) {
+            Some((prev_num, prev_hash)) => {
+                if state_num <= *prev_num {
+                    warn!(
+                        "tower: stale/out-of-order state for ep {} (got {}, last={})",
+                        episode_id, state_num, prev_num
+                    );
+                } else {
+                    info!(
+                        "tower: ep {} state advanced {} -> {} (prev_hash={:02x?})",
+                        episode_id, prev_num, state_num, &prev_hash[..4]
+                    );
+                    m.insert(episode_id, (state_num, state_hash));
+                }
+            }
+            None => {
+                info!("tower: ep {} first state {}", episode_id, state_num);
+                m.insert(episode_id, (state_num, state_hash));
+            }
+        }
+    }
+
+    pub fn finalize(&self, episode_id: u64, last_state_hash: [u8; 32]) {
+        let mut m = self.inner.lock().unwrap();
+        let last = m.remove(&episode_id);
+        match last {
+            Some((n, _)) => info!("tower: Finalized ep {} at state {} (hash {:02x?})", episode_id, n, &last_state_hash[..4]),
+            None => info!("tower: Finalized ep {} (no prior state recorded)", episode_id),
+        }
+    }
+}
