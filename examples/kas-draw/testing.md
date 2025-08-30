@@ -7,6 +7,7 @@ Off‑Chain ACK + Close — Quick Test
   - Delete `target/kas_draw_offchain_seq.txt`
 
 - Happy path (episode 10):
+  - Or run the script: `examples/kas-draw/offchain_demo.ps1` (edit KEY first)
   - New (seq 0, include participant):
     - `cargo run -p kas-draw -- offchain-send --type new --episode-id 10 --kaspa-private-key <hex>`
   - Buy (seq 1, signed):
@@ -22,9 +23,12 @@ Off‑Chain ACK + Close — Quick Test
 
 - Strict sequencing:
   - Router requires exact increments and `New` at seq 0.
-  - If engine/router restarts, re‑send `New` (seq 0) or reset the seq file and start over.
+  - If engine/router restarts, re‑send `New` (seq 0) or reset the seq file(s) and start over.
+  - The seq file path is relative to your current directory. Common locations:
+    - Root: `target/kas_draw_offchain_seq.txt`
+    - Example dir: `examples/kas-draw/target/kas_draw_offchain_seq.txt`
+    - Use one consistent working directory, or delete both files when recovering.
 
 - Flags:
   - Engine: `--no-ack`, `--no-close` to disable features.
   - Sender: `--no-ack`, `--force-seq <n>` to override sequence when recovering.
-
