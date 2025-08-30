@@ -2,12 +2,16 @@ Off‑Chain ACK + Close — Quick Test
 
 - Start engine + router:
   - `cargo run -p kas-draw -- offchain-engine`
+  - Or use the script which can also skip engine start:
+    - `examples/kas-draw/offchain_demo.ps1 -NoStartEngine` (engine must be running already)
 
 - Reset local seq (if needed):
   - Delete `target/kas_draw_offchain_seq.txt`
 
 - Happy path (episode 10):
-  - Or run the script: `examples/kas-draw/offchain_demo.ps1` (edit KEY first)
+  - Or run the script:
+    - `examples/kas-draw/offchain_demo.ps1 -EpisodeId 10 -Key <hex>`
+    - If engine already running: add `-NoStartEngine`
   - New (seq 0, include participant):
     - `cargo run -p kas-draw -- offchain-send --type new --episode-id 10 --kaspa-private-key <hex>`
   - Buy (seq 1, signed):
