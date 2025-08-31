@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
@@ -56,7 +56,7 @@ pub struct LotteryEpisode {
 
     // Participants / tickets (M1: single key allowed)
     pub authorized: Vec<PubKey>,
-    pub tickets: HashMap<u64, Ticket>,
+    pub tickets: BTreeMap<u64, Ticket>,
     pub next_ticket_id: u64,
     pub last_winner: Option<u64>,
     pub winner_paid: bool,
@@ -91,7 +91,7 @@ impl Episode for LotteryEpisode {
             next_draw_time: metadata.accepting_time + 15, // align with draw_interval_secs for quick demo
             prize_pool: 0,
             authorized: participants,
-            tickets: HashMap::new(),
+            tickets: BTreeMap::new(),
             next_ticket_id: 1,
             last_winner: None,
             winner_paid: false,
