@@ -59,3 +59,30 @@ Next (M2)
 L1 Enforcement (M1 note)
 
 - When `tx_outputs` are provided by the proxy, `BuyTicket` enforces that at least one carrier transaction output equals `ticket_price`. This keeps the MVP simple without requiring script bytes. In M2, tighten by enforcing an escrow address/script and claim windows similar to comment-board.
+
+Autopilot Scripts (Dev Convenience)
+
+- Off‑chain demo: `examples/kas-draw/offchain_demo.ps1`
+  - Starts off‑chain engine + UDP router and sends NEW → BUY → wait → DRAW → CLOSE.
+  - Options: `-EpisodeId`, `-Key`, `-Bind`, `-Amount`, `-Numbers`, `-WaitDrawSeconds`, `-UseBin`, `-NoStartEngine`.
+  - Key fallback if `-Key` is omitted: env `KASPA_PRIVATE_KEY`, env `KAS_DRAW_DEV_SK`, then file `examples/kas-draw/dev.key`.
+
+- On‑chain demo: `examples/kas-draw/onchain_demo.ps1`
+  - Starts L1 engine (wRPC) and submits NEW → BUY → wait → DRAW on testnet‑10 by default.
+  - Options: `-EpisodeId`, `-Key` (same fallback), `-WrpcUrl` or env `WRPC_URL`, `-Mainnet`, `-Amount`, `-Numbers`, `-WaitDrawSeconds`, `-UseBin`, `-NoStartEngine`.
+
+- TUI: dashboard renders immediately with a teal banner and shows Mechanics (range, ticket price, draw interval, ETA) plus recent events.
+
+What’s Next (Project Ideas)
+
+- Provable raffle (commit‑reveal): buyers commit `H(numbers||salt)`; draw uses a predetermined block hash; winners reveal to claim.
+- Escrowed auction/bids: lock funds on L1 (UTXO), run price discovery off‑chain, and settle on‑chain with timelocked refund paths.
+- Red packet drops: sponsor funds an address; off‑chain claims race against time; L1 script enforces expiry and refunds.
+- Proof‑of‑attendance stamps: off‑chain signatures with periodic on‑chain checkpoints (indexable via kdapp‑indexer).
+- Micro‑paywall/access tickets: onlyKAS channel for access; periodic checkpoints anchor “who paid” without a VM.
+
+Program‑ID + Checkpoints (RFC preview)
+
+- Code anchor: compute `PROGRAM_ID = BLAKE2b(canonical_source_bundle)` and publish once (genesis) to tie episodes to code.
+- State commitments: each step computes `STATE_ROOT = BLAKE2b(Borsh(state))`; watchers verify transitions using the anchored code.
+- Periodic checkpoints: tiny L1 payload `(episode_id, seq, state_root)` for public auditability without executing the program on L1.
