@@ -209,7 +209,7 @@ async fn main() {
             router.run_udp(&bind);
             let _ = engine_thread.join();
         }
-        Commands::OffchainSend { r#type, episode_id, router, force_seq, no_ack, kaspa_private_key, amount, numbers, entropy, ticket_id, round } => {
+        Commands::OffchainSend { r#type, episode_id, router, force_seq, no_ack, kaspa_private_key, amount, numbers, entropy, ticket_id, round, state_root } => {
             if r#type != "new" && r#type != "cmd" && r#type != "close" && r#type != "ckpt" {
                 eprintln!("--type must be one of: new|cmd|close|ckpt");
                 return;
@@ -418,7 +418,8 @@ async fn submit_checkpoint_tx(episode_id: u64, seq: u64, root: [u8; 32], sk_hex_
     // Use a dedicated prefix for checkpoints (KDCK)
     const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KDCK");
     let gen = TransactionGenerator::new(keypair, PATTERN, CHECKPOINT_PREFIX);
-    let tx = gen.build_raw_payload_transaction((op, entry), &addr, &payload, FEE);
+    let send = entry.amount - FEE;
+    let tx = gen.build_transaction(&[(op, entry)], send, 1, &addr, payload);
     submit_tx_retry(&kaspad, &tx, 3).await
 }
 
