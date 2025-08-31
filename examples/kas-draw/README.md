@@ -44,6 +44,8 @@ Notes
 - Use testnet-10 by default (omit --mainnet). Fund the address derived from your private key with at least `amount + fee` (fee default: 5_000 sompi).
 - BuyTicket enforces `entry_amount == ticket_price` and, if proxy provides `tx_outputs`, at least one output value ≥ `ticket_price` (M1 relaxed).
 - Draw interval is short for demos (15s). If you submit draw too early, engine logs a rejection; wait a few seconds and try again.
+- Auto wRPC URL resolution: omit `--wrpc-url` to use the default for your network via resolver. You can also set `WRPC_URL` env var to override, e.g. `WRPC_URL=wss://host:port cargo run -p kas-draw -- engine`.
+- Dev key convenience (off-chain send): if you don’t pass `--kaspa-private-key`, the CLI will try `KASPA_PRIVATE_KEY`, then `KAS_DRAW_DEV_SK`, then a dev key file at `examples/kas-draw/dev.key` (gitignored). Put a testnet-only dev key hex in that file to auto-authorize NEW/BUY in local demos.
 
 Demo Clip Criteria (M1)
 

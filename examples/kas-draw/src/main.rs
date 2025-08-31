@@ -53,14 +53,14 @@ enum Commands {
     /// Submit a NewEpisode transaction carrying participants (your pubkey)
     SubmitNew {
         #[arg(long)] episode_id: u32,
-        #[arg(long)] kaspa_private_key: String,
+        #[arg(long)] kaspa_private_key: Option<String>,
         #[arg(long)] mainnet: bool,
         #[arg(long)] wrpc_url: Option<String>,
     },
     /// Submit a BuyTicket transaction
     SubmitBuy {
         #[arg(long)] episode_id: u32,
-        #[arg(long)] kaspa_private_key: String,
+        #[arg(long)] kaspa_private_key: Option<String>,
         #[arg(long)] mainnet: bool,
         #[arg(long)] wrpc_url: Option<String>,
         #[arg(long)] amount: u64,
@@ -69,7 +69,7 @@ enum Commands {
     /// Submit a Draw transaction
     SubmitDraw {
         #[arg(long)] episode_id: u32,
-        #[arg(long)] kaspa_private_key: String,
+        #[arg(long)] kaspa_private_key: Option<String>,
         #[arg(long)] mainnet: bool,
         #[arg(long)] wrpc_url: Option<String>,
         #[arg(long)] entropy: String,
@@ -77,7 +77,7 @@ enum Commands {
     /// Submit a Claim transaction
     SubmitClaim {
         #[arg(long)] episode_id: u32,
-        #[arg(long)] kaspa_private_key: String,
+        #[arg(long)] kaspa_private_key: Option<String>,
         #[arg(long)] mainnet: bool,
         #[arg(long)] wrpc_url: Option<String>,
         #[arg(long)] ticket_id: u64,
@@ -163,17 +163,17 @@ async fn main() {
             let _ = engine_thread.join();
         }
         Commands::SubmitNew { episode_id, kaspa_private_key, mainnet, wrpc_url } => {
-            submit_tx_flow(SubmitKind::New { episode_id }, &kaspa_private_key, mainnet, wrpc_url).await;
+            submit_tx_flow(SubmitKind::New { episode_id }, kaspa_private_key, mainnet, wrpc_url).await;
         }
         Commands::SubmitBuy { episode_id, kaspa_private_key, mainnet, wrpc_url, amount, numbers } => {
             let nums = [numbers[0], numbers[1], numbers[2], numbers[3], numbers[4]];
-            submit_tx_flow(SubmitKind::Buy { episode_id, amount, numbers: nums }, &kaspa_private_key, mainnet, wrpc_url).await;
+            submit_tx_flow(SubmitKind::Buy { episode_id, amount, numbers: nums }, kaspa_private_key, mainnet, wrpc_url).await;
         }
         Commands::SubmitDraw { episode_id, kaspa_private_key, mainnet, wrpc_url, entropy } => {
-            submit_tx_flow(SubmitKind::Draw { episode_id, entropy }, &kaspa_private_key, mainnet, wrpc_url).await;
+            submit_tx_flow(SubmitKind::Draw { episode_id, entropy }, kaspa_private_key, mainnet, wrpc_url).await;
         }
         Commands::SubmitClaim { episode_id, kaspa_private_key, mainnet, wrpc_url, ticket_id, round } => {
-            submit_tx_flow(SubmitKind::Claim { episode_id, ticket_id, round }, &kaspa_private_key, mainnet, wrpc_url).await;
+            submit_tx_flow(SubmitKind::Claim { episode_id, ticket_id, round }, kaspa_private_key, mainnet, wrpc_url).await;
         }
         Commands::OffchainEngine { bind, no_ack, no_close } => {
             use std::sync::mpsc;
@@ -202,18 +202,16 @@ async fn main() {
                 return;
             }
             if r#type == "new" {
-                // If a private key is provided, include its pubkey as an authorized participant
-                let participants = if let Some(sk_hex) = kaspa_private_key.as_ref() {
+                // Include pubkey as authorized participant from CLI/env/dev.key if available
+                let participants = if let Some(sk_hex) = resolve_dev_key_hex(&kaspa_private_key) {
                     let mut private_key_bytes = [0u8; 32];
-                    if faster_hex::hex_decode(sk_hex.as_bytes(), &mut private_key_bytes).is_err() {
-                        eprintln!("invalid --kaspa-private-key hex");
+                    if faster_hex::hex_decode(sk_hex.trim().as_bytes(), &mut private_key_bytes).is_err() {
+                        eprintln!("invalid private key hex (dev key/env/flag)");
                         return;
                     }
                     let keypair = Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).expect("invalid sk");
                     vec![kdapp::pki::PubKey(keypair.public_key())]
-                } else {
-                    vec![]
-                };
+                } else { vec![] };
                 let cmd = EpisodeMessage::<LotteryEpisode>::NewEpisode { episode_id, participants };
                 send_tlv_new(&dest, episode_id as u64, seq, cmd, !no_ack);
                 return;
@@ -223,15 +221,13 @@ async fn main() {
                 if ns.len() != 5 { eprintln!("provide exactly 5 numbers for --amount mode"); return; }
                 let nums = [ns[0], ns[1], ns[2], ns[3], ns[4]];
                 let cmd = LotteryCommand::BuyTicket { numbers: nums, entry_amount: a };
-                if let Some(sk_hex) = kaspa_private_key.as_ref() {
+                if let Some(sk_hex) = resolve_dev_key_hex(&kaspa_private_key) {
                     let mut private_key_bytes = [0u8; 32];
-                    if faster_hex::hex_decode(sk_hex.as_bytes(), &mut private_key_bytes).is_err() { eprintln!("invalid --kaspa-private-key hex"); return; }
+                    if faster_hex::hex_decode(sk_hex.trim().as_bytes(), &mut private_key_bytes).is_err() { eprintln!("invalid private key hex (dev key/env/flag)"); return; }
                     let keypair = Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).expect("invalid sk");
                     let pk = kdapp::pki::PubKey(keypair.public_key());
                     EpisodeMessage::<LotteryEpisode>::new_signed_command(episode_id, cmd, keypair.secret_key(), pk)
-                } else {
-                    EpisodeMessage::<LotteryEpisode>::UnsignedCommand { episode_id, cmd }
-                }
+                } else { EpisodeMessage::<LotteryEpisode>::UnsignedCommand { episode_id, cmd } }
             } else if let Some(ent) = entropy {
                 let cmd = LotteryCommand::ExecuteDraw { entropy_source: ent };
                 EpisodeMessage::<LotteryEpisode>::UnsignedCommand { episode_id, cmd }
@@ -256,13 +252,14 @@ enum SubmitKind {
     Claim { episode_id: u32, ticket_id: u64, round: u64 },
 }
 
-async fn submit_tx_flow(kind: SubmitKind, sk_hex: &str, mainnet: bool, wrpc_url: Option<String>) {
+async fn submit_tx_flow(kind: SubmitKind, sk_hex_opt: Option<String>, mainnet: bool, wrpc_url: Option<String>) {
     // Build signer + address
-    let mut private_key_bytes = [0u8; 32];
-    if faster_hex::hex_decode(sk_hex.as_bytes(), &mut private_key_bytes).is_err() {
-        eprintln!("invalid --kaspa-private-key hex");
+    let Some(sk_hex) = resolve_dev_key_hex(&sk_hex_opt) else {
+        eprintln!("no private key provided: pass --kaspa-private-key, set KASPA_PRIVATE_KEY, KAS_DRAW_DEV_SK, or put dev key hex in examples/kas-draw/dev.key");
         return;
-    }
+    };
+    let mut private_key_bytes = [0u8; 32];
+    if faster_hex::hex_decode(sk_hex.trim().as_bytes(), &mut private_key_bytes).is_err() { eprintln!("invalid private key hex"); return; }
     let keypair = Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).expect("invalid sk");
     let network = if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
     let addr_prefix = if mainnet { AddrPrefix::Mainnet } else { AddrPrefix::Testnet };
@@ -403,6 +400,25 @@ fn auto_seq(episode_id: u64, typ: &str) -> u64 {
     store.insert(episode_id, next);
     write_seq_store(&store);
     next
+}
+
+// Resolve a development private key hex for convenience testing:
+// Order: explicit CLI flag -> env KASPA_PRIVATE_KEY -> env KAS_DRAW_DEV_SK -> dev.key files
+fn resolve_dev_key_hex(cli_opt: &Option<String>) -> Option<String> {
+    if let Some(s) = cli_opt.as_ref() { return Some(s.clone()); }
+    if let Ok(s) = std::env::var("KASPA_PRIVATE_KEY") { if !s.trim().is_empty() { return Some(s); } }
+    if let Ok(s) = std::env::var("KAS_DRAW_DEV_SK") { if !s.trim().is_empty() { return Some(s); } }
+    // Try common dev file locations (gitignored by **/*.key)
+    let candidates = [
+        "examples/kas-draw/dev.key",
+        "examples/comment-board/dev.key",
+        "dev.key",
+        ".dev.key",
+    ];
+    for path in candidates {
+        if let Ok(s) = std::fs::read_to_string(path) { let t = s.trim().to_string(); if !t.is_empty() { return Some(t); } }
+    }
+    None
 }
 
 fn send_tlv_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<LotteryEpisode>, wait_ack: bool) {

@@ -13,8 +13,16 @@ pub struct Handler {
 }
 
 impl Handler {
-    pub fn new() -> Self { Self { tower: None } }
-    pub fn with_tower(tower: SimTower) -> Self { Self { tower: Some(tower) } }
+    pub fn new() -> Self {
+        // Render an empty dashboard so users see the TUI immediately
+        render();
+        Self { tower: None }
+    }
+    pub fn with_tower(tower: SimTower) -> Self {
+        // Render an empty dashboard so users see the TUI immediately
+        render();
+        Self { tower: Some(tower) }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -51,7 +59,23 @@ fn render() {
     let d = dash().lock().unwrap();
     // Clear screen and move cursor home
     print!("\x1b[2J\x1b[H");
-    println!("kas-draw — Live Dashboard\n");
+    // Fancy ASCII header in teal/cyan for recordings
+    println!(
+        "\x1b[36;1m\
+██╗  ██╗ █████╗ ███████╗      ██████╗ ██████╗  █████╗ ██╗    ██╗\n\
+██║ ██╔╝██╔══██╗██╔════╝     ██╔════╝ ██╔══██╗██╔══██╗██║    ██║\n\
+█████╔╝ ███████║███████╗     ██║  ███╗██████╔╝███████║██║ █╗ ██║\n\
+██╔═██╗ ██╔══██║╚════██║     ██║   ██║██╔══██╗██╔══██║██║███╗██║\n\
+██║  ██╗██║  ██║███████║     ╚██████╔╝██║  ██║██║  ██║╚███╔███╔╝\n\
+╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝      ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚══╝╚══╝\x1b[0m\n\
+\x1b[36m────────────────────────────────────────────────────────────────────────\x1b[0m\n"
+    );
+    // Overwrite header with block banner in teal
+    {
+        let bar = "\u{2588}".repeat(70);
+        // Clear again to ensure only the block header shows
+        println!("\x1b[2J\x1b[H\x1b[36;1m{}\n\u{2588}{:^68}\u{2588}\n{}\x1b[0m", bar, "KAS DRAW", bar);
+    }
     println!("Episodes:");
     println!("  id   | pool (KAS) | tickets | last_winner | paused | last_tx");
     println!("  -----+------------+---------+-------------+--------+--------------------------------");
