@@ -186,7 +186,7 @@ impl StoreTrait for Rocks {
     fn add_membership(&self, pubkey: &str, episode_id: u64) -> Result<(), StoreError> {
         let k = Self::key_members(pubkey);
         let current = self.db.get(&k).map_err(|_| StoreError::Internal)?;
-        let mut list: Vec<u64> = match current { Some(bytes) => bincode::deserialize(&bytes).unwrap_or_default(), None => vec![] };
+        let mut list: Vec<u64> = match current { Some(bytes) => bincode::deserialize(bytes.as_ref()).unwrap_or_default(), None => vec![] };
         if !list.contains(&episode_id) { list.push(episode_id); }
         let v = bincode::serialize(&list).map_err(|_| StoreError::Internal)?;
         self.db.put(k, v).map_err(|_| StoreError::Internal)
@@ -195,13 +195,13 @@ impl StoreTrait for Rocks {
     fn get_episode(&self, id: u64, recent: usize) -> Result<Option<EpisodeDetail>, StoreError> {
         let k = Self::key_ep(id);
         let Some(bytes) = self.db.get(k).map_err(|_| StoreError::Internal)? else { return Ok(None) };
-        let snapshot: EpisodeSnapshot = bincode::deserialize(&bytes).map_err(|_| StoreError::Internal)?;
+        let snapshot: EpisodeSnapshot = bincode::deserialize(bytes.as_ref()).map_err(|_| StoreError::Internal)?;
         let mut rows: Vec<CommentRow> = Vec::new();
         let prefix = Self::key_comment_prefix(id);
         // Collect then reverse for recent tail
         let mut all: Vec<CommentRow> = Vec::new();
         for kv in self.db.prefix_iterator(prefix) {
-            if let Ok((_k, v)) = kv { if let Ok(r) = bincode::deserialize::<CommentRow>(&v) { all.push(r); } }
+            if let Ok((_k, v)) = kv { if let Ok(r) = bincode::deserialize::<CommentRow>(v.as_ref()) { all.push(r); } }
         }
         all.sort_by(|a,b| a.comment_id.cmp(&b.comment_id));
         for r in all.into_iter().rev().take(recent) { rows.push(r); }
@@ -212,7 +212,7 @@ impl StoreTrait for Rocks {
         let mut out = Vec::new();
         let prefix = Self::key_comment_prefix(id);
         for kv in self.db.prefix_iterator(prefix) {
-            if let Ok((_k, v)) = kv { if let Ok(r) = bincode::deserialize::<CommentRow>(&v) { if r.timestamp > after_ts { out.push(r); } } }
+            if let Ok((_k, v)) = kv { if let Ok(r) = bincode::deserialize::<CommentRow>(v.as_ref()) { if r.timestamp > after_ts { out.push(r); } } }
             if out.len() >= limit { break; }
         }
         Ok(out)
@@ -226,7 +226,7 @@ impl StoreTrait for Rocks {
                 let mut idb = [0u8;8]; idb.copy_from_slice(&k[9..17]);
                 let id = u64::from_be_bytes(idb);
                 if let Ok(Some(v)) = self.db.get(Self::key_ep(id)) {
-                    if let Ok(ep) = bincode::deserialize::<EpisodeSnapshot>(&v) { out.push(ep); }
+                    if let Ok(ep) = bincode::deserialize::<EpisodeSnapshot>(v.as_ref()) { out.push(ep); }
                 }
                 if out.len() >= limit { break; }
             }
