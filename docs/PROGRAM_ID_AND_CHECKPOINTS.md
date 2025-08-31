@@ -1,6 +1,14 @@
 # kdapp RFC: Program-ID & Checkpoints (M1 → M2)
 
-Purpose. Make episode contracts immutable and publicly verifiable on Kaspa without an L1 VM: anchor the code once, carry state commitments off‑chain, checkpoint occasionally on‑chain, and use simple L1 spend rules for settlement.
+Plain‑English TL;DR (for humans)
+- Program‑ID: a 32‑byte fingerprint of your app’s code. Same code = same ID.
+- Anchor it once on‑chain so everyone can point to “that exact code”.
+- Run your app off‑chain; after every change in state, compute a state hash.
+- Sometimes post a tiny “checkpoint” to L1 with the latest state hash.
+- Friends (watchtowers) can replay steps and verify no one cheated.
+
+Purpose
+Make episode contracts immutable and publicly verifiable on Kaspa without an L1 VM: anchor the code once, carry state commitments off‑chain, checkpoint occasionally on‑chain, and use simple L1 spend rules for settlement.
 
 ## Invariants (bold rules)
 - Immutable code identity: Every episode declares a fixed `PROGRAM_ID = BLAKE2b_256(canonical_source_bundle)`.
@@ -9,6 +17,11 @@ Purpose. Make episode contracts immutable and publicly verifiable on Kaspa witho
 - Enforceable money paths: Settlement uses simple L1 scripts (timeouts, penalties, commit‑reveal) so funds can be recovered fairly.
 
 ## Program-ID (code anchoring)
+
+Quick start (this repo)
+- Compute your ID (kas‑draw): `cargo run -p kas-draw --bin program_id`
+- Paste the value into `docs/PROGRAM_ID.md` (already templated)
+- Anchor it later on‑chain (see options below) and record the txid there
 
 ### Canonical bundle (cross‑platform)
 Produce a reproducible archive of the episode’s source (no timestamps, stable order, LF line endings):
@@ -80,6 +93,10 @@ payload:     [u8]       # serialized EpisodeMessage, or empty for Checkpoint
 
 `PROGRAM_ID` is not repeated every message: bind it at genesis and cache from the episode’s New.
 
+Why do this?
+- Keeps messages small and simple.
+- Everyone already knows which code to use (from the one‑time on‑chain anchor).
+
 ## On‑chain checkpoints (public audit trail)
 
 A small, fixed record any watcher can index:
@@ -95,6 +112,12 @@ state_root: [32]
 Embed in a tiny commitment output (pay‑to‑contract or explicit push+DROP). Target size: ≤ 80–100 bytes total when included via kdapp payload output.
 
 Publish at milestones (e.g., after ExecuteDraw) or every N minutes.
+
+How to checkpoint (simple path)
+1) Compute the state root (your episode code already serializes state and hashes it)
+2) Build the record `(episode_id, seq, state_root)`
+3) Post it: either as a kdapp payload or as a tiny commit in a 0‑value output
+4) Anyone can now prove “this state existed at this time on L1”
 
 ## Watchtower responsibilities
 
@@ -122,3 +145,9 @@ Publish at milestones (e.g., after ExecuteDraw) or every N minutes.
 - M2: Full onlyKAS transport; towers verify transitions; periodic checkpoints.
 - Later: dispute gadgets (optional), richer per‑episode spend hints.
 
+Words you’ll hear (1‑liners)
+- Anchor: write a small proof (hash) to L1 so it can’t be changed.
+- Program‑ID: the hash of your app’s source bundle.
+- State root: the hash of your current state bytes.
+- Checkpoint: a tiny note on L1 saying “episode X is at state Y, step Z”.
+- Watchtower: a helper that replays steps and yells if something is off.
