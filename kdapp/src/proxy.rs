@@ -281,10 +281,12 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                     info!("received episode tx: {}", tx_id);
                 }
                 if !associated_txs.is_empty() {
+                    // Normalize header timestamp (ms) to seconds for engine metadata
+                    let accepting_time_secs = accepting_block.header.timestamp / 1000;
                     let msg = Msg::BlkAccepted {
                         accepting_hash,
                         accepting_daa: accepting_block.header.daa_score,
-                        accepting_time: accepting_block.header.timestamp,
+                        accepting_time: accepting_time_secs,
                         associated_txs,
                     };
                     if let Err(e) = sender.send(msg) {

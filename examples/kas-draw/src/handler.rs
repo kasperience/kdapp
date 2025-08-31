@@ -32,6 +32,12 @@ struct EpisodeSnapshot {
     last_winner: Option<u64>,
     paused: bool,
     last_tx: String,
+    ticket_price: u64,
+    numbers_lo: u8,
+    numbers_hi: u8,
+    draw_interval_secs: u64,
+    next_draw_time: u64,
+    authorized_count: usize,
 }
 
 #[derive(Default)]
@@ -75,6 +81,14 @@ fn render() {
         let bar = "\u{2588}".repeat(70);
         // Clear again to ensure only the block header shows
         println!("\x1b[2J\x1b[H\x1b[36;1m{}\n\u{2588}{:^68}\u{2588}\n{}\x1b[0m", bar, "KAS DRAW", bar);
+    }
+    // Mechanics (from the first episode if any)
+    if let Some((&id0, snap0)) = d.episodes.iter().min_by_key(|(k, _)| *k) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+        let mut eta = if snap0.next_draw_time > now { snap0.next_draw_time - now } else { 0 };
+        if snap0.paused { eta = 0; }
+        let price_kas = (snap0.ticket_price as f64) / 100_000_000.0;
+        println!("\x1b[2mMechanics (ep {}): pick 5 unique numbers in [{}..{}], ticket = {:.6} KAS, draw every {}s, next in {}s\x1b[0m\n", id0, snap0.numbers_lo, snap0.numbers_hi, price_kas, snap0.draw_interval_secs, eta);
     }
     println!("Episodes:");
     println!("  id   | pool (KAS) | tickets | last_winner | paused | last_tx");
@@ -120,6 +134,12 @@ impl EpisodeEventHandler<LotteryEpisode> for Handler {
                 last_winner: episode.last_winner,
                 paused: episode.paused,
                 last_tx: String::from("-"),
+                ticket_price: episode.ticket_price,
+                numbers_lo: episode.numbers_range.0,
+                numbers_hi: episode.numbers_range.1,
+                draw_interval_secs: episode.draw_interval_secs,
+                next_draw_time: episode.next_draw_time,
+                authorized_count: episode.authorized.len(),
             },
         );
         drop(d);
@@ -142,6 +162,12 @@ impl EpisodeEventHandler<LotteryEpisode> for Handler {
         entry.last_winner = episode.last_winner;
         entry.paused = episode.paused;
         entry.last_tx = metadata.tx_id.to_string();
+        entry.ticket_price = episode.ticket_price;
+        entry.numbers_lo = episode.numbers_range.0;
+        entry.numbers_hi = episode.numbers_range.1;
+        entry.draw_interval_secs = episode.draw_interval_secs;
+        entry.next_draw_time = episode.next_draw_time;
+        entry.authorized_count = episode.authorized.len();
         drop(d);
 
         // Compute state hash and advance local state counter
