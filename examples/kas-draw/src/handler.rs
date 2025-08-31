@@ -143,7 +143,10 @@ impl EpisodeEventHandler<LotteryEpisode> for Handler {
             },
         );
         drop(d);
-        push_event(format!("ep {} initialized", episode_id));
+        // Also show initial state root for easy checkpointing
+        let init_bytes = borsh::to_vec(episode).unwrap_or_default();
+        let init_hash = hash_state(&init_bytes);
+        push_event(format!("ep {} initialized (state_root={})", episode_id, hex::encode(init_hash)));
         render();
     }
 
@@ -214,6 +217,8 @@ impl EpisodeEventHandler<LotteryEpisode> for Handler {
                 push_event(format!("ep {} CLOSE", episode_id));
             }
         }
+        // Emit current state root to help off-chain checkpointing
+        push_event(format!("ep {} STATE state_root={}", episode_id, hex::encode(state_hash)));
         render();
     }
 
