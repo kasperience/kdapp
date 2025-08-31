@@ -117,6 +117,22 @@ impl OffchainRouter {
                     info!("router: ack-close from {} ignored", src);
                     (false, false)
                 }
+                MsgType::Checkpoint => {
+                    match last {
+                        Some(prev) if msg.seq == prev + 1 => {
+                            map.insert(msg.episode_id, msg.seq);
+                            (true, false)
+                        }
+                        Some(prev) => {
+                            warn!("router: out-of-order CKPT ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
+                            (false, false)
+                        }
+                        None => {
+                            warn!("router: CKPT before NEW for ep {} (seq {})", msg.episode_id, msg.seq);
+                            (false, false)
+                        }
+                    }
+                }
             };
             drop(map);
 
@@ -129,24 +145,28 @@ impl OffchainRouter {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            // Wrap as single-item batch
+            // Wrap as single-item batch. For Checkpoint, we don't forward to engine — it's for watchers only.
             let payload = if matches!(mt, MsgType::Close) {
                 // Convert Close TLV into an unsigned CloseEpisode command
                 let eid = msg.episode_id as u32;
                 let cmd = crate::episode::LotteryCommand::CloseEpisode;
                 borsh::to_vec(&kdapp::engine::EpisodeMessage::<crate::episode::LotteryEpisode>::UnsignedCommand { episode_id: eid, cmd }).unwrap()
+            } else if matches!(mt, MsgType::Checkpoint) {
+                Vec::new()
             } else {
                 msg.payload
             };
-            let event = EngineMsg::BlkAccepted {
-                accepting_hash,
-                accepting_daa: msg.seq as u64,
-                accepting_time: now_secs,
-                associated_txs: vec![(tx_id, payload, None::<Vec<TxOutputInfo>>)],
-            };
-            if let Err(e) = self.sender.send(event) {
-                warn!("router: failed forwarding to engine: {}", e);
-                continue;
+            if !matches!(mt, MsgType::Checkpoint) {
+                let event = EngineMsg::BlkAccepted {
+                    accepting_hash,
+                    accepting_daa: msg.seq as u64,
+                    accepting_time: now_secs,
+                    associated_txs: vec![(tx_id, payload, None::<Vec<TxOutputInfo>>)],
+                };
+                if let Err(e) = self.sender.send(event) {
+                    warn!("router: failed forwarding to engine: {}", e);
+                    continue;
+                }
             }
 
             // Ack to sender if enabled and only after successful forward
@@ -171,3 +191,4 @@ impl OffchainRouter {
         }
     }
 }
+

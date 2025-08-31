@@ -42,6 +42,15 @@ enum Commands {
     },
     Draw { #[arg(long)] episode_id: u32, #[arg(long)] entropy: String },
     Claim { #[arg(long)] episode_id: u32, #[arg(long)] ticket_id: u64, #[arg(long)] round: u64 },
+    /// Submit a Checkpoint payload to L1 (OKCP v1)
+    SubmitCheckpoint {
+        #[arg(long)] episode_id: u32,
+        #[arg(long)] seq: u64,
+        #[arg(long)] state_root: String,
+        #[arg(long)] kaspa_private_key: Option<String>,
+        #[arg(long)] mainnet: bool,
+        #[arg(long)] wrpc_url: Option<String>,
+    },
     /// Start engine + proxy listener (L1 mode). Stop with Ctrl+C.
     Engine { #[arg(long)] mainnet: bool, #[arg(long)] wrpc_url: Option<String> },
     /// Start off-chain engine + in-proc UDP router. Stop with Ctrl+C.
@@ -85,7 +94,7 @@ enum Commands {
     },
     /// Send a TLV v1 message to the off-chain router
     OffchainSend {
-        #[arg(long)] r#type: String, // new|cmd|close
+        #[arg(long)] r#type: String, // new|cmd|close|ckpt
         #[arg(long)] episode_id: u32,
         #[arg(long)] router: Option<String>,
         #[arg(long)] force_seq: Option<u64>,
@@ -99,6 +108,8 @@ enum Commands {
         // For Claim
         #[arg(long)] ticket_id: Option<u64>,
         #[arg(long)] round: Option<u64>,
+        // For Checkpoint
+        #[arg(long)] state_root: Option<String>,
     },
 }
 
@@ -175,6 +186,14 @@ async fn main() {
         Commands::SubmitClaim { episode_id, kaspa_private_key, mainnet, wrpc_url, ticket_id, round } => {
             submit_tx_flow(SubmitKind::Claim { episode_id, ticket_id, round }, kaspa_private_key, mainnet, wrpc_url).await;
         }
+        Commands::SubmitCheckpoint { episode_id, seq, state_root, kaspa_private_key, mainnet, wrpc_url } => {
+            // Parse state_root
+            let mut root = [0u8; 32];
+            if let Err(_) = hex::decode_to_slice(state_root.as_bytes(), &mut root) { eprintln!("invalid --state-root hex"); return; }
+            if let Err(e) = submit_checkpoint_tx(episode_id as u64, seq, root, kaspa_private_key, mainnet, wrpc_url).await {
+                eprintln!("submit-checkpoint failed: {}", e);
+            }
+        }
         Commands::OffchainEngine { bind, no_ack, no_close } => {
             use std::sync::mpsc;
             let (sender, receiver) = mpsc::channel::<EngineMsg>();
@@ -191,12 +210,21 @@ async fn main() {
             let _ = engine_thread.join();
         }
         Commands::OffchainSend { r#type, episode_id, router, force_seq, no_ack, kaspa_private_key, amount, numbers, entropy, ticket_id, round } => {
-            if r#type != "new" && r#type != "cmd" && r#type != "close" {
-                eprintln!("--type must be one of: new|cmd|close");
+            if r#type != "new" && r#type != "cmd" && r#type != "close" && r#type != "ckpt" {
+                eprintln!("--type must be one of: new|cmd|close|ckpt");
                 return;
             }
             let dest = router.unwrap_or_else(|| "127.0.0.1:18181".to_string());
             let seq = match force_seq { Some(s) => s, None => auto_seq(episode_id as u64, &r#type) };
+            if r#type == "ckpt" {
+                // Build a checkpoint TLV (payload empty). Require --state-root hex (32 bytes), attach into state_hash field.
+                let Some(root_hex) = state_root else { eprintln!("--state-root <hex32> is required for ckpt"); return; };
+                let mut root = [0u8; 32];
+                if let Err(_) = hex::decode_to_slice(root_hex.as_bytes(), &mut root) { eprintln!("invalid --state-root hex"); return; }
+                let tlv = crate::tlv::TlvMsg { version: crate::tlv::TLV_VERSION, msg_type: crate::tlv::MsgType::Checkpoint as u8, episode_id: episode_id as u64, seq, state_hash: root, payload: vec![] };
+                send_with_ack(&dest, tlv, false, !no_ack);
+                return;
+            }
             if r#type == "close" {
                 send_tlv_close(&dest, episode_id as u64, seq, !no_ack);
                 return;
@@ -346,6 +374,52 @@ async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx:
             }
         }
     }
+}
+
+// Encode OKCP v1 record
+fn encode_okcp(episode_id: u64, seq: u64, root: [u8; 32]) -> Vec<u8> {
+    use byteorder::{LittleEndian, WriteBytesExt};
+    let mut rec = Vec::with_capacity(4 + 1 + 8 + 8 + 32);
+    rec.extend_from_slice(b"OKCP");
+    rec.push(1u8);
+    let _ = rec.write_u64::<LittleEndian>(episode_id);
+    let _ = rec.write_u64::<LittleEndian>(seq);
+    rec.extend_from_slice(&root);
+    rec
+}
+
+// Submit a checkpoint transaction carrying a KDCK payload
+async fn submit_checkpoint_tx(episode_id: u64, seq: u64, root: [u8; 32], sk_hex_opt: Option<String>, mainnet: bool, wrpc_url: Option<String>) -> Result<(), String> {
+    // Build signer + address
+    let sk_hex = resolve_dev_key_hex(&sk_hex_opt).ok_or_else(|| "no private key provided (flag/env/file)".to_string())?;
+    let mut private_key_bytes = [0u8; 32];
+    faster_hex::hex_decode(sk_hex.trim().as_bytes(), &mut private_key_bytes).map_err(|_| "invalid private key hex".to_string())?;
+    let keypair = Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).map_err(|_| "invalid sk".to_string())?;
+    let network = if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+    let addr_prefix = if mainnet { AddrPrefix::Mainnet } else { AddrPrefix::Testnet };
+    let addr = Address::new(addr_prefix, AddrVersion::PubKey, &keypair.x_only_public_key().0.serialize());
+
+    // Connect and fetch UTXOs
+    let url_opt = get_wrpc_url(wrpc_url);
+    let kaspad = kdapp::proxy::connect_client(network, url_opt).await.map_err(|e| e.to_string())?;
+    let utxos = kaspad
+        .get_utxos_by_addresses(vec![addr.clone()])
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|u| (kaspa_consensus_core::tx::TransactionOutpoint::from(u.outpoint), kaspa_consensus_core::tx::UtxoEntry::from(u.utxo_entry)))
+        .collect::<Vec<_>>();
+    if utxos.is_empty() { return Err(format!("no UTXOs for {}", addr)); }
+    let (op, entry) = utxos.iter().max_by_key(|(_, e)| e.amount).cloned().unwrap();
+    if entry.amount <= FEE { return Err(format!("selected UTXO too small: {}", entry.amount)); }
+
+    // Build payload: OKCP record
+    let payload = encode_okcp(episode_id, seq, root);
+    // Use a dedicated prefix for checkpoints (KDCK)
+    const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KDCK");
+    let gen = TransactionGenerator::new(keypair, PATTERN, CHECKPOINT_PREFIX);
+    let tx = gen.build_raw_payload_transaction((op, entry), &addr, &payload, FEE);
+    submit_tx_retry(&kaspad, &tx, 3).await
 }
 
 fn seq_store_path() -> std::path::PathBuf {
