@@ -388,14 +388,16 @@ mod tests {
         let mut auth = AuthWithCommentsEpisode::initialize(vec![p1], &metadata);
 
         // Request challenge
-        let rollback = auth.execute(&UnifiedCommand::RequestChallenge, Some(p1), &metadata).unwrap();
+        let rollback = auth
+            .execute(&UnifiedCommand::RequestChallenge, Some(p1), &metadata)
+            .unwrap();
 
-        assert!(auth.challenge.is_some());
-        assert!(!auth.is_authenticated);
+        assert!(auth.get_challenge_for_participant(&p1).is_some());
+        assert!(!auth.is_participant_authenticated(&p1));
 
         // Test rollback
         auth.rollback(rollback);
-        assert!(auth.challenge.is_none());
+        assert!(auth.get_challenge_for_participant(&p1).is_none());
     }
 
     #[test]
@@ -426,7 +428,7 @@ mod tests {
 
     #[test]
     fn test_comment_functionality() {
-        let ((_s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
+        let ((s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
         let metadata = PayloadMetadata {
             accepting_hash: 0u64.into(),
             accepting_daa: 0,
@@ -438,13 +440,30 @@ mod tests {
         let mut auth = AuthWithCommentsEpisode::initialize(vec![p1], &metadata);
 
         // First authenticate
-        auth.execute(&UnifiedCommand::RequestChallenge, Some(p1), &metadata).unwrap();
-        auth.is_authenticated = true;
-        auth.session_token = Some("sess_123".to_string());
+        auth.execute(&UnifiedCommand::RequestChallenge, Some(p1), &metadata)
+            .unwrap();
+        let challenge = auth
+            .get_challenge_for_participant(&p1)
+            .expect("challenge should exist");
+        let msg = to_message(&challenge);
+        let sig = sign_message(&s1, &msg);
+        let sig_hex = hex::encode(sig.0.serialize_der());
+        auth.execute(
+            &UnifiedCommand::SubmitResponse {
+                signature: sig_hex,
+                nonce: challenge.clone(),
+            },
+            Some(p1),
+            &metadata,
+        )
+        .unwrap();
+        assert!(auth.is_participant_authenticated(&p1));
 
         // Submit a comment
-        let comment_cmd =
-            UnifiedCommand::SubmitComment { text: "Hello blockchain!".to_string(), session_token: "sess_123".to_string() };
+        let comment_cmd = UnifiedCommand::SubmitComment {
+            text: "Hello blockchain!".to_string(),
+            session_token: String::new(),
+        };
 
         let rollback = auth.execute(&comment_cmd, Some(p1), &metadata).unwrap();
 
@@ -452,7 +471,6 @@ mod tests {
         assert_eq!(auth.comments[0].text, "Hello blockchain!");
         assert_eq!(auth.comments[0].author, format!("{}", p1));
         assert_eq!(auth.comments[0].id, 1);
-        assert_eq!(auth.comments[0].session_token, "sess_123");
         assert_eq!(auth.next_comment_id, 2);
 
         // Test rollback
@@ -461,10 +479,8 @@ mod tests {
         assert_eq!(auth.next_comment_id, 1);
 
         // Test comment without authentication
-        auth.is_authenticated = false;
-        auth.session_token = None;
-
-        let result = auth.execute(&comment_cmd, Some(p1), &metadata);
+        let mut auth_unauth = AuthWithCommentsEpisode::initialize(vec![p1], &metadata);
+        let result = auth_unauth.execute(&comment_cmd, Some(p1), &metadata);
         assert!(result.is_err());
     }
 }
