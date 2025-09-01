@@ -8,6 +8,7 @@ use kdapp::{
 };
 use log::{error, info, warn};
 use reqwest::Client;
+use std::env;
 use secp256k1::Keypair;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -26,11 +27,14 @@ pub const AUTH_PREFIX: PrefixType = 0x41555448; // "AUTH" in hex
 /// Event handler for authentication episodes
 pub struct AuthEventHandler {
     pub name: String,
+    pub notify_base_url: String,
 }
 
 impl AuthEventHandler {
     pub fn new(name: String) -> Self {
-        Self { name }
+        // Allow overriding the HTTP notify base URL via env var KASPA_AUTH_NOTIFY_BASE_URL
+        let notify_base_url = env::var("KASPA_AUTH_NOTIFY_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+        Self { name, notify_base_url }
     }
 }
 
@@ -63,8 +67,9 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
                     let participant_peer = Client::new();
                     let episode_id_clone = episode_id;
                     let challenge_clone = episode.challenge.clone().unwrap_or_default();
+                    let base = self.notify_base_url.clone();
                     tokio::spawn(async move {
-                        let url = "http://127.0.0.1:8080/internal/episode-authenticated"; // TODO: Make configurable
+                        let url = format!("{}/internal/episode-authenticated", base);
                         let res = participant_peer
                             .post(url)
                             .json(&json!({
@@ -103,8 +108,9 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
                     let participant_peer = Client::new();
                     let episode_id_clone = episode_id;
                     let session_token_clone = session_token.clone();
+                    let base = self.notify_base_url.clone();
                     tokio::spawn(async move {
-                        let url = "http://127.0.0.1:8080/internal/session-revoked"; // TODO: Make configurable
+                        let url = format!("{}/internal/session-revoked", base);
                         info!("Attempting to notify HTTP organizer peer of session revocation at {}", url);
                         let res = participant_peer
                             .post(url)

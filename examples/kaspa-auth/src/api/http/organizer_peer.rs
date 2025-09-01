@@ -1,5 +1,5 @@
 // src/api/http/organizer_peer.rs
-use crate::wallet::get_wallet_for_command;
+use crate::wallet::{get_wallet_for_command, get_wallet_for_command_with_storage};
 use axum::serve;
 use axum::{
     extract::State,
@@ -139,8 +139,13 @@ async fn session_revoked(State(state): State<PeerState>, Json(payload): Json<ser
     }))
 }
 
-pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    let wallet = get_wallet_for_command("http-peer", provided_private_key, ".")?;
+pub async fn run_http_peer(
+    provided_private_key: Option<&str>,
+    port: u16,
+    use_keychain: bool,
+    dev_mode: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let wallet = get_wallet_for_command_with_storage("http-peer", provided_private_key, use_keychain, dev_mode, ".")?;
     let keypair = wallet.keypair;
 
     println!("🚀 Starting HTTP coordination peer with REAL kdapp blockchain integration");

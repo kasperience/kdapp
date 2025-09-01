@@ -32,7 +32,7 @@ impl HttpOrganizerPeerCommand {
             println!("🔐 HTTP organizer peer will use OS keychain for wallet storage");
         }
 
-        // TODO: Pass keychain options to run_http_peer function
-        run_http_peer(provided_private_key, self.port).await
+        // Pass keychain options to HTTP peer so storage backend is consistent
+        run_http_peer(provided_private_key, self.port, self.use_keychain, self.dev_mode).await
     }
 }

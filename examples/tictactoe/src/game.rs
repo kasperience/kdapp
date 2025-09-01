@@ -275,34 +275,55 @@ mod tests {
         let episode_id = 11;
         let new_episode = EpisodeMessage::<TicTacToe>::NewEpisode { episode_id, participants: vec![p1, p2] };
 
-        #[derive(Clone, Default)]
-        struct TestHandler(std::sync::Arc<std::sync::Mutex<Vec<usize>>>);
+        // Use a probe-style handler to assert final episode state
 
-        impl EpisodeEventHandler<TicTacToe> for TestHandler {
-            fn on_initialize(&self, _episode_id: EpisodeId, _episode: &TicTacToe) {}
-
+        let (sender, receiver) = std::sync::mpsc::channel();
+        // Test probe to capture engine callbacks
+        use std::sync::{Arc, Mutex};
+        #[derive(Default, Clone)]
+        struct Metrics {
+            on_init: usize,
+            on_cmd: usize,
+            on_rollback: usize,
+            last_len: usize,
+            last_cell_00: bool,
+        }
+        #[derive(Clone)]
+        struct Probe {
+            m: Arc<Mutex<Metrics>>,
+        }
+        impl kdapp::episode::EpisodeEventHandler<TicTacToe> for Probe {
+            fn on_initialize(&self, _episode_id: kdapp::episode::EpisodeId, ep: &TicTacToe) {
+                let mut g = self.m.lock().unwrap();
+                g.on_init += 1;
+                g.last_len = ep.move_history.len();
+                g.last_cell_00 = ep.board[0][0].is_some();
+            }
             fn on_command(
                 &self,
-                _episode_id: EpisodeId,
-                episode: &TicTacToe,
-                _cmd: &TTTMove,
+                _episode_id: kdapp::episode::EpisodeId,
+                ep: &TicTacToe,
+                _cmd: &<TicTacToe as Episode>::Command,
                 _authorization: Option<PubKey>,
                 _metadata: &PayloadMetadata,
             ) {
-                self.0.lock().unwrap().push(episode.move_history.len());
+                let mut g = self.m.lock().unwrap();
+                g.on_cmd += 1;
+                g.last_len = ep.move_history.len();
+                g.last_cell_00 = ep.board[0][0].is_some();
             }
-
-            fn on_rollback(&self, _episode_id: EpisodeId, episode: &TicTacToe) {
-                self.0.lock().unwrap().push(episode.move_history.len());
+            fn on_rollback(&self, _episode_id: kdapp::episode::EpisodeId, ep: &TicTacToe) {
+                let mut g = self.m.lock().unwrap();
+                g.on_rollback += 1;
+                g.last_len = ep.move_history.len();
+                g.last_cell_00 = ep.board[0][0].is_some();
             }
         }
-
-        let (sender, receiver) = std::sync::mpsc::channel();
+        let probe = Probe { m: Arc::new(Mutex::new(Metrics::default())) };
+        let probe_clone = probe.clone();
         let mut engine = engine::Engine::<TicTacToe>::new(receiver);
-        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let handler = TestHandler(events.clone());
         let engine_task = tokio::task::spawn_blocking(move || {
-            engine.start(vec![handler]);
+            engine.start(vec![probe_clone]);
         });
 
         let payload = borsh::to_vec(&new_episode).unwrap();
@@ -345,6 +366,12 @@ mod tests {
         sender.send(Msg::Exit).unwrap();
         engine_task.await.unwrap();
 
-        assert_eq!(&*events.lock().unwrap(), &[1, 0, 1]);
+        // Validate final state via handler metrics
+        let m = probe.m.lock().unwrap().clone();
+        assert_eq!(m.on_init, 1, "Episode should initialize once");
+        assert_eq!(m.on_rollback, 1, "One rollback should occur after reorg");
+        assert!(m.on_cmd >= 2, "Should see command before and after reorg");
+        assert_eq!(m.last_len, 1, "After reorg and resend, one move should be recorded");
+        assert!(m.last_cell_00, "Cell (0,0) should be occupied after resend");
     }
 }

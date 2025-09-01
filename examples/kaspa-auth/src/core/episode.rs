@@ -23,8 +23,8 @@ pub struct SimpleAuth {
     pub session_token: Option<String>,
     /// Timestamp of last challenge generation
     pub challenge_timestamp: u64,
-    /// In-memory rate limiting: attempts per pubkey (using string representation)
-    pub rate_limits: HashMap<String, u32>,
+    /// In-memory rate limiting with decay: attempts (timestamps) per pubkey bytes
+    pub rate_limits: HashMap<Vec<u8>, Vec<u64>>, // key = compressed pubkey bytes (33)
     /// Authorized participants (who can request challenges)
     pub authorized_participants: Vec<PubKey>,
 }
@@ -62,8 +62,8 @@ impl Episode for SimpleAuth {
             return Err(EpisodeError::InvalidCommand(AuthError::NotAuthorized));
         }
 
-        // Rate limiting check
-        if self.is_rate_limited(&participant) {
+        // Rate limiting check (with decay window)
+        if self.is_rate_limited(&participant, metadata.accepting_time) {
             return Err(EpisodeError::InvalidCommand(AuthError::RateLimited));
         }
 
@@ -75,14 +75,18 @@ impl Episode for SimpleAuth {
                 let previous_challenge = self.challenge.clone();
                 let previous_timestamp = self.challenge_timestamp;
 
-                // Generate new challenge with timestamp from metadata
-                let new_challenge = ChallengeGenerator::generate_with_provided_timestamp(metadata.accepting_time);
+                // Generate new challenge with timestamp from metadata and additional entropy
+                let mut extra = Vec::new();
+                extra.extend_from_slice(&participant.0.serialize());
+                // Include tx_id in textual form to avoid tight coupling to Hash internals
+                extra.extend_from_slice(format!("{}", metadata.tx_id).as_bytes());
+                let new_challenge = ChallengeGenerator::generate_with_entropy(metadata.accepting_time, &extra);
                 self.challenge = Some(new_challenge);
                 self.challenge_timestamp = metadata.accepting_time;
                 self.owner = Some(participant);
 
-                // Increment rate limit
-                self.increment_rate_limit(&participant);
+                // Increment rate limit using current DAA/time as event timestamp
+                self.increment_rate_limit(&participant, metadata.accepting_time);
 
                 Ok(AuthRollback::Challenge { previous_challenge, previous_timestamp })
             }
@@ -191,15 +195,26 @@ impl Episode for SimpleAuth {
 
 impl SimpleAuth {
     /// Check if a participant is rate limited
-    fn is_rate_limited(&self, pubkey: &PubKey) -> bool {
-        let pubkey_str = format!("{}", pubkey);
-        self.rate_limits.get(&pubkey_str).map_or(false, |&attempts| attempts >= 5)
+    fn is_rate_limited(&self, pubkey: &PubKey, now: u64) -> bool {
+        const WINDOW_SECS: u64 = 300; // 5 minutes decay window
+        const MAX_ATTEMPTS: usize = 5;
+        let key = pubkey.0.serialize().to_vec();
+        if let Some(attempts) = self.rate_limits.get(&key) {
+            let recent = attempts.iter().filter(|&&t| now.saturating_sub(t) <= WINDOW_SECS).count();
+            recent >= MAX_ATTEMPTS
+        } else {
+            false
+        }
     }
 
     /// Increment rate limit counter for a participant
-    fn increment_rate_limit(&mut self, pubkey: &PubKey) {
-        let pubkey_str = format!("{}", pubkey);
-        *self.rate_limits.entry(pubkey_str).or_insert(0) += 1;
+    fn increment_rate_limit(&mut self, pubkey: &PubKey, now: u64) {
+        const WINDOW_SECS: u64 = 300;
+        let key = pubkey.0.serialize().to_vec();
+        let entry = self.rate_limits.entry(key).or_insert_with(Vec::new);
+        entry.push(now);
+        // Drop old attempts outside the window to prevent unbounded growth
+        entry.retain(|&t| now.saturating_sub(t) <= WINDOW_SECS);
     }
 
     /// Generate a new session token
@@ -207,7 +222,21 @@ impl SimpleAuth {
         use rand::Rng;
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
-        let mut rng = ChaCha8Rng::seed_from_u64(self.challenge_timestamp);
+        use sha2::{Digest, Sha256};
+        // Mix timestamp, owner pubkey bytes and current challenge text into the seed
+        let mut hasher = Sha256::new();
+        hasher.update(self.challenge_timestamp.to_le_bytes());
+        if let Some(owner) = self.owner {
+            hasher.update(owner.0.serialize());
+        }
+        if let Some(ref ch) = self.challenge {
+            hasher.update(ch.as_bytes());
+        }
+        let digest = hasher.finalize();
+        let mut seed_bytes = [0u8; 8];
+        seed_bytes.copy_from_slice(&digest[..8]);
+        let seed = u64::from_le_bytes(seed_bytes);
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
         format!("sess_{}", rng.gen::<u64>())
     }
 }
@@ -245,17 +274,17 @@ mod tests {
         let mut auth = SimpleAuth::initialize(vec![p1], &metadata);
 
         // Should not be rate limited initially
-        assert!(!auth.is_rate_limited(&p1));
+        assert!(!auth.is_rate_limited(&p1, 0));
 
         // Make 4 requests - should still work
         for _ in 0..4 {
             auth.execute(&AuthCommand::RequestChallenge, Some(p1), &metadata).unwrap();
         }
-        assert!(!auth.is_rate_limited(&p1));
+        assert!(!auth.is_rate_limited(&p1, 0));
 
         // 5th request should trigger rate limit
         auth.execute(&AuthCommand::RequestChallenge, Some(p1), &metadata).unwrap();
-        assert!(auth.is_rate_limited(&p1));
+        assert!(auth.is_rate_limited(&p1, 0));
 
         // 6th request should be rejected
         let result = auth.execute(&AuthCommand::RequestChallenge, Some(p1), &metadata);

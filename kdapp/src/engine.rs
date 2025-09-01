@@ -15,8 +15,11 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::mpsc::Receiver;
 
-const EPISODE_LIFETIME: u64 = 2592000; // Three days
-const SAMPLE_REMOVAL_TIME: u64 = 432000; // Five days
+// Durations are expressed in DAA units (~10 increments per second on Kaspa).
+// EPISODE_LIFETIME: ~3 days  => 2,592,000 DAA (approx 259,200 seconds)
+const EPISODE_LIFETIME: u64 = 2592000;
+// SAMPLE_REMOVAL_TIME: ~12 hours => 432,000 DAA (approx 43,200 seconds)
+const SAMPLE_REMOVAL_TIME: u64 = 432000;
 
 pub(crate) struct EpisodeWrapper<G: Episode> {
     pub episode: G,

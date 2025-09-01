@@ -1,6 +1,7 @@
 use rand::SeedableRng;
 use rand::{thread_rng, Rng};
 use rand_chacha::ChaCha8Rng;
+use sha2::{Digest, Sha256};
 
 /// Challenge generation utilities
 pub struct ChallengeGenerator;
@@ -29,6 +30,21 @@ impl ChallengeGenerator {
     /// Generate a challenge with a provided timestamp for expiry
     pub fn generate_with_provided_timestamp(timestamp: u64) -> String {
         let mut rng = ChaCha8Rng::seed_from_u64(timestamp);
+        format!("auth_{}_{}", timestamp, rng.gen::<u64>())
+    }
+
+    /// Generate a challenge deterministically with extra entropy mixed in
+    /// The extra bytes should be derived from public context (e.g., participant pubkey bytes, tx id string)
+    pub fn generate_with_entropy(timestamp: u64, extra: &[u8]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(timestamp.to_le_bytes());
+        hasher.update(extra);
+        let digest = hasher.finalize();
+        // Use first 8 bytes as a u64 seed
+        let mut seed_bytes = [0u8; 8];
+        seed_bytes.copy_from_slice(&digest[..8]);
+        let seed = u64::from_le_bytes(seed_bytes);
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
         format!("auth_{}_{}", timestamp, rng.gen::<u64>())
     }
 
