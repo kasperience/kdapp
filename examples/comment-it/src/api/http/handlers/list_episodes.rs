@@ -1,9 +1,12 @@
 use crate::api::http::state::PeerState;
 use crate::api::http::types::{EpisodeInfo, ListEpisodesResponse};
-use axum::{extract::State, Json};
+use axum::{extract::State, http::StatusCode, Json};
 
-pub async fn list_episodes(State(state): State<PeerState>) -> Json<ListEpisodesResponse> {
-    let episodes = state.blockchain_episodes.lock().unwrap();
+pub async fn list_episodes(State(state): State<PeerState>) -> Result<Json<ListEpisodesResponse>, StatusCode> {
+    let episodes = state
+        .blockchain_episodes
+        .lock()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let episode_list = episodes
         .iter()
         .map(|(id, episode)| EpisodeInfo {
@@ -14,5 +17,5 @@ pub async fn list_episodes(State(state): State<PeerState>) -> Json<ListEpisodesR
         })
         .collect();
 
-    Json(ListEpisodesResponse { episodes: episode_list })
+    Ok(Json(ListEpisodesResponse { episodes: episode_list }))
 }
