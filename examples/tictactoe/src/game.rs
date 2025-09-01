@@ -241,7 +241,8 @@ mod tests {
     use super::*;
     use kdapp::{
         engine::{self, EngineMsg as Msg, EpisodeMessage},
-        pki::{generate_keypair, sign_message, to_message},
+        episode::{EpisodeEventHandler, EpisodeId, PayloadMetadata},
+        pki::{generate_keypair, sign_message, to_message, PubKey},
     };
 
     #[test]
@@ -274,10 +275,34 @@ mod tests {
         let episode_id = 11;
         let new_episode = EpisodeMessage::<TicTacToe>::NewEpisode { episode_id, participants: vec![p1, p2] };
 
+        #[derive(Clone, Default)]
+        struct TestHandler(std::sync::Arc<std::sync::Mutex<Vec<usize>>>);
+
+        impl EpisodeEventHandler<TicTacToe> for TestHandler {
+            fn on_initialize(&self, _episode_id: EpisodeId, _episode: &TicTacToe) {}
+
+            fn on_command(
+                &self,
+                _episode_id: EpisodeId,
+                episode: &TicTacToe,
+                _cmd: &TTTMove,
+                _authorization: Option<PubKey>,
+                _metadata: &PayloadMetadata,
+            ) {
+                self.0.lock().unwrap().push(episode.move_history.len());
+            }
+
+            fn on_rollback(&self, _episode_id: EpisodeId, episode: &TicTacToe) {
+                self.0.lock().unwrap().push(episode.move_history.len());
+            }
+        }
+
         let (sender, receiver) = std::sync::mpsc::channel();
         let mut engine = engine::Engine::<TicTacToe>::new(receiver);
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let handler = TestHandler(events.clone());
         let engine_task = tokio::task::spawn_blocking(move || {
-            engine.start(vec![]);
+            engine.start(vec![handler]);
         });
 
         let payload = borsh::to_vec(&new_episode).unwrap();
@@ -319,5 +344,7 @@ mod tests {
 
         sender.send(Msg::Exit).unwrap();
         engine_task.await.unwrap();
+
+        assert_eq!(&*events.lock().unwrap(), &[1, 0, 1]);
     }
 }

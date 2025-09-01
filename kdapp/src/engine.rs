@@ -16,7 +16,7 @@ use std::marker::PhantomData;
 use std::sync::mpsc::Receiver;
 
 const EPISODE_LIFETIME: u64 = 2592000; // Three days
-const SAMPLE_REMOVAL_TIME: u64 = 432000; // Half a day
+const SAMPLE_REMOVAL_TIME: u64 = 432000; // Five days
 
 pub(crate) struct EpisodeWrapper<G: Episode> {
     pub episode: G,
