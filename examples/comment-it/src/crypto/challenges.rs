@@ -26,7 +26,8 @@ impl ChallengeGenerator {
         (challenge, timestamp)
     }
 
-    /// Generate a challenge with a provided timestamp for expiry
+    /// Generate a challenge deterministically seeded by the provided timestamp.
+    /// The caller may use the embedded timestamp to enforce expiry if desired.
     pub fn generate_with_provided_timestamp(timestamp: u64) -> String {
         let mut rng = ChaCha8Rng::seed_from_u64(timestamp);
         format!("auth_{}_{}", timestamp, rng.gen::<u64>())
