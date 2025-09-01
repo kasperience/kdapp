@@ -21,7 +21,7 @@ export function showCommentForm() {
     const charCount = document.getElementById('charCount');
     
     commentInput.maxLength = 2000;
-    commentInput.placeholder = "Enter your episode message... (2000 chars max)";
+    commentInput.placeholder = "Enter your comment… (2000 chars max)";
     charCount.textContent = '2000';
     
     commentInput.oninput = () => {
