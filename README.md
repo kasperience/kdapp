@@ -58,7 +58,7 @@ Both players must have a funded Kaspa address to pay for transaction fees. The a
     ```bash
     ./target/release/ttt
     ```
-2.  The program will output a Kaspa address and a private key. Send some testnet Kaspa (TKAS) to the address. You can get testnet funds from the [Kaspa Faucet](https://www.google.com/search?q=https://faucet.kaspanet.io/).
+2.  The program will output a Kaspa address and a private key. Send some testnet Kaspa (TKAS) to the address. You can get testnet funds from the [Kaspa Faucet](https://faucet.kaspanet.io/).
 
 #### Step 3: Player 1 (Starts the Session)
 

@@ -41,15 +41,19 @@ impl BorshDeserialize for PubKey {
 
 impl BorshSerialize for Sig {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        writer.write_all(&self.0.serialize_der())
+        let bytes = self.0.serialize_der();
+        (bytes.len() as u32).serialize(writer)?;
+        writer.write_all(&bytes)
     }
 }
 
 impl BorshDeserialize for Sig {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let mut buf = Vec::new();
-        reader.read_to_end(&mut buf)?;
-        let sig = Signature::from_der(&buf).map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid signature"))?;
+        let len = u32::deserialize_reader(reader)? as usize;
+        let mut buf = vec![0u8; len];
+        reader.read_exact(&mut buf)?;
+        let sig = Signature::from_der(&buf)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid signature"))?;
         Ok(Sig(sig))
     }
 }
