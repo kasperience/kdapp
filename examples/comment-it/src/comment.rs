@@ -94,7 +94,7 @@ impl Episode for CommentEpisode {
     type CommandError = CommentError;
 
     fn initialize(participants: Vec<PubKey>, metadata: &PayloadMetadata) -> Self {
-        info!("[CommentEpisode] initialize: {:?}", participants);
+        info!("[CommentEpisode] initialize: {participants:?}");
         Self {
             comments: Vec::new(),
             next_id: 1,
@@ -122,7 +122,7 @@ impl Episode for CommentEpisode {
 
         match cmd {
             CommentCommand::SubmitComment { text, author, session_token, signature: _ } => {
-                info!("[CommentEpisode] SubmitComment from: {:?}", participant);
+                info!("[CommentEpisode] SubmitComment from: {participant:?}");
 
                 // Basic validation
                 if text.trim().is_empty() {
@@ -134,20 +134,20 @@ impl Episode for CommentEpisode {
                 }
 
                 // CRITICAL: Verify user has valid authentication session
-                let participant_key = format!("{}", participant);
+                let participant_key = format!("{participant}");
                 if !self.valid_sessions.contains_key(&participant_key) {
-                    info!("[CommentEpisode] Comment rejected: No valid session for {}", participant_key);
+                    info!("[CommentEpisode] Comment rejected: No valid session for {participant_key}");
                     return Err(EpisodeError::InvalidCommand(CommentError::InvalidSessionToken));
                 }
 
                 // Verify session token matches
                 if let Some(stored_token) = self.valid_sessions.get(&participant_key) {
                     if stored_token != session_token {
-                        info!("[CommentEpisode] Comment rejected: Session token mismatch for {}", participant_key);
+                        info!("[CommentEpisode] Comment rejected: Session token mismatch for {participant_key}");
                         return Err(EpisodeError::InvalidCommand(CommentError::InvalidSessionToken));
                     }
                 } else {
-                    info!("[CommentEpisode] Comment rejected: No stored session token for {}", participant_key);
+                    info!("[CommentEpisode] Comment rejected: No stored session token for {participant_key}");
                     return Err(EpisodeError::InvalidCommand(CommentError::InvalidSessionToken));
                 }
 
@@ -165,13 +165,13 @@ impl Episode for CommentEpisode {
                 self.comments.push(comment);
                 self.next_id += 1;
 
-                info!("[CommentEpisode] ✅ Comment {} added successfully (authenticated user)", comment_id);
+                info!("[CommentEpisode] ✅ Comment {comment_id} added successfully (authenticated user)");
 
                 Ok(CommentRollback::CommentSubmitted { comment_id })
             }
 
             CommentCommand::GetComments { session_token: _ } => {
-                info!("[CommentEpisode] GetComments from: {:?}", participant);
+                info!("[CommentEpisode] GetComments from: {participant:?}");
 
                 // For now, allow only authenticated users to read comments
                 // TODO: When profile episode is implemented, support anonymous users
@@ -180,7 +180,7 @@ impl Episode for CommentEpisode {
             }
 
             CommentCommand::GetCommentsByAuthor { author, session_token: _ } => {
-                info!("[CommentEpisode] GetCommentsByAuthor {} from: {:?}", author, participant);
+                info!("[CommentEpisode] GetCommentsByAuthor {author} from: {participant:?}");
 
                 // For now, allow only authenticated users to read comments
                 // TODO: When profile episode is implemented, support anonymous users
@@ -189,7 +189,7 @@ impl Episode for CommentEpisode {
             }
 
             CommentCommand::RegisterSession { public_key, session_token, auth_episode_id } => {
-                info!("[CommentEpisode] RegisterSession for {} from auth episode {}", public_key, auth_episode_id);
+                info!("[CommentEpisode] RegisterSession for {public_key} from auth episode {auth_episode_id}");
 
                 // Store the valid session
                 self.valid_sessions.insert(public_key.clone(), session_token.clone());
@@ -197,13 +197,13 @@ impl Episode for CommentEpisode {
                     self.auth_episode_id = Some(*auth_episode_id);
                 }
 
-                info!("[CommentEpisode] ✅ Session registered for {}", public_key);
+                info!("[CommentEpisode] ✅ Session registered for {public_key}");
 
                 Ok(CommentRollback::SessionRegistered { public_key: public_key.clone() })
             }
 
             CommentCommand::RevokeSession { session_token } => {
-                info!("[CommentEpisode] RevokeSession for token: {}", session_token);
+                info!("[CommentEpisode] RevokeSession for token: {session_token}");
 
                 // Find and remove the session
                 let mut revoked_key = None;
@@ -216,7 +216,7 @@ impl Episode for CommentEpisode {
 
                 if let Some(key) = revoked_key {
                     self.valid_sessions.remove(&key);
-                    info!("[CommentEpisode] ✅ Session revoked for {}", key);
+                    info!("[CommentEpisode] ✅ Session revoked for {key}");
 
                     Ok(CommentRollback::SessionRevoked { public_key: key, session_token: session_token.clone() })
                 } else {
@@ -336,6 +336,11 @@ mod tests {
         };
 
         let mut episode = CommentEpisode::initialize(vec![p1], &metadata);
+
+        // Register a valid session for the participant before submitting
+        let register =
+            CommentCommand::RegisterSession { public_key: format!("{p1}"), session_token: "sess_123".to_string(), auth_episode_id: 1 };
+        let _ = episode.execute(&register, Some(p1), &metadata).unwrap();
 
         // Submit a comment
         let cmd = CommentCommand::SubmitComment {

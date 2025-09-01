@@ -14,8 +14,8 @@ use tokio::sync::broadcast;
 use crate::api::http::state::{PeerState, SharedEpisodeState, WebSocketMessage};
 use crate::core::{AuthWithCommentsEpisode, UnifiedCommand};
 use crate::episode_runner::{AUTH_PATTERN, AUTH_PREFIX};
-use kaspa_wrpc_client::prelude::RpcApi;
 use kaspa_consensus_core::Hash as KaspaHash;
+use kaspa_wrpc_client::prelude::RpcApi;
 use std::sync::Mutex as StdMutex;
 
 /// The main HTTP coordination peer that runs a real kdapp engine
@@ -45,13 +45,13 @@ impl AuthHttpPeer {
                 Some(Arc::new(client))
             }
             Err(e) => {
-                println!("⚠️ Failed to connect to Kaspa node: {}", e);
+                println!("⚠️ Failed to connect to Kaspa node: {e}");
                 println!("📋 Transactions will be created but not submitted");
                 None
             }
         };
 
-        let mut peer_state = PeerState {
+        let peer_state = PeerState {
             episodes: Arc::new(std::sync::Mutex::new(HashMap::new())), // Legacy
             blockchain_episodes: blockchain_episodes.clone(),          // NEW - real blockchain state
             websocket_tx,
@@ -108,7 +108,7 @@ impl AuthHttpPeer {
 
         // Optional: Rehydrate known episodes from kdapp-indexer so commands for old episodes don't get dropped after restart
         if let Err(e) = self.rehydrate_from_indexer().await {
-            println!("⚠️ Rehydrate from indexer failed: {}", e);
+            println!("⚠️ Rehydrate from indexer failed: {e}");
         }
 
         // Wait for either task to complete
@@ -134,20 +134,20 @@ impl AuthHttpPeer {
 
     /// Get episode state from the kdapp engine (not memory!)
     pub fn get_episode_state(&self, episode_id: EpisodeId) -> Option<AuthWithCommentsEpisode> {
-        println!("🔍 Querying blockchain episode state for episode {}", episode_id);
+        println!("🔍 Querying blockchain episode state for episode {episode_id}");
 
         match self.peer_state.blockchain_episodes.lock() {
             Ok(episodes) => {
                 if let Some(episode) = episodes.get(&(episode_id as u64)) {
-                    println!("✅ Found episode {} in blockchain state", episode_id);
+                    println!("✅ Found episode {episode_id} in blockchain state");
                     Some(episode.clone())
                 } else {
-                    println!("⚠️ Episode {} not found in blockchain state", episode_id);
+                    println!("⚠️ Episode {episode_id} not found in blockchain state");
                     None
                 }
             }
             Err(e) => {
-                println!("❌ Failed to lock blockchain episodes: {}", e);
+                println!("❌ Failed to lock blockchain episodes: {e}");
                 None
             }
         }
@@ -181,7 +181,7 @@ impl AuthHttpPeer {
                 &participant_pubkey.0.serialize()[1..], // Remove compression byte for address
             );
 
-            println!("🎯 Using REAL participant address: {}", participant_addr);
+            println!("🎯 Using REAL participant address: {participant_addr}");
             println!("🔑 Participant pubkey: {}", hex::encode(participant_pubkey.0.serialize()));
 
             // Get UTXOs for participant (with short-lived cache)
@@ -198,7 +198,7 @@ impl AuthHttpPeer {
                     let utxo_id = format!("{}:{}", entry.outpoint.transaction_id, entry.outpoint.index);
                     if !used_utxos.contains(&utxo_id) {
                         selected_utxo = Some((
-                            kaspa_consensus_core::tx::TransactionOutpoint::from(entry.outpoint.clone()),
+                            kaspa_consensus_core::tx::TransactionOutpoint::from(entry.outpoint),
                             kaspa_consensus_core::tx::UtxoEntry::from(entry.utxo_entry.clone()),
                             utxo_id,
                         ));
@@ -215,7 +215,7 @@ impl AuthHttpPeer {
             {
                 let mut used_utxos = self.peer_state.used_utxos.lock().unwrap();
                 used_utxos.insert(utxo_id.clone());
-                println!("🔒 Reserved UTXO: {}", utxo_id);
+                println!("🔒 Reserved UTXO: {utxo_id}");
             }
 
             // Build and submit transaction using the transaction generator
@@ -232,7 +232,7 @@ impl AuthHttpPeer {
             match submit_result {
                 Ok(_) => {
                     let tx_id = tx.id().to_string();
-                    println!("✅ Transaction {} submitted to blockchain successfully!", tx_id);
+                    println!("✅ Transaction {tx_id} submitted to blockchain successfully!");
 
                     // 🔧 UTXO FIX: Schedule UTXO cleanup after successful submission
                     let used_utxos_cleanup = self.peer_state.used_utxos.clone();
@@ -242,7 +242,7 @@ impl AuthHttpPeer {
                         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                         if let Ok(mut used_utxos) = used_utxos_cleanup.lock() {
                             used_utxos.remove(&utxo_id_cleanup);
-                            println!("🔓 Released UTXO: {}", utxo_id_cleanup);
+                            println!("🔓 Released UTXO: {utxo_id_cleanup}");
                         }
                     });
 
@@ -253,7 +253,7 @@ impl AuthHttpPeer {
                     {
                         let mut used_utxos = self.peer_state.used_utxos.lock().unwrap();
                         used_utxos.remove(&utxo_id);
-                        println!("🔓 Released UTXO due to error: {}", utxo_id);
+                        println!("🔓 Released UTXO due to error: {utxo_id}");
                     }
                     Err(e.into())
                 }
@@ -267,18 +267,26 @@ impl AuthHttpPeer {
 impl AuthHttpPeer {
     async fn rehydrate_from_indexer(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Only attempt if an engine sender is available
-        let sender = match self.engine_sender.lock().unwrap().as_ref().cloned() { Some(s) => s, None => return Ok(()) };
+        let sender = match self.engine_sender.lock().unwrap().as_ref().cloned() {
+            Some(s) => s,
+            None => return Ok(()),
+        };
         let base = std::env::var("INDEXER_URL").unwrap_or_else(|_| "http://127.0.0.1:8090".to_string());
         let url = format!("{}/index/recent?limit=200", base.trim_end_matches('/'));
         let client = reqwest::Client::new();
         let resp = client.get(url).send().await?;
-        if !resp.status().is_success() { return Ok(()); }
+        if !resp.status().is_success() {
+            return Ok(());
+        }
         let json: serde_json::Value = resp.json().await?;
         let episodes = json.get("episodes").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
         // Fetch current DAA score to prevent immediate lifetime filter purge
         let current_daa = match &self.peer_state.kaspad_client {
-            Some(k) => match k.get_block_dag_info().await { Ok(info) => info.virtual_daa_score as u64, Err(_) => 0 },
+            Some(k) => match k.get_block_dag_info().await {
+                Ok(info) => info.virtual_daa_score,
+                Err(_) => 0,
+            },
             None => 0,
         };
 
@@ -290,34 +298,57 @@ impl AuthHttpPeer {
 
         let mut count = 0usize;
         for ep in episodes {
-            let id = match ep.get("episode_id").and_then(|v| v.as_u64()) { Some(v) => v, None => continue };
-            if existing.contains(&id) { continue; }
+            let id = match ep.get("episode_id").and_then(|v| v.as_u64()) {
+                Some(v) => v,
+                None => continue,
+            };
+            if existing.contains(&id) {
+                continue;
+            }
             // Parse creator pubkey if present; otherwise skip
             let creator = match ep.get("creator_pubkey").and_then(|v| v.as_str()) {
                 Some(s) if !s.is_empty() => s,
                 _ => continue,
             };
             // Try to parse as hex; also accept wrapped PublicKey(hex) format
-            let hex_str = if creator.starts_with("PublicKey(") && creator.ends_with(")") {
-                &creator[10..creator.len()-1]
-            } else { creator };
-            let pk_bytes = match hex::decode(hex_str) { Ok(b) => b, Err(_) => continue };
-            let pk = match secp256k1::PublicKey::from_slice(&pk_bytes) { Ok(p) => kdapp::pki::PubKey(p), Err(_) => continue };
-            let id_u32: u32 = match id.try_into() { Ok(v) => v, Err(_) => continue };
+            let hex_str =
+                if creator.starts_with("PublicKey(") && creator.ends_with(")") { &creator[10..creator.len() - 1] } else { creator };
+            let pk_bytes = match hex::decode(hex_str) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let pk = match secp256k1::PublicKey::from_slice(&pk_bytes) {
+                Ok(p) => kdapp::pki::PubKey(p),
+                Err(_) => continue,
+            };
+            let id_u32: u32 = match id.try_into() {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
 
             // Serialize a synthetic NewEpisode payload
-            let action = kdapp::engine::EpisodeMessage::<crate::core::AuthWithCommentsEpisode>::NewEpisode { episode_id: id_u32, participants: vec![pk] };
+            let action = kdapp::engine::EpisodeMessage::<crate::core::AuthWithCommentsEpisode>::NewEpisode {
+                episode_id: id_u32,
+                participants: vec![pk],
+            };
             let payload = borsh::to_vec(&action).unwrap_or_default();
             // Minimal metadata — use a fresh accepting_daa to avoid immediate filtering
             let accepting_hash = KaspaHash::from_bytes([0u8; 32]);
             let accepting_daa = if current_daa > 0 { current_daa } else { 1 };
             // Use created_at if present for a nicer timestamp
             let accepting_time = ep.get("created_at").and_then(|v| v.as_u64()).unwrap_or(0);
-            let msg = kdapp::engine::EngineMsg::BlkAccepted { accepting_hash, accepting_daa, accepting_time, associated_txs: vec![(KaspaHash::from_bytes([0u8;32]), payload, None)] };
+            let msg = kdapp::engine::EngineMsg::BlkAccepted {
+                accepting_hash,
+                accepting_daa,
+                accepting_time,
+                associated_txs: vec![(KaspaHash::from_bytes([0u8; 32]), payload, None)],
+            };
             let _ = sender.send(msg);
             count += 1;
         }
-        if count > 0 { println!("🔄 Rehydrated {} episode(s) from kdapp-indexer", count); }
+        if count > 0 {
+            println!("🔄 Rehydrated {count} episode(s) from kdapp-indexer");
+        }
         Ok(())
     }
 }
@@ -330,15 +361,15 @@ pub struct HttpAuthHandler {
 
 impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
     fn on_initialize(&self, episode_id: EpisodeId, episode: &AuthWithCommentsEpisode) {
-        println!("🎭 MATRIX UI SUCCESS: Auth episode {} initialized on blockchain", episode_id);
-        println!("🎬 Episode {} initialized on blockchain", episode_id);
+        println!("🎭 MATRIX UI SUCCESS: Auth episode {episode_id} initialized on blockchain");
+        println!("🎬 Episode {episode_id} initialized on blockchain");
 
         // Store episode in shared blockchain state
         if let Ok(mut episodes) = self.blockchain_episodes.lock() {
             episodes.insert(episode_id.into(), episode.clone());
-            println!("✅ Stored episode {} in blockchain state", episode_id);
+            println!("✅ Stored episode {episode_id} in blockchain state");
         } else {
-            println!("❌ Failed to store episode {} in blockchain state", episode_id);
+            println!("❌ Failed to store episode {episode_id} in blockchain state");
         }
 
         let message = WebSocketMessage {
@@ -362,8 +393,8 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
         authorization: Option<kdapp::pki::PubKey>,
         _metadata: &kdapp::episode::PayloadMetadata,
     ) {
-        println!("⚡ Episode {} updated on blockchain", episode_id);
-        println!("🔍 DEBUG: on_command called for episode {} with command: {:?}", episode_id, cmd);
+        println!("⚡ Episode {episode_id} updated on blockchain");
+        println!("🔍 DEBUG: on_command called for episode {episode_id} with command: {cmd:?}");
 
         // Read previous state BEFORE updating (for session revocation detection and comment detection)
         let previous_episode =
@@ -372,15 +403,15 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
         // Update episode in shared blockchain state
         if let Ok(mut episodes) = self.blockchain_episodes.lock() {
             episodes.insert(episode_id.into(), episode.clone());
-            println!("✅ Updated episode {} in blockchain state", episode_id);
+            println!("✅ Updated episode {episode_id} in blockchain state");
         } else {
-            println!("❌ Failed to update episode {} in blockchain state", episode_id);
+            println!("❌ Failed to update episode {episode_id} in blockchain state");
         }
 
         // 🚀 CRITICAL: Check for new comments and broadcast them real-time!
         if let UnifiedCommand::SubmitComment { text, session_token: _ } = cmd {
-            println!("💬 NEW COMMENT detected on blockchain for episode {}", episode_id);
-            println!("📝 Comment text: \"{}\"", text);
+            println!("💬 NEW COMMENT detected on blockchain for episode {episode_id}");
+            println!("📝 Comment text: \"{text}\"");
 
             // Find the latest comment (should be the last one added)
             if let Some(latest_comment) = episode.comments.last() {
@@ -403,7 +434,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
 
                 let receiver_count = self.websocket_tx.receiver_count();
                 let _ = self.websocket_tx.send(message);
-                println!("📡 NEW COMMENT broadcasted to {} connected peer(s)! 🎉", receiver_count);
+                println!("📡 NEW COMMENT broadcasted to {receiver_count} connected peer(s)! 🎉");
             }
             return; // Don't process as auth command
         }
@@ -423,7 +454,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
                 };
                 let receiver_count = self.websocket_tx.receiver_count();
                 let _ = self.websocket_tx.send(message);
-                println!("📡 Sent session_revoked WebSocket message for episode {} to {} client(s)", episode_id, receiver_count);
+                println!("📡 Sent session_revoked WebSocket message for episode {episode_id} to {receiver_count} client(s)");
                 return; // Done handling revocation update
             }
         }
@@ -469,8 +500,8 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for HttpAuthHandler {
     }
 
     fn on_rollback(&self, episode_id: EpisodeId, _episode: &AuthWithCommentsEpisode) {
-        println!("🎭 MATRIX UI ERROR: Authentication episode {} rolled back on blockchain", episode_id);
-        println!("🔄 Episode {} rolled back on blockchain", episode_id);
+        println!("🎭 MATRIX UI ERROR: Authentication episode {episode_id} rolled back on blockchain");
+        println!("🔄 Episode {episode_id} rolled back on blockchain");
     }
 }
 
@@ -478,8 +509,8 @@ fn deterministic_handle(episode_id: u64, pubkey: &kdapp::pki::PubKey) -> String 
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(b"KDAPP/COMMENT-IT/SESSION");
-    hasher.update(&episode_id.to_be_bytes());
-    hasher.update(&pubkey.0.serialize());
+    hasher.update(episode_id.to_be_bytes());
+    hasher.update(pubkey.0.serialize());
     let out = hasher.finalize();
     hex::encode(out)
 }

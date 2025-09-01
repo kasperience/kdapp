@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::{
     episode::{Episode, EpisodeError, PayloadMetadata},
@@ -62,7 +63,7 @@ impl Episode for ContractCommentBoard {
             return Self {
                 contract: CommentRoomContract::new(
                     PubKey(secp256k1::PublicKey::from_secret_key(
-                        &secp256k1::SECP256K1,
+                        secp256k1::SECP256K1,
                         &secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap(),
                     )),
                     RoomRules::default(),
@@ -99,7 +100,7 @@ impl Episode for ContractCommentBoard {
 
         let expires_at = std::cmp::max(metadata.accepting_time + 7776000, 2000000000); // Ensure contract doesn't expire before 2033
 
-        info!("[ContractCommentBoard] Episode contract created, expires at: {}", expires_at);
+        info!("[ContractCommentBoard] Episode contract created, expires at: {expires_at}");
 
         Self {
             contract,
@@ -112,7 +113,7 @@ impl Episode for ContractCommentBoard {
             active_votes: HashMap::new(),
             contract_created_at: metadata.accepting_time,
             contract_expires_at: expires_at,
-            showcase_highlights: vec![format!("Episode contract launched at block {}", metadata.accepting_daa)],
+            showcase_highlights: vec![format!("Episode contract launched at block {daa}", daa = metadata.accepting_daa)],
         }
     }
 
@@ -128,14 +129,18 @@ impl Episode for ContractCommentBoard {
 
         // Check if contract has expired
         if metadata.accepting_time > self.contract_expires_at {
-            warn!("Contract expired: current_time={}, expires_at={}", metadata.accepting_time, self.contract_expires_at);
+            warn!(
+                "Contract expired: current_time={current}, expires_at={expires}",
+                current = metadata.accepting_time,
+                expires = self.contract_expires_at
+            );
             return Err(EpisodeError::InvalidCommand(
                 ContractError::ContractExpired { episode_id: 0 }, // TODO: Get actual episode_id from context
             ));
         }
 
-        let participant_str = format!("{}", participant);
-        info!("[ContractCommentBoard] Executing {:?} from {}", cmd, participant_str);
+        let participant_str = format!("{participant}");
+        info!("[ContractCommentBoard] Executing {cmd:?} from {participant_str}");
 
         match cmd {
             ContractCommand::JoinRoom { bond_amount } => self.execute_join_room(participant, *bond_amount, metadata),
@@ -152,7 +157,7 @@ impl Episode for ContractCommentBoard {
 
             _ => {
                 // For now, return a simple rollback for unimplemented commands
-                warn!("[ContractCommentBoard] Command {:?} not yet implemented", cmd);
+                warn!("[ContractCommentBoard] Command {cmd:?} not yet implemented");
                 Ok(ContractRollback {
                     operation_type: "unimplemented".to_string(),
                     comment_id: None,
@@ -214,13 +219,13 @@ impl ContractCommentBoard {
         bond_amount: u64,
         metadata: &PayloadMetadata,
     ) -> Result<ContractRollback, EpisodeError<ContractError>> {
-        let participant_str = format!("{}", participant);
+        let participant_str = format!("{participant}");
 
         // Add user to room
         self.contract.room_members.push(participant_str.clone());
         self.contract.total_locked_value += bond_amount;
 
-        info!("[ContractCommentBoard] ✅ {} joined room with {} bond", participant_str, format_kas_amount(bond_amount));
+        info!("[ContractCommentBoard] ✅ {participant_str} joined room with {} bond", format_kas_amount(bond_amount));
 
         Ok(ContractRollback {
             operation_type: "join_room".to_string(),
@@ -229,7 +234,7 @@ impl ContractCommentBoard {
             reputation_change: None,
             penalty_pool_change: None,
             prev_timestamp: metadata.accepting_time,
-            utxo_changes: vec![(format!("join_bond_{}", participant_str), bond_amount)],
+            utxo_changes: vec![(format!("join_bond_{participant_str}"), bond_amount)],
         })
     }
 
@@ -239,10 +244,10 @@ impl ContractCommentBoard {
         _participant: PubKey,
         metadata: &PayloadMetadata,
     ) -> Result<ContractRollback, EpisodeError<ContractError>> {
-        let challenge = format!("auth_{}", metadata.tx_id);
+        let challenge = format!("auth_{tx}", tx = metadata.tx_id);
         self.contract.current_challenge = Some(challenge.clone());
 
-        info!("[ContractCommentBoard] 🔑 Challenge generated: {}", challenge);
+        info!("[ContractCommentBoard] 🔑 Challenge generated: {challenge}");
 
         Ok(ContractRollback {
             operation_type: "request_challenge".to_string(),
@@ -263,14 +268,14 @@ impl ContractCommentBoard {
         nonce: &str,
         metadata: &PayloadMetadata,
     ) -> Result<ContractRollback, EpisodeError<ContractError>> {
-        let participant_str = format!("{}", participant);
+        let participant_str = format!("{participant}");
 
         if let Some(challenge) = &self.contract.current_challenge {
             if nonce == challenge && !signature.is_empty() {
                 self.contract.authenticated_users.push(participant_str.clone());
                 self.contract.current_challenge = None;
 
-                info!("[ContractCommentBoard] ✅ {} authenticated successfully", participant_str);
+                info!("[ContractCommentBoard] ✅ {participant_str} authenticated successfully");
 
                 Ok(ContractRollback {
                     operation_type: "authenticate".to_string(),
@@ -299,8 +304,8 @@ impl ContractCommentBoard {
         bond_script: Option<&crate::episode::commands::BondScriptKind>,
         metadata: &PayloadMetadata,
     ) -> Result<ContractRollback, EpisodeError<ContractError>> {
-        let participant_str = format!("{}", participant);
-        info!("[ContractCommentBoard] execute_submit_comment: received bond_amount = {}", bond_amount);
+        let participant_str = format!("{participant}");
+        info!("[ContractCommentBoard] execute_submit_comment: received bond_amount = {bond_amount}");
 
         // Validate comment content
         if text.trim().is_empty() {
@@ -383,7 +388,7 @@ impl ContractCommentBoard {
         };
 
         // Lock the comment bond
-        let utxo_id = format!("comment_bond_{}_{}", comment_id, metadata.tx_id);
+        let utxo_id = format!("comment_bond_{comment_id}_{txid}", txid = metadata.tx_id);
         self.locked_utxos.insert(utxo_id.clone(), bond_amount);
 
         // Update state
@@ -392,12 +397,7 @@ impl ContractCommentBoard {
         self.contract.total_locked_value += bond_amount;
         self.next_comment_id += 1;
 
-        info!(
-            "[ContractCommentBoard] Comment {} posted by {} with {} bond",
-            comment_id,
-            participant_str,
-            format_kas_amount(bond_amount)
-        );
+        info!("[ContractCommentBoard] Comment {comment_id} posted by {participant_str} with {} bond", format_kas_amount(bond_amount));
 
         Ok(ContractRollback {
             operation_type: "submit_comment".to_string(),

@@ -2,7 +2,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::time::Duration;
 
 use crate::{
     cli::Args,
@@ -15,7 +14,7 @@ use kdapp::pki::PubKey;
 use secp256k1::{Keypair, SecretKey};
 
 use kaspa_addresses::Address;
-use kaspa_wrpc_client::prelude::{KaspaRpcClient, RpcApi};
+use kaspa_wrpc_client::prelude::KaspaRpcClient;
 
 use kdapp::engine::EpisodeMessage;
 
@@ -37,7 +36,7 @@ pub async fn run_comment_board(
         match init::initialize_participant(&kaspad, kaspa_signer, kaspa_addr.clone(), response_receiver, target_episode_id).await {
             Ok(state) => state,
             Err(e) => {
-                println!("❌ Initialization failed: {}", e);
+                println!("❌ Initialization failed: {e}");
                 return;
             }
         };
@@ -59,7 +58,7 @@ pub async fn run_comment_board(
     {
         Ok(state) => state,
         Err(e) => {
-            println!("❌ Authentication failed: {}", e);
+            println!("❌ Authentication failed: {e}");
             return;
         }
     };
@@ -145,7 +144,7 @@ pub async fn run_comment_board(
 
                         if args.bonds && args.bond_amount.is_none() {
                             let display_bond_kas = bond_amount as f64 / 100_000_000.0;
-                            println!("Required bond: {:.6} KAS (override with --bond-amount)", display_bond_kas);
+                            println!("Required bond: {display_bond_kas:.6} KAS (override with --bond-amount)");
                         }
 
                         let cmd = ContractCommand::SubmitComment { text: comment_text.to_string(), bond_amount, bond_output_index: Some(0), bond_script: None };
@@ -161,7 +160,7 @@ pub async fn run_comment_board(
                                     println!("✅ Comment submitted successfully! TxID: {}", tx.id());
                                     let _ = init_state.utxo_manager.refresh_utxos().await;
                                 }
-                                Err(e) => println!("❌ Failed to submit comment: {}", e),
+                                Err(e) => println!("❌ Failed to submit comment: {e}"),
                             }
                         } else {
                             match init_state
@@ -170,10 +169,10 @@ pub async fn run_comment_board(
                                 .await
                             {
                                 Ok(txid) => {
-                                    println!("✅ Comment submitted successfully! TxID: {}", txid);
+                                    println!("✅ Comment submitted successfully! TxID: {txid}");
                                     let _ = init_state.utxo_manager.refresh_utxos().await;
                                 }
-                                Err(e) => println!("❌ Failed to submit comment: {}", e),
+                                Err(e) => println!("❌ Failed to submit comment: {e}"),
                             }
                         }
 

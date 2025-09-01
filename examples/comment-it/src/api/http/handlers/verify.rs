@@ -20,11 +20,11 @@ pub async fn verify_auth(State(state): State<PeerState>, Json(req): Json<VerifyR
     let episode_id: u64 = req.episode_id;
 
     // 🚨 CRITICAL: Request-level deduplication to prevent race conditions
-    let request_key = format!("verify_{}", episode_id);
+    let request_key = format!("verify_{episode_id}");
     {
         let mut pending = state.pending_requests.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         if pending.contains(&request_key) {
-            println!("🔄 Duplicate verify request for episode {} blocked - request already in progress", episode_id);
+            println!("🔄 Duplicate verify request for episode {episode_id} blocked - request already in progress");
             return Ok(Json(VerifyResponse {
                 episode_id,
                 authenticated: false,
@@ -42,14 +42,14 @@ pub async fn verify_auth(State(state): State<PeerState>, Json(req): Json<VerifyR
     let episode = match state.blockchain_episodes.lock() {
         Ok(episodes) => episodes.get(&episode_id).cloned(),
         Err(e) => {
-            println!("❌ Failed to lock blockchain episodes: {}", e);
+            println!("❌ Failed to lock blockchain episodes: {e}");
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
     if let Some(ep) = &episode {
         // If episode already has authenticated participants, skip duplicate submissions
         if ep.is_authenticated() {
-            println!("🔄 Episode {} already authenticated - blocking duplicate transaction submission", episode_id);
+            println!("🔄 Episode {episode_id} already authenticated - blocking duplicate transaction submission");
             return Ok(Json(VerifyResponse {
                 episode_id,
                 authenticated: true,
@@ -58,7 +58,7 @@ pub async fn verify_auth(State(state): State<PeerState>, Json(req): Json<VerifyR
             }));
         }
     } else {
-        println!("⚠️ Episode {} not found in blockchain state (rehydrating or pending)", episode_id);
+        println!("⚠️ Episode {episode_id} not found in blockchain state (rehydrating or pending)");
         // Continue anyway — engine will initialize on first commands
     }
 
@@ -82,7 +82,7 @@ pub async fn verify_auth(State(state): State<PeerState>, Json(req): Json<VerifyR
     let episode_id_u32 = match episode_id.try_into() {
         Ok(id) => id,
         Err(_) => {
-            println!("❌ Episode ID {} is too large to fit in u32", episode_id);
+            println!("❌ Episode ID {episode_id} is too large to fit in u32");
             return Err(StatusCode::BAD_REQUEST);
         }
     };
@@ -98,12 +98,12 @@ pub async fn verify_auth(State(state): State<PeerState>, Json(req): Json<VerifyR
     println!("📤 Submitting SubmitResponse transaction to Kaspa blockchain via AuthHttpPeer...");
     let submission_result = match state.auth_http_peer.as_ref().unwrap().submit_episode_message_transaction(step).await {
         Ok(tx_id) => {
-            println!("✅ MATRIX UI SUCCESS: Authentication signature submitted - Transaction {}", tx_id);
+            println!("✅ MATRIX UI SUCCESS: Authentication signature submitted - Transaction {tx_id}");
             println!("📊 Transaction submitted to Kaspa blockchain - organizer peer will detect and respond");
             (tx_id, "submit_response_submitted".to_string())
         }
         Err(e) => {
-            println!("❌ MATRIX UI ERROR: Authentication signature submission failed - {}", e);
+            println!("❌ MATRIX UI ERROR: Authentication signature submission failed - {e}");
             ("error".to_string(), "submit_response_failed".to_string())
         }
     };

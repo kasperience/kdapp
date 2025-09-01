@@ -24,7 +24,7 @@ pub async fn submit_comment_to_episode(
     // Load participant wallet (same as used in web authentication)
     let wallet = get_wallet_for_command("participant-peer", private_key)?;
     let addr = wallet.get_kaspa_address();
-    info!("🔑 Using wallet address: {}", addr);
+    info!("🔑 Using wallet address: {addr}");
 
     // Validate comment
     if comment_text.trim().is_empty() {
@@ -46,7 +46,7 @@ pub async fn submit_comment_to_episode(
         return Err("No UTXOs found. Wallet needs funding.".into());
     }
 
-    let utxo = (TransactionOutpoint::from(entries[0].outpoint.clone()), UtxoEntry::from(entries[0].utxo_entry.clone()));
+    let utxo = (TransactionOutpoint::from(entries[0].outpoint), UtxoEntry::from(entries[0].utxo_entry.clone()));
 
     // Create unified comment command
     let comment_cmd = UnifiedCommand::SubmitComment { text: comment_text.clone(), session_token: session_token.clone() };
@@ -68,12 +68,12 @@ pub async fn submit_comment_to_episode(
     // Get transaction ID for explorer link
     let tx_id = tx.id();
 
-    println!("✅ Comment submitted to episode {} on blockchain!", episode_id);
-    println!("💬 Comment: \"{}\"", comment_text);
+    println!("✅ Comment submitted to episode {episode_id} on blockchain!");
+    println!("💬 Comment: \"{comment_text}\"");
     println!("🎯 Real kdapp architecture: P2P comment via blockchain transaction");
-    println!("📋 Transaction ID: {}", tx_id);
-    println!("🔗 [ VERIFY ON KASPA EXPLORER → ] https://explorer-tn10.kaspa.org/txs/{}", tx_id);
-    println!("🔗 [ VIEW WALLET ON EXPLORER → ] https://explorer-tn10.kaspa.org/addresses/{}", addr);
+    println!("📋 Transaction ID: {tx_id}");
+    println!("🔗 [ VERIFY ON KASPA EXPLORER → ] https://explorer-tn10.kaspa.org/txs/{tx_id}");
+    println!("🔗 [ VIEW WALLET ON EXPLORER → ] https://explorer-tn10.kaspa.org/addresses/{addr}");
 
     Ok(())
 }
@@ -86,11 +86,11 @@ pub async fn run_submit_comment_command(
     kaspa_address: Option<&str>,
     private_key: Option<&str>,
 ) -> Result<(), Box<dyn Error>> {
-    println!("💬 COMMENT SUBMISSION TO EPISODE {}", episode_id);
-    println!("📝 Comment: \"{}\"", comment_text);
-    println!("🎫 Session: {}", session_token);
+    println!("💬 COMMENT SUBMISSION TO EPISODE {episode_id}");
+    println!("📝 Comment: \"{comment_text}\"");
+    println!("🎫 Session: {session_token}");
     println!("🔐 Using kdapp P2P architecture (not HTTP server)");
-    println!("");
+    println!();
 
     submit_comment_to_episode(episode_id, comment_text, session_token, kaspa_address, private_key).await?;
 

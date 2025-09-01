@@ -110,7 +110,7 @@ async fn session_revoked(State(state): State<PeerState>, Json(payload): Json<ser
     let episode_id = payload["episode_id"].as_u64().unwrap_or(0);
     let session_token = payload["session_token"].as_str().unwrap_or("");
 
-    println!("🔔 Received session revocation notification for episode {}, token: {}", episode_id, session_token);
+    println!("🔔 Received session revocation notification for episode {episode_id}, token: {session_token}");
 
     // Broadcast WebSocket message for session revocation success
     let ws_message = WebSocketMessage {
@@ -124,10 +124,10 @@ async fn session_revoked(State(state): State<PeerState>, Json(payload): Json<ser
     // Send to all connected WebSocket participant peers
     match state.websocket_tx.send(ws_message) {
         Ok(_) => {
-            println!("✅ Session revocation WebSocket message sent for episode {}", episode_id);
+            println!("✅ Session revocation WebSocket message sent for episode {episode_id}");
         }
         Err(e) => {
-            println!("❌ Failed to send session revocation WebSocket message: {}", e);
+            println!("❌ Failed to send session revocation WebSocket message: {e}");
         }
     }
 
@@ -182,23 +182,23 @@ pub async fn run_http_peer(
         .with_state(peer_state)
         .layer(cors);
 
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    println!("🚀 HTTP Authentication Coordination Peer starting on port {}", port);
+    println!("🚀 HTTP Authentication Coordination Peer starting on port {port}");
     println!("🔗 Starting kdapp blockchain engine...");
 
     // Start the blockchain listener in the background
     let auth_peer_clone = auth_peer.clone();
     tokio::spawn(async move {
         if let Err(e) = auth_peer_clone.start_blockchain_listener().await {
-            eprintln!("❌ Blockchain listener error: {}", e);
+            eprintln!("❌ Blockchain listener error: {e}");
         }
     });
 
     // Start the HTTP coordination peer
     println!("🔗 kdapp engine started - HTTP coordination peer is now a real blockchain node!");
-    println!("🌐 Web dashboard available at: http://localhost:{}/", port);
+    println!("🌐 Web dashboard available at: http://localhost:{port}/");
     serve(listener, app.into_make_service()).await?;
 
     Ok(())

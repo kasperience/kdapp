@@ -106,7 +106,7 @@ async fn show_config() -> Result<(), Box<dyn std::error::Error>> {
     println!("👥 Organizer Peers ({} total):", config.organizer_peers.len());
     for (i, peer) in config.organizer_peers.iter().enumerate() {
         let status = if peer.enabled { "✅ ENABLED" } else { "❌ DISABLED" };
-        let reputation = peer.reputation.map(|r| format!("{}%", r)).unwrap_or_else(|| "N/A".to_string());
+        let reputation = peer.reputation.map(|r| format!("{r}%")).unwrap_or_else(|| "N/A".to_string());
 
         println!("  {}. {} [{}]", i + 1, peer.name, status);
         println!("     URL: {}", peer.url);
@@ -161,7 +161,7 @@ async fn add_peer(
 
     // Check if peer already exists
     if config.organizer_peers.iter().any(|p| p.name == name) {
-        return Err(format!("Peer '{}' already exists", name).into());
+        return Err(format!("Peer '{name}' already exists").into());
     }
 
     // Parse peer type
@@ -170,7 +170,7 @@ async fn add_peer(
         "community" => PeerType::Community,
         "backup" => PeerType::Backup,
         "development" => PeerType::Development,
-        _ => return Err(format!("Invalid peer type: {}. Use: official, community, backup, development", peer_type_str).into()),
+        _ => return Err(format!("Invalid peer type: {peer_type_str}. Use: official, community, backup, development").into()),
     };
 
     let peer =
@@ -180,7 +180,7 @@ async fn add_peer(
     config.save()?;
 
     let status = if enabled { "ENABLED" } else { "DISABLED" };
-    println!("✅ Added peer '{}' ({}) - {} with priority {} and reputation {}%", name, url, status, priority, reputation);
+    println!("✅ Added peer '{name}' ({url}) - {status} with priority {priority} and reputation {reputation}%");
 
     Ok(())
 }
@@ -190,9 +190,9 @@ async fn remove_peer(name: String) -> Result<(), Box<dyn std::error::Error>> {
 
     if config.remove_peer(&name) {
         config.save()?;
-        println!("✅ Removed peer '{}'", name);
+        println!("✅ Removed peer '{name}'");
     } else {
-        println!("❌ Peer '{}' not found", name);
+        println!("❌ Peer '{name}' not found");
     }
 
     Ok(())
@@ -204,9 +204,9 @@ async fn set_peer_status(name: String, enabled: bool) -> Result<(), Box<dyn std:
     if config.update_peer_status(&name, enabled) {
         config.save()?;
         let status = if enabled { "ENABLED" } else { "DISABLED" };
-        println!("✅ Peer '{}' is now {}", name, status);
+        println!("✅ Peer '{name}' is now {status}");
     } else {
-        println!("❌ Peer '{}' not found", name);
+        println!("❌ Peer '{name}' not found");
     }
 
     Ok(())
@@ -217,9 +217,9 @@ async fn set_reputation(name: String, reputation: u8) -> Result<(), Box<dyn std:
 
     if config.update_peer_reputation(&name, reputation) {
         config.save()?;
-        println!("✅ Updated reputation for peer '{}' to {}%", name, reputation);
+        println!("✅ Updated reputation for peer '{name}' to {reputation}%");
     } else {
-        println!("❌ Peer '{}' not found", name);
+        println!("❌ Peer '{name}' not found");
     }
 
     Ok(())
@@ -257,7 +257,7 @@ async fn test_peers() -> Result<(), Box<dyn std::error::Error>> {
                 println!("✅ OK ({}ms)", response.response_time.as_millis());
             }
             Err(e) => {
-                println!("❌ FAILED: {}", e);
+                println!("❌ FAILED: {e}");
             }
         }
     }

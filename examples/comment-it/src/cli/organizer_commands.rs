@@ -48,7 +48,7 @@ pub async fn handle_participant_peer(sub_matches: &ArgMatches) -> Result<(), Box
             &keypair.x_only_public_key().0.serialize(),
         );
         println!("🔑 No --kaspa-private-key or --kaspa-keyfile provided. Generated new participant peer wallet:");
-        println!("📍 Kaspa Address: {}", kaspa_addr);
+        println!("📍 Kaspa Address: {kaspa_addr}");
         println!("🔐 Private Key: {}", hex::encode(keypair.secret_key().secret_bytes()));
         println!();
         println!("💾 Save the private key to a file for security:");
@@ -60,7 +60,7 @@ pub async fn handle_participant_peer(sub_matches: &ArgMatches) -> Result<(), Box
         println!("💡 Amount needed: ~0.1 KAS (covers multiple authentication transactions)");
         println!();
         println!("📋 Steps to fund your participant peer wallet:");
-        println!("  1. Copy the Kaspa address above: {}", kaspa_addr);
+        println!("  1. Copy the Kaspa address above: {kaspa_addr}");
         println!("  2. Visit: https://faucet.kaspanet.io/");
         println!("  3. Paste the address and request testnet funds");
         println!("  4. Wait ~30 seconds for transaction confirmation");
@@ -105,9 +105,9 @@ pub async fn handle_unified_peer(sub_matches: &ArgMatches) -> Result<(), Box<dyn
 // Helper functions are now imported at the top of the file
 
 async fn run_kaspa_organizer_peer(_signer: Keypair, name: String, rpc_url: Option<String>) -> Result<(), Box<dyn Error>> {
-    println!("🎯 Starting Kaspa Auth Organizer Peer: {}", name);
+    println!("🎯 Starting Kaspa Auth Organizer Peer: {name}");
     if let Some(url) = &rpc_url {
-        println!("📡 Connecting to node: {}", url);
+        println!("📡 Connecting to node: {url}");
     } else {
         println!("📡 Connecting to testnet-10 (public node)...");
     }
@@ -126,7 +126,7 @@ async fn run_kaspa_participant_peer(
 ) -> Result<(), Box<dyn Error>> {
     println!("🔑 Starting Kaspa Auth Participant Peer");
     if let Some(url) = &rpc_url {
-        println!("📡 Connecting to node: {}", url);
+        println!("📡 Connecting to node: {url}");
     } else {
         println!("📡 Connecting to testnet-10 (public node)...");
     }

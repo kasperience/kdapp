@@ -30,7 +30,7 @@ async fn handle_socket(mut socket: WebSocket, state: PeerState) {
                         let json_str = match serde_json::to_string(&ws_message) {
                             Ok(json) => json,
                             Err(e) => {
-                                eprintln!("Failed to serialize WebSocket message: {}", e);
+                                eprintln!("Failed to serialize WebSocket message: {e}");
                                 continue;
                             }
                         };

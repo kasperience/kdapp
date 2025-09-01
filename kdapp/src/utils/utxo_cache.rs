@@ -4,14 +4,16 @@ use std::time::Instant;
 
 use kaspa_addresses::Address;
 use kaspa_rpc_core::model::address::RpcUtxosByAddressesEntry;
-use kaspa_wrpc_client::KaspaRpcClient;
 use kaspa_wrpc_client::prelude::RpcApi;
+use kaspa_wrpc_client::KaspaRpcClient;
 
 /// A short-lived per-address UTXO cache to reduce bursty RPC calls.
+type UtxoCacheEntries = HashMap<String, (Instant, Vec<RpcUtxosByAddressesEntry>)>;
+
 #[derive(Clone)]
 pub struct UtxoCache {
     ttl_ms: u64,
-    inner: Arc<Mutex<HashMap<String, (Instant, Vec<RpcUtxosByAddressesEntry>)>>>,
+    inner: Arc<Mutex<UtxoCacheEntries>>,
 }
 
 impl UtxoCache {

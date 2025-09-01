@@ -32,23 +32,23 @@ impl<'a> TxSubmitter<'a> {
 
         // Connect to Kaspa
         let network = NetworkId::with_suffix(NetworkType::Testnet, 10);
-        let kaspad = kdapp::proxy::connect_client(network, None).await.map_err(|e| format!("Connect failed: {}", e))?;
+        let kaspad = kdapp::proxy::connect_client(network, None).await.map_err(|e| format!("Connect failed: {e}"))?;
 
         // Get organizer peer address and UTXOs
         let addr = Address::new(Prefix::Testnet, Version::PubKey, &self.organizer_keypair.public_key().serialize()[1..]);
 
-        let entries = kaspad.get_utxos_by_addresses(vec![addr.clone()]).await.map_err(|e| format!("UTXO fetch failed: {}", e))?;
+        let entries = kaspad.get_utxos_by_addresses(vec![addr.clone()]).await.map_err(|e| format!("UTXO fetch failed: {e}"))?;
 
         if entries.is_empty() {
-            return Err(format!("No UTXOs! Fund: {}", addr));
+            return Err(format!("No UTXOs! Fund: {addr}"));
         }
 
         // Build and submit transaction
-        let utxo = (TransactionOutpoint::from(entries[0].outpoint.clone()), UtxoEntry::from(entries[0].utxo_entry.clone()));
+        let utxo = (TransactionOutpoint::from(entries[0].outpoint), UtxoEntry::from(entries[0].utxo_entry.clone()));
 
         let tx = self.transaction_generator.build_command_transaction(utxo, &addr, &msg, 5000);
 
-        kaspad.submit_transaction(tx.as_ref().into(), false).await.map_err(|e| format!("Submit failed: {}", e))?;
+        kaspad.submit_transaction(tx.as_ref().into(), false).await.map_err(|e| format!("Submit failed: {e}"))?;
 
         Ok(tx.id().to_string())
     }

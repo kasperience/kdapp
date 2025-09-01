@@ -4,7 +4,7 @@ use log::warn;
 pub async fn handle_command(command: &str, utxo_manager: &mut UtxoLockManager) {
     if command == "balance" {
         if let Err(e) = utxo_manager.refresh_utxos().await {
-            warn!("Failed to refresh UTXOs: {}", e);
+            warn!("Failed to refresh UTXOs: {e}");
         }
         let balance_info = utxo_manager.get_balance_info();
         balance_info.display();
@@ -23,7 +23,7 @@ pub async fn handle_command(command: &str, utxo_manager: &mut UtxoLockManager) {
                         println!("🔓 Unlocked {:.6} KAS bond for comment {}", unlocked_amount as f64 / 100_000_000.0, comment_id);
                     }
                     Err(e) => {
-                        warn!("Failed to unlock bond for comment {}: {}", comment_id, e);
+                        warn!("Failed to unlock bond for comment {comment_id}: {e}");
                     }
                 }
             }
@@ -52,7 +52,7 @@ pub async fn handle_command(command: &str, utxo_manager: &mut UtxoLockManager) {
                             comment_id,
                             locked_utxo.bond_amount as f64 / 100_000_000.0
                         );
-                        println!("  🔗 Proof TX: {}", proof_transaction_id);
+                        println!("  🔗 Proof TX: {proof_transaction_id}");
                         println!("  ⚠️  Enforcement: Application-layer tracking");
                     }
                     crate::wallet::utxo_manager::BondEnforcementLevel::ScriptBased { script_pubkey, unlock_script_condition } => {
@@ -65,7 +65,7 @@ pub async fn handle_command(command: &str, utxo_manager: &mut UtxoLockManager) {
                         println!("  ✅ Enforcement: TRUE blockchain script-based locking");
                         match unlock_script_condition {
                             crate::wallet::kaspa_scripts::ScriptUnlockCondition::TimeLock { unlock_time, .. } => {
-                                println!("  ⏰ Unlock time: {} (time-lock only)", unlock_time);
+                                println!("  ⏰ Unlock time: {unlock_time} (time-lock only)");
                             }
                             crate::wallet::kaspa_scripts::ScriptUnlockCondition::TimeOrModerator {
                                 unlock_time,
@@ -73,7 +73,7 @@ pub async fn handle_command(command: &str, utxo_manager: &mut UtxoLockManager) {
                                 required_signatures,
                                 ..
                             } => {
-                                println!("  ⏰ Unlock time: {} OR moderator consensus", unlock_time);
+                                println!("  ⏰ Unlock time: {unlock_time} OR moderator consensus");
                                 println!("  👥 Moderators: {} (require {} signatures)", moderator_pubkeys.len(), required_signatures);
                             }
                             _ => {
@@ -83,7 +83,7 @@ pub async fn handle_command(command: &str, utxo_manager: &mut UtxoLockManager) {
                     }
                 }
                 if let Some(confirmation_height) = locked_utxo.confirmation_height {
-                    println!("  ✅ Confirmed at height {}", confirmation_height);
+                    println!("  ✅ Confirmed at height {confirmation_height}");
                 } else {
                     println!("  ⏳ Pending confirmation");
                 }
@@ -101,6 +101,5 @@ pub async fn handle_command(command: &str, utxo_manager: &mut UtxoLockManager) {
 
     if command == "script-bond" {
         // ... logic for script-bond ...
-        return;
     }
 }

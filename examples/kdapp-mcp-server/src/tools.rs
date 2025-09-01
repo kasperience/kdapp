@@ -90,7 +90,7 @@ pub async fn execute_command(
                 Some(p) if p.is_u64() => (p.as_u64().unwrap_or(255)) as u8,
                 _ => 255,
             };
-            if row < 0 || row > 2 || col < 0 || col > 2 || player_code > 1 {
+            if !(0..=2).contains(&row) || !(0..=2).contains(&col) || player_code > 1 {
                 return Err(anyhow::anyhow!("Invalid move parameters"));
             }
             TttCommand::Move { row: row as u8, col: col as u8, player: player_code }
@@ -110,7 +110,7 @@ pub async fn execute_command(
     let secret = keypair.secret_key();
     let pubkey = PubKey(keypair.public_key());
     // Prepare the signed message once for engine and optional on-chain tx
-    let signed: EpisodeMessage<TicTacToeEpisode> = EpisodeMessage::new_signed_command(episode_id, cmd.clone(), secret.clone(), pubkey);
+    let signed: EpisodeMessage<TicTacToeEpisode> = EpisodeMessage::new_signed_command(episode_id, cmd.clone(), secret, pubkey);
 
     // Try to generate and submit a transaction if we have the necessary components
     let transaction_result = if let Some(node_client) = &state.node_client {
@@ -126,20 +126,20 @@ pub async fn execute_command(
         );
 
         println!("🔑 Signing with pubkey: {}", keypair.public_key());
-        println!("🎯 Using participant address: {}", participant_addr);
+        println!("🎯 Using participant address: {participant_addr}");
 
         // Get UTXOs for participant
         match node_client.get_utxos_by_addresses(vec![participant_addr.clone()]).await {
             Ok(entries) => {
                 println!("🔍 Found {} UTXO entries for address {}", entries.len(), participant_addr);
                 if entries.is_empty() {
-                    eprintln!("No UTXOs found for participant wallet. Please fund the wallet at: {}", participant_addr);
+                    eprintln!("No UTXOs found for participant wallet. Please fund the wallet at: {participant_addr}");
                     None
                 } else {
                     // Use the first UTXO (in a real implementation, you would want to select an unused UTXO)
                     let entry = &entries[0];
-                    println!("📝 Using UTXO: {:?}", entry);
-                    let outpoint = TransactionOutpoint::from(entry.outpoint.clone());
+                    println!("📝 Using UTXO: {entry:?}");
+                    let outpoint = TransactionOutpoint::from(entry.outpoint);
                     let utxo_entry = UtxoEntry::from(entry.utxo_entry.clone());
                     let utxo = (outpoint, utxo_entry);
 
@@ -155,18 +155,18 @@ pub async fn execute_command(
                     // Try to submit the transaction
                     println!("📤 Submitting transaction {} to blockchain...", transaction.id());
                     let submit_result = node_client.submit_transaction(transaction.as_ref().into(), false).await;
-                    println!("📝 Submit result: {:?}", submit_result);
+                    println!("📝 Submit result: {submit_result:?}");
                     match submit_result {
                         Ok(submit_response) => {
                             let txid = transaction.id().to_string();
-                            let url = format!("https://explorer-tn10.kaspa.org/txs/{}", txid);
-                            println!("✅ Transaction {} submitted!", txid);
-                            println!("🔗 Explorer: {}", url);
-                            println!("📄 Submit response: {:?}", submit_response);
+                            let url = format!("https://explorer-tn10.kaspa.org/txs/{txid}");
+                            println!("✅ Transaction {txid} submitted!");
+                            println!("🔗 Explorer: {url}");
+                            println!("📄 Submit response: {submit_response:?}");
                             Some(serde_json::json!({"txid": txid, "explorer_url": url}))
                         }
                         Err(e) => {
-                            eprintln!("❌ Failed to submit transaction: {}", e);
+                            eprintln!("❌ Failed to submit transaction: {e}");
                             // Return None if submission fails
                             None
                         }
@@ -174,7 +174,7 @@ pub async fn execute_command(
                 }
             }
             Err(e) => {
-                eprintln!("Failed to get UTXOs: {}", e);
+                eprintln!("Failed to get UTXOs: {e}");
                 None
             }
         }

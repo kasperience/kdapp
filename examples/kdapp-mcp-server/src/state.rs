@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::wallet::AgentWallet;
 use kaspa_wrpc_client::KaspaRpcClient;
 use kdapp::engine::{Engine, EngineMsg};
@@ -96,7 +97,7 @@ impl Episode for TicTacToeEpisode {
                 }
                 // Authorization required and must match designated participant for this player
                 let auth_pk = authorization.ok_or(EpisodeError::Unauthorized)?;
-                let designated = if *player == 0 { self.participants.get(0) } else { self.participants.get(1) };
+                let designated = if *player == 0 { self.participants.first() } else { self.participants.get(1) };
                 if let Some(expected) = designated {
                     if &auth_pk != expected {
                         return Err(EpisodeError::Unauthorized);
@@ -197,7 +198,7 @@ impl EpisodeEventHandler<TicTacToeEpisode> for TttEventHandler {
             m.insert(episode_id, snap.clone());
         }
         self.persist_snapshot(episode_id, &snap, "command");
-        debug!("TicTacToe episode {} updated", episode_id);
+        debug!("TicTacToe episode {episode_id} updated");
     }
     fn on_rollback(&self, episode_id: kdapp::episode::EpisodeId, episode: &TicTacToeEpisode) {
         let current = match episode.current {
@@ -209,7 +210,7 @@ impl EpisodeEventHandler<TicTacToeEpisode> for TttEventHandler {
             m.insert(episode_id, snap.clone());
         }
         self.persist_snapshot(episode_id, &snap, "rollback");
-        debug!("TicTacToe episode {} rolled back", episode_id);
+        debug!("TicTacToe episode {episode_id} rolled back");
     }
 }
 
@@ -217,11 +218,11 @@ impl TttEventHandler {
     fn persist_snapshot(&self, episode_id: kdapp::episode::EpisodeId, snap: &TttSnapshot, event: &str) {
         // Ensure directory exists
         if let Err(e) = fs::create_dir_all(&self.dir) {
-            eprintln!("Failed creating episodes dir: {}", e);
+            eprintln!("Failed creating episodes dir: {e}");
             return;
         }
         // Write snapshot file
-        let path = self.dir.join(format!("{}.json", episode_id));
+        let path = self.dir.join(format!("{episode_id}.json"));
         if let Ok(json) = serde_json::to_string_pretty(snap) {
             if let Err(e) = fs::write(&path, json) {
                 eprintln!("Failed persisting snapshot {}: {}", path.display(), e);
@@ -239,7 +240,6 @@ impl TttEventHandler {
                     "ts": chrono::Utc::now().to_rfc3339(),
                     "snapshot": snap,
                 })
-                .to_string()
             );
         }
     }

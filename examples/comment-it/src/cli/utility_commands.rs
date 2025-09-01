@@ -99,7 +99,7 @@ fn show_wallet_status(role: &str) -> Result<(), Box<dyn Error>> {
 fn check_wallet_role(role: &str) {
     use std::path::Path;
 
-    let wallet_file = Path::new(".kaspa-auth").join(format!("{}-wallet.key", role));
+    let wallet_file = Path::new(".kaspa-auth").join(format!("{role}-wallet.key"));
 
     println!("🔑 {} Wallet:", role.to_uppercase());
 
@@ -112,14 +112,14 @@ fn check_wallet_role(role: &str) {
 
                 println!("  ✅ Status: EXISTS and LOADED");
                 println!("  📁 File: {}", wallet_file.display());
-                println!("  📊 Size: {} bytes", file_size);
-                println!("  🏠 Address: {}", kaspa_addr);
+                println!("  📊 Size: {file_size} bytes");
+                println!("  🏠 Address: {kaspa_addr}");
                 println!("  🔄 Will be REUSED on next run");
             }
             Err(e) => {
                 println!("  ❌ Status: EXISTS but CORRUPTED");
                 println!("  📁 File: {}", wallet_file.display());
-                println!("  ⚠️  Error: {}", e);
+                println!("  ⚠️  Error: {e}");
                 println!("  🔧 Solution: Delete file to recreate");
             }
         }

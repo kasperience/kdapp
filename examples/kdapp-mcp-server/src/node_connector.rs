@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // src/node_connector.rs - Node connection functionality for kdapp MCP Server
 use anyhow::Result;
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
@@ -27,7 +28,7 @@ pub async fn connect_to_node(config: NodeConfig) -> Result<KaspaRpcClient> {
     println!("📡 Connecting to Kaspa network: {:?}", config.network_id);
 
     if let Some(ref url) = config.rpc_url {
-        println!("🔗 Using custom RPC URL: {}", url);
+        println!("🔗 Using custom RPC URL: {url}");
     }
 
     let client = connect_client(config.network_id, config.rpc_url).await?;

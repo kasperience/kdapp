@@ -55,8 +55,7 @@ impl BorshDeserialize for Sig {
         let len = u32::deserialize_reader(reader)? as usize;
         let mut buf = vec![0u8; len];
         reader.read_exact(&mut buf)?;
-        let sig = Signature::from_der(&buf)
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid signature"))?;
+        let sig = Signature::from_der(&buf).map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid signature"))?;
         Ok(Sig(sig))
     }
 }

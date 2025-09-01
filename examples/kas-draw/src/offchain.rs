@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex};
 
+use kaspa_consensus_core::Hash;
 use kdapp::engine::EngineMsg;
 use kdapp::episode::TxOutputInfo;
-use kaspa_consensus_core::Hash;
 use log::{info, warn};
 
 use crate::tlv::{MsgType, TlvMsg, TLV_VERSION};
@@ -23,23 +23,29 @@ impl OffchainRouter {
 
     pub fn run_udp(&self, bind: &str) {
         let sock = UdpSocket::bind(bind).expect("bind offchain router");
-        info!("offchain router listening on {}", bind);
+        info!("offchain router listening on {bind}");
         let mut buf = vec![0u8; 64 * 1024];
         loop {
             let (n, src) = match sock.recv_from(&mut buf) {
                 Ok(x) => x,
                 Err(e) => {
-                    warn!("router recv error: {}", e);
+                    warn!("router recv error: {e}");
                     continue;
                 }
             };
             let bytes = &buf[..n];
             let Some(msg) = TlvMsg::decode(bytes) else {
-                warn!("router: invalid TLV from {} (len={})", src, n);
+                warn!("router: invalid TLV from {src} (len={n})");
                 continue;
             };
-            if msg.version != TLV_VERSION { warn!("router: bad version from {}", src); continue; }
-            let Some(mt) = MsgType::from_u8(msg.msg_type) else { warn!("router: bad msg type from {}", src); continue; };
+            if msg.version != TLV_VERSION {
+                warn!("router: bad version from {src}");
+                continue;
+            }
+            let Some(mt) = MsgType::from_u8(msg.msg_type) else {
+                warn!("router: bad msg type from {src}");
+                continue;
+            };
 
             let mut map = self.last_seq.lock().unwrap();
             let last = map.get(&msg.episode_id).copied();
@@ -50,10 +56,7 @@ impl OffchainRouter {
                         map.insert(msg.episode_id, 0);
                         (true, false)
                     } else {
-                        warn!(
-                            "router: reject NEW for ep {} (seq {}), last={:?}",
-                            msg.episode_id, msg.seq, last
-                        );
+                        warn!("router: reject NEW for ep {} (seq {}), last={:?}", msg.episode_id, msg.seq, last);
                         (false, false)
                     }
                 }
@@ -63,24 +66,16 @@ impl OffchainRouter {
                         (true, false)
                     }
                     Some(prev) => {
-                        warn!(
-                            "router: stale/out-of-order CMD ep {} (got {}, want {})",
-                            msg.episode_id,
-                            msg.seq,
-                            prev + 1
-                        );
+                        warn!("router: stale/out-of-order CMD ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
                         (false, false)
                     }
                     None => {
-                        warn!(
-                            "router: CMD before NEW for ep {} (got seq {} but no state)",
-                            msg.episode_id, msg.seq
-                        );
+                        warn!("router: CMD before NEW for ep {} (got seq {} but no state)", msg.episode_id, msg.seq);
                         (false, false)
                     }
                 },
                 MsgType::Ack => {
-                    info!("router: ack from {} ignored", src);
+                    info!("router: ack from {src} ignored");
                     (false, false)
                 }
                 MsgType::Close => {
@@ -95,62 +90,55 @@ impl OffchainRouter {
                                 (true, true)
                             }
                             Some(prev) => {
-                                warn!(
-                                    "router: stale/out-of-order CLOSE ep {} (got {}, want {})",
-                                    msg.episode_id,
-                                    msg.seq,
-                                    prev + 1
-                                );
+                                warn!("router: stale/out-of-order CLOSE ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
                                 (false, true)
                             }
                             None => {
-                                warn!(
-                                    "router: CLOSE before NEW for ep {} (got seq {} but no state)",
-                                    msg.episode_id, msg.seq
-                                );
+                                warn!("router: CLOSE before NEW for ep {} (got seq {} but no state)", msg.episode_id, msg.seq);
                                 (false, true)
                             }
                         }
                     }
                 }
                 MsgType::AckClose => {
-                    info!("router: ack-close from {} ignored", src);
+                    info!("router: ack-close from {src} ignored");
                     (false, false)
                 }
-                MsgType::Checkpoint => {
-                    match last {
-                        Some(prev) if msg.seq == prev + 1 => {
-                            map.insert(msg.episode_id, msg.seq);
-                            (true, false)
-                        }
-                        Some(prev) => {
-                            warn!("router: out-of-order CKPT ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
-                            (false, false)
-                        }
-                        None => {
-                            warn!("router: CKPT before NEW for ep {} (seq {})", msg.episode_id, msg.seq);
-                            (false, false)
-                        }
+                MsgType::Checkpoint => match last {
+                    Some(prev) if msg.seq == prev + 1 => {
+                        map.insert(msg.episode_id, msg.seq);
+                        (true, false)
                     }
-                }
+                    Some(prev) => {
+                        warn!("router: out-of-order CKPT ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
+                        (false, false)
+                    }
+                    None => {
+                        warn!("router: CKPT before NEW for ep {} (seq {})", msg.episode_id, msg.seq);
+                        (false, false)
+                    }
+                },
             };
             drop(map);
 
-            if !accepted { continue; }
+            if !accepted {
+                continue;
+            }
 
             // Forward to engine as a synthetic block-accepted event
             let accepting_hash: Hash = Hash::default();
             let tx_id: Hash = Hash::default();
-            let now_secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
+            let now_secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
             // Wrap as single-item batch. For Checkpoint, we don't forward to engine — it's for watchers only.
             let payload = if matches!(mt, MsgType::Close) {
                 // Convert Close TLV into an unsigned CloseEpisode command
                 let eid = msg.episode_id as u32;
                 let cmd = crate::episode::LotteryCommand::CloseEpisode;
-                borsh::to_vec(&kdapp::engine::EpisodeMessage::<crate::episode::LotteryEpisode>::UnsignedCommand { episode_id: eid, cmd }).unwrap()
+                borsh::to_vec(&kdapp::engine::EpisodeMessage::<crate::episode::LotteryEpisode>::UnsignedCommand {
+                    episode_id: eid,
+                    cmd,
+                })
+                .unwrap()
             } else if matches!(mt, MsgType::Checkpoint) {
                 Vec::new()
             } else {
@@ -159,12 +147,12 @@ impl OffchainRouter {
             if !matches!(mt, MsgType::Checkpoint) {
                 let event = EngineMsg::BlkAccepted {
                     accepting_hash,
-                    accepting_daa: msg.seq as u64,
+                    accepting_daa: msg.seq,
                     accepting_time: now_secs,
                     associated_txs: vec![(tx_id, payload, None::<Vec<TxOutputInfo>>)],
                 };
                 if let Err(e) = self.sender.send(event) {
-                    warn!("router: failed forwarding to engine: {}", e);
+                    warn!("router: failed forwarding to engine: {e}");
                     continue;
                 }
             }
@@ -191,4 +179,3 @@ impl OffchainRouter {
         }
     }
 }
-

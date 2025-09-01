@@ -25,7 +25,7 @@ pub async fn handle_authenticate(sub_matches: &ArgMatches) -> Result<(), Box<dyn
     let funding_wallet = get_wallet_for_command("participant-peer", None)?;
     let funding_keypair = funding_wallet.keypair;
 
-    println!("🔐 Running focused authentication test ({}s timeout)", timeout_seconds);
+    println!("🔐 Running focused authentication test ({timeout_seconds}s timeout)");
 
     if use_pure_kdapp {
         println!("🚀 Starting pure kdapp authentication (experimental)");
@@ -33,7 +33,7 @@ pub async fn handle_authenticate(sub_matches: &ArgMatches) -> Result<(), Box<dyn
         run_authentication_with_timeout(_auth_keypair, peer_url.clone(), timeout_seconds).await?;
     } else {
         println!("🚀 Starting hybrid authentication (kdapp + HTTP coordination)");
-        println!("🎯 Organizer peer: {}", peer_url);
+        println!("🎯 Organizer peer: {peer_url}");
         run_authentication_with_timeout(funding_keypair, peer_url, timeout_seconds).await?;
     }
 
@@ -62,8 +62,8 @@ pub async fn handle_authenticate_full_flow(sub_matches: &ArgMatches) -> Result<(
     let funding_keypair = funding_wallet.keypair;
 
     println!("🔄 Running complete authentication lifecycle test");
-    println!("⏱️  Auth timeout: {}s, Session duration: {}s", auth_timeout, session_duration);
-    println!("🎯 Organizer peer: {}", peer_url);
+    println!("⏱️  Auth timeout: {auth_timeout}s, Session duration: {session_duration}s");
+    println!("🎯 Organizer peer: {peer_url}");
 
     run_full_authentication_cycle(funding_keypair, peer_url).await?;
 
@@ -87,8 +87,8 @@ pub async fn handle_logout(sub_matches: &ArgMatches) -> Result<(), Box<dyn Error
         wallet.keypair
     };
 
-    println!("🚪 Running focused logout test ({}s timeout)", timeout_seconds);
-    println!("📋 Episode: {}, Session: {}", episode_id, session_token);
+    println!("🚪 Running focused logout test ({timeout_seconds}s timeout)");
+    println!("📋 Episode: {episode_id}, Session: {session_token}");
 
     run_logout_with_timeout(_auth_keypair, episode_id, session_token, peer_url, timeout_seconds).await?;
 

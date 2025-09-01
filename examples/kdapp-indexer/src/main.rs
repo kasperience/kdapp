@@ -1,13 +1,16 @@
-mod models;
-mod storage;
 mod api;
 mod listener;
+mod models;
+mod storage;
 
+use axum::http::HeaderValue;
 use axum::{routing::get, Router};
 use std::net::SocketAddr;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tower_http::cors::{Any, CorsLayer};
-use axum::http::HeaderValue;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exit_clone = exit_signal.clone();
     tokio::spawn(async move {
         if let Err(e) = listener::run_with_config(store_clone, network_id, wrpc_url, exit_clone).await {
-            eprintln!("indexer listener error: {}", e);
+            eprintln!("indexer listener error: {e}");
         }
     });
 
@@ -49,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(cors);
 
     let addr: SocketAddr = "0.0.0.0:8090".parse()?;
-    println!("kdapp-indexer on http://{}/", addr);
+    println!("kdapp-indexer on http://{addr}/");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let shutdown = async move {
         let _ = tokio::signal::ctrl_c().await;
@@ -61,15 +64,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn build_cors_from_env() -> CorsLayer {
     if let Ok(origins) = std::env::var("INDEX_CORS_ORIGINS") {
-        let list = origins
-            .split(',')
-            .filter_map(|s| HeaderValue::from_str(s.trim()).ok())
-            .collect::<Vec<_>>();
+        let list = origins.split(',').filter_map(|s| HeaderValue::from_str(s.trim()).ok()).collect::<Vec<_>>();
         if !list.is_empty() {
-            return CorsLayer::new()
-                .allow_origin(list)
-                .allow_methods(tower_http::cors::AllowMethods::any())
-                .allow_headers(Any);
+            return CorsLayer::new().allow_origin(list).allow_methods(tower_http::cors::AllowMethods::any()).allow_headers(Any);
         }
     }
     CorsLayer::new().allow_origin(Any).allow_methods(tower_http::cors::AllowMethods::any()).allow_headers(Any)

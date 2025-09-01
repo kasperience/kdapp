@@ -79,13 +79,13 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for AuthEventHandler {
 
                         match res {
                             Ok(response) if response.status().is_success() => {
-                                info!("Successfully notified HTTP server for episode {}", episode_id_clone);
+                                info!("Successfully notified HTTP server for episode {episode_id_clone}");
                             }
                             Ok(response) => {
                                 error!("Failed to notify HTTP server for episode {}: Status {}", episode_id_clone, response.status());
                             }
                             Err(e) => {
-                                error!("Failed to notify HTTP server for episode {}: Error {}", episode_id_clone, e);
+                                error!("Failed to notify HTTP server for episode {episode_id_clone}: Error {e}");
                             }
                         }
                     });
@@ -104,7 +104,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for AuthEventHandler {
                     let session_token_clone = session_token.clone();
                     tokio::spawn(async move {
                         let url = "http://127.0.0.1:8080/internal/session-revoked"; // TODO: Make configurable
-                        info!("Attempting to notify HTTP server of session revocation at {}", url);
+                        info!("Attempting to notify HTTP server of session revocation at {url}");
                         let res = client
                             .post(url)
                             .json(&json!({
@@ -116,7 +116,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for AuthEventHandler {
 
                         match res {
                             Ok(response) if response.status().is_success() => {
-                                info!("✅ Successfully notified HTTP server of session revocation for episode {}", episode_id_clone);
+                                info!("✅ Successfully notified HTTP server of session revocation for episode {episode_id_clone}");
                             }
                             Ok(response) => {
                                 error!(
@@ -127,8 +127,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for AuthEventHandler {
                             }
                             Err(e) => {
                                 error!(
-                                    "❌ Failed to notify HTTP server of session revocation for episode {}: Error {}",
-                                    episode_id_clone, e
+                                    "❌ Failed to notify HTTP server of session revocation for episode {episode_id_clone}: Error {e}"
                                 );
                             }
                         }
@@ -169,7 +168,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for AuthEventHandler {
 
                         match res {
                             Ok(response) if response.status().is_success() => {
-                                info!("✅ Successfully notified HTTP server of new comment for episode {}", episode_id_clone);
+                                info!("✅ Successfully notified HTTP server of new comment for episode {episode_id_clone}");
                             }
                             Ok(response) => {
                                 error!(
@@ -179,7 +178,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for AuthEventHandler {
                                 );
                             }
                             Err(e) => {
-                                error!("❌ Failed to notify HTTP server of new comment for episode {}: Error {}", episode_id_clone, e);
+                                error!("❌ Failed to notify HTTP server of new comment for episode {episode_id_clone}: Error {e}");
                             }
                         }
                     });
@@ -278,14 +277,14 @@ pub async fn run_auth_server(config: AuthServerConfig) -> Result<(), Box<dyn std
     // 5. Set up engines map for proxy
     let engines = std::iter::once((AUTH_PREFIX, (AUTH_PATTERN, sender))).collect();
 
-    info!("👂 Listening for auth transactions with prefix: 0x{:08X}", AUTH_PREFIX);
-    info!("🔍 Using pattern: {:?}", AUTH_PATTERN);
+    info!("👂 Listening for auth transactions with prefix: 0x{AUTH_PREFIX:08X}");
+    info!("🔍 Using pattern: {AUTH_PATTERN:?}");
 
     // 7. Start proxy listener
     proxy::run_listener(kaspad, engines, exit_signal).await;
 
     // Wait for engine to finish
-    let _ = engine_task.await?;
+    engine_task.await?;
 
     info!("✅ Auth server shutdown gracefully");
 

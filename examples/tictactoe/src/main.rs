@@ -104,7 +104,7 @@ async fn main() {
         (sk, pk)
     };
 
-    info!("Player public key: {}", player_pk);
+    info!("Player public key: {player_pk}");
 
     // ... and opponent pk
     let opponent_pk = args.game_opponent_key.map(|opponent_key_hex| PubKey(PublicKey::from_str(&opponent_key_hex).unwrap()));

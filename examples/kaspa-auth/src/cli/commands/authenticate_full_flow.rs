@@ -65,7 +65,7 @@ async fn run_full_authentication_cycle(
     auth_timeout: u64,
 ) -> Result<(), Box<dyn Error>> {
     println!("🔄 Starting complete authentication lifecycle test");
-    println!("⏱️  Phase 1: Login ({}s timeout)", auth_timeout);
+    println!("⏱️  Phase 1: Login ({auth_timeout}s timeout)");
 
     // Phase 1: Authenticate using WORKING endpoint pattern
     let auth_timeout_duration = tokio::time::Duration::from_secs(auth_timeout);
@@ -80,17 +80,17 @@ async fn run_full_authentication_cycle(
             auth_details
         }
         Ok(Err(e)) => {
-            println!("❌ Phase 1: Authentication failed: {}", e);
+            println!("❌ Phase 1: Authentication failed: {e}");
             return Err(e);
         }
         Err(_) => {
-            println!("⏰ Phase 1: Authentication timed out after {}s", auth_timeout);
+            println!("⏰ Phase 1: Authentication timed out after {auth_timeout}s");
             return Err("Authentication timeout".into());
         }
     };
 
     // Phase 2: Simulate active session
-    println!("⏱️  Phase 2: Active session ({}s duration)", session_duration);
+    println!("⏱️  Phase 2: Active session ({session_duration}s duration)");
     println!("🔒 Session is active - simulating user activity...");
 
     tokio::time::sleep(tokio::time::Duration::from_secs(session_duration)).await;
@@ -106,9 +106,9 @@ async fn run_full_authentication_cycle(
             println!("✅ Full authentication cycle test completed - Login → Active Session → Logout");
         }
         Err(e) => {
-            println!("❌ Phase 3: Session revocation failed: {}", e);
+            println!("❌ Phase 3: Session revocation failed: {e}");
             println!("⚠️  Authentication cycle incomplete - logout failed");
-            return Err(format!("Logout failed: {}", e).into());
+            return Err(format!("Logout failed: {e}").into());
         }
     }
 

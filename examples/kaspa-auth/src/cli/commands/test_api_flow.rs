@@ -20,7 +20,7 @@ impl TestApiFlowCommand {
         let keypair = Keypair::from_secret_key(&secp, &secret_key);
         let public_key_hex = hex::encode(keypair.public_key().serialize());
 
-        println!("🔑 Generated temporary participant peer keypair. Public key: {}", public_key_hex);
+        println!("🔑 Generated temporary participant peer keypair. Public key: {public_key_hex}");
 
         // Step 1: Start Auth
         println!(
@@ -38,7 +38,7 @@ impl TestApiFlowCommand {
         }
         let start_data: Value = start_res.json().await?;
         let episode_id = start_data["episode_id"].as_u64().unwrap();
-        println!("✅ Success! Episode ID: {}", episode_id);
+        println!("✅ Success! Episode ID: {episode_id}");
 
         // Step 2: Request Challenge
         println!(
@@ -58,8 +58,7 @@ impl TestApiFlowCommand {
         // Step 3: Poll for Challenge
         println!(
             "
-[3/5] Polling GET /auth/status/{} for challenge...",
-            episode_id
+[3/5] Polling GET /auth/status/{episode_id} for challenge..."
         );
         let mut challenge = String::new();
         for _ in 0..10 {
@@ -67,7 +66,7 @@ impl TestApiFlowCommand {
             let status_data: Value = status_res.json().await?;
             if let Some(c) = status_data["challenge"].as_str() {
                 challenge = c.to_string();
-                println!("✅ Success! Received challenge: {}", challenge);
+                println!("✅ Success! Received challenge: {challenge}");
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -104,7 +103,7 @@ impl TestApiFlowCommand {
             return Err(format!("Failed to verify auth: {}", verify_res.status()).into());
         }
         let verify_data: Value = verify_res.json().await?;
-        println!("✅ Verification request successful: {}", verify_data);
+        println!("✅ Verification request successful: {verify_data}");
 
         println!(
             "

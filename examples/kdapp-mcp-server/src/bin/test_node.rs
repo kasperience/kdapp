@@ -12,7 +12,7 @@ async fn main() -> Result<()> {
     println!("🔧 Node configuration:");
     println!("   Network: {:?}", node_config.network_id);
     if let Some(ref url) = node_config.rpc_url {
-        println!("   RPC URL: {}", url);
+        println!("   RPC URL: {url}");
     } else {
         println!("   RPC URL: Using default resolver");
     }
@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
             println!("✅ Node connection test completed successfully!");
         }
         Err(e) => {
-            println!("⚠️  Node connection test failed: {}", e);
+            println!("⚠️  Node connection test failed: {e}");
             println!("   This is expected if no local node is running");
         }
     }

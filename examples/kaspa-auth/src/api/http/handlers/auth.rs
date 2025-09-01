@@ -3,14 +3,7 @@ use crate::api::http::{
     state::PeerState,
     types::{AuthRequest, AuthResponse},
 };
-use crate::core::episode::SimpleAuth;
 use axum::{extract::State, http::StatusCode, response::Json};
-use kaspa_addresses::{Address, Prefix, Version};
-use kdapp::{
-    episode::{Episode, PayloadMetadata},
-    pki::PubKey,
-};
-use rand::Rng;
 
 /// Start authentication - HTTP coordination only, no blockchain!
 pub async fn start_auth(

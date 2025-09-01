@@ -22,4 +22,3 @@ pub struct EpisodeDetail {
     pub snapshot: EpisodeSnapshot,
     pub recent_comments: Vec<CommentRow>,
 }
-

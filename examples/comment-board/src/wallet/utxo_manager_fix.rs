@@ -52,8 +52,8 @@ impl UtxoLockManager {
                     self.refresh_utxos(&self.kaspad_client).await?;
                 }
                 Err(e) => {
-                    error!("❌ Failed to submit split transaction: {}", e);
-                    return Err(format!("Split transaction failed: {}", e).into());
+                    error!("❌ Failed to submit split transaction: {e}");
+                    return Err(format!("Split transaction failed: {e}").into());
                 }
             }
         }
@@ -69,7 +69,7 @@ async fn run_comment_board(...) {
     // Split large UTXOs before starting
     info!("🔄 Checking for large UTXOs that need splitting...");
     if let Err(e) = utxo_manager.split_large_utxo(10_000_000_000).await { // Split anything > 10 KAS
-        warn!("Failed to split UTXOs: {}", e);
+        warn!("Failed to split UTXOs: {e}");
     }
     
     // ... rest of the code ...

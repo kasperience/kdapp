@@ -21,14 +21,14 @@ pub async fn create_wallet(dev_mode: bool) -> Result<()> {
     if dev_mode {
         println!("\nWARNING: Development mode enabled. Private key will be stored INSECURELY in a local file.\nDO NOT USE FOR REAL FUNDS!\n");
         fs::write(DEV_KEY_FILE, &private_key_hex).await?;
-        println!("Wallet created and private key stored in '{}'.", DEV_KEY_FILE);
+        println!("Wallet created and private key stored in '{DEV_KEY_FILE}'.");
 
         let address = Address::new(
             kaspa_addresses::Prefix::Testnet, // Assuming Testnet for now, can be configurable
             kaspa_addresses::Version::PubKey,
             &public_key.serialize()[1..], // Remove compression byte for address
         );
-        println!("\nWALLET NEEDS FUNDING! Visit https://faucet.kaspanet.io/ and fund: {}", address.to_string());
+        println!("\nWALLET NEEDS FUNDING! Visit https://faucet.kaspanet.io/ and fund: {address}");
     } else {
         let service = "kdapp-wallet";
         let username = "default_wallet";
@@ -42,7 +42,7 @@ pub async fn create_wallet(dev_mode: bool) -> Result<()> {
 
 async fn get_private_key(dev_mode: bool) -> Result<String> {
     if dev_mode {
-        if !fs::metadata(DEV_KEY_FILE).await.is_ok() {
+        if fs::metadata(DEV_KEY_FILE).await.is_err() {
             return Err(anyhow!("Development key file '{}' not found. Please create a wallet in dev mode first.", DEV_KEY_FILE));
         }
         Ok(fs::read_to_string(DEV_KEY_FILE).await?)
@@ -70,7 +70,7 @@ pub async fn get_address(dev_mode: bool) -> Result<()> {
         &public_key.serialize()[1..], // Remove compression byte for address
     );
 
-    println!("Wallet Address: {}", address.to_string());
+    println!("Wallet Address: {address}");
 
     Ok(())
 }

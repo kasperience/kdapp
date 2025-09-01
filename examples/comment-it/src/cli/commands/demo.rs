@@ -5,7 +5,7 @@ use std::error::Error;
 
 pub fn test_episode_logic(participant_count: usize) -> Result<(), Box<dyn Error>> {
     println!("🎯 Testing AuthWithCommentsEpisode Episode Logic");
-    println!("Participants: {}", participant_count);
+    println!("Participants: {participant_count}");
 
     // Generate keypairs for participants
     let mut keypairs = Vec::new();
@@ -36,8 +36,7 @@ pub fn test_episode_logic(participant_count: usize) -> Result<(), Box<dyn Error>
 
     println!(
         "
-🔑 Testing authentication flow for participant: {}",
-        pub_key
+🔑 Testing authentication flow for participant: {pub_key}"
     );
 
     // Step 1: Request challenge
@@ -45,7 +44,7 @@ pub fn test_episode_logic(participant_count: usize) -> Result<(), Box<dyn Error>
     let rollback1 = auth_episode.execute(&UnifiedCommand::RequestChallenge, Some(*pub_key), &metadata)?;
 
     let challenge = auth_episode.challenge().unwrap();
-    println!("🎲 Received challenge: {}", challenge);
+    println!("🎲 Received challenge: {challenge}");
 
     // Step 2: Sign challenge
     println!("✍️ Signing challenge...");
@@ -65,7 +64,7 @@ pub fn test_episode_logic(participant_count: usize) -> Result<(), Box<dyn Error>
     if auth_episode.is_authenticated() {
         println!("✅ Authentication successful!");
         if let Some(ref token) = auth_episode.session_token() {
-            println!("🎟️ Session token: {}", token);
+            println!("🎟️ Session token: {token}");
         }
     } else {
         println!("❌ Authentication failed");
@@ -101,8 +100,8 @@ pub fn run_interactive_demo() -> Result<(), Box<dyn Error>> {
         "
 👥 Participants:"
     );
-    println!("Alice (requester): {}", alice_pk);
-    println!("Bob (verifier): {}", bob_pk);
+    println!("Alice (requester): {alice_pk}");
+    println!("Bob (verifier): {bob_pk}");
 
     let metadata = PayloadMetadata {
         accepting_hash: 0u64.into(),
@@ -128,7 +127,7 @@ pub fn run_interactive_demo() -> Result<(), Box<dyn Error>> {
     let _rollback = auth_episode.execute(&UnifiedCommand::RequestChallenge, Some(alice_pk), &metadata)?;
 
     let challenge = auth_episode.challenge().unwrap();
-    println!("📨 Bob sends challenge to Alice: {}", challenge);
+    println!("📨 Bob sends challenge to Alice: {challenge}");
 
     // Alice signs the challenge
     println!("✍️ Alice signs the challenge...");
@@ -151,7 +150,7 @@ pub fn run_interactive_demo() -> Result<(), Box<dyn Error>> {
     if auth_episode.is_authenticated() {
         println!("✅ Alice successfully authenticated!");
         if let Some(ref token) = auth_episode.session_token() {
-            println!("🎟️ Session token issued: {}", token);
+            println!("🎟️ Session token issued: {token}");
         }
         println!("🎉 Authentication complete - Alice can now access protected resources");
     } else {

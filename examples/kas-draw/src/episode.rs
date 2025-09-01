@@ -1,3 +1,4 @@
+#![allow(clippy::enum_variant_names)]
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -24,11 +25,16 @@ pub enum LotteryRollback {
 
 #[derive(thiserror::Error, Debug)]
 pub enum LotteryError {
-    #[error("invalid numbers")] InvalidNumbers,
-    #[error("incorrect ticket price")] IncorrectPrice,
-    #[error("no ticket to claim")] NoTicket,
-    #[error("draw not ready")] DrawNotReady,
-    #[error("unauthorized")] Unauthorized,
+    #[error("invalid numbers")]
+    InvalidNumbers,
+    #[error("incorrect ticket price")]
+    IncorrectPrice,
+    #[error("no ticket to claim")]
+    NoTicket,
+    #[error("draw not ready")]
+    DrawNotReady,
+    #[error("unauthorized")]
+    Unauthorized,
 }
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
@@ -65,7 +71,9 @@ pub struct LotteryEpisode {
 
 impl LotteryEpisode {
     fn validate_numbers(&self, numbers: &[u8; 5]) -> bool {
-        if self.numbers_per_ticket != 5 { return false; }
+        if self.numbers_per_ticket != 5 {
+            return false;
+        }
         let (lo, hi) = self.numbers_range;
         // sorted, in-range, no duplicates
         let mut v = numbers.to_vec();
@@ -105,19 +113,33 @@ impl Episode for LotteryEpisode {
         authorization: Option<PubKey>,
         metadata: &PayloadMetadata,
     ) -> Result<Self::CommandRollback, EpisodeError<Self::CommandError>> {
-        if self.paused { return Err(EpisodeError::InvalidCommand(LotteryError::Unauthorized)); }
+        if self.paused {
+            return Err(EpisodeError::InvalidCommand(LotteryError::Unauthorized));
+        }
         match cmd {
             LotteryCommand::BuyTicket { numbers, entry_amount } => {
                 // M1: single participant key; enforce provided auth key is allowed
-                if let Some(pk) = authorization { if !self.authorized.contains(&pk) { return Err(EpisodeError::Unauthorized); } } else { return Err(EpisodeError::Unauthorized); }
-                if !self.validate_numbers(numbers) { return Err(EpisodeError::InvalidCommand(LotteryError::InvalidNumbers)); }
+                if let Some(pk) = authorization {
+                    if !self.authorized.contains(&pk) {
+                        return Err(EpisodeError::Unauthorized);
+                    }
+                } else {
+                    return Err(EpisodeError::Unauthorized);
+                }
+                if !self.validate_numbers(numbers) {
+                    return Err(EpisodeError::InvalidCommand(LotteryError::InvalidNumbers));
+                }
 
                 // Validate ticket price using carrier tx summary if available
-                if *entry_amount != self.ticket_price { return Err(EpisodeError::InvalidCommand(LotteryError::IncorrectPrice)); }
+                if *entry_amount != self.ticket_price {
+                    return Err(EpisodeError::InvalidCommand(LotteryError::IncorrectPrice));
+                }
                 // If proxy provided tx outputs, require at least one output is >= ticket price (M1 relaxed).
                 if let Some(outs) = &metadata.tx_outputs {
                     let ok = outs.iter().any(|o| o.value >= self.ticket_price);
-                    if !ok { return Err(EpisodeError::InvalidCommand(LotteryError::IncorrectPrice)); }
+                    if !ok {
+                        return Err(EpisodeError::InvalidCommand(LotteryError::IncorrectPrice));
+                    }
                 }
 
                 let id = self.next_ticket_id;
@@ -157,7 +179,9 @@ impl Episode for LotteryEpisode {
             }
             LotteryCommand::CloseEpisode => {
                 // Off-chain demo: allow close without auth.
-                if self.paused { return Err(EpisodeError::InvalidCommand(LotteryError::Unauthorized)); }
+                if self.paused {
+                    return Err(EpisodeError::InvalidCommand(LotteryError::Unauthorized));
+                }
                 self.paused = true;
                 Ok(LotteryRollback::UndoClose)
             }
@@ -170,7 +194,9 @@ impl Episode for LotteryEpisode {
                 if let Some(_t) = self.tickets.remove(&ticket_id) {
                     self.prize_pool = self.prize_pool.saturating_sub(self.ticket_price);
                     true
-                } else { false }
+                } else {
+                    false
+                }
             }
             LotteryRollback::UndoExecuteDraw { round_before, prize_pool_before } => {
                 self.current_round = round_before;

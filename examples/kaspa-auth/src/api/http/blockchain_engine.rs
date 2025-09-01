@@ -15,7 +15,7 @@ use crate::api::http::state::{PeerState, SharedEpisodeState, WebSocketMessage};
 use crate::core::commands::AuthCommand;
 use crate::core::episode::SimpleAuth;
 use crate::episode_runner::{AUTH_PATTERN, AUTH_PREFIX};
-use kaspa_wrpc_client::prelude::{KaspaRpcClient, RpcApi};
+use kaspa_wrpc_client::prelude::RpcApi;
 
 /// The main HTTP coordination peer that runs a real kdapp engine
 #[derive(Clone)]
@@ -44,7 +44,7 @@ impl AuthHttpPeer {
                 Some(Arc::new(kaspad_client))
             }
             Err(e) => {
-                println!("⚠️ Failed to connect to Kaspa node: {}", e);
+                println!("⚠️ Failed to connect to Kaspa node: {e}");
                 println!("📋 Transactions will be created but not submitted");
                 None
             }
@@ -124,20 +124,20 @@ impl AuthHttpPeer {
 
     /// Get episode state from the kdapp engine (not memory!)
     pub fn get_episode_state(&self, episode_id: EpisodeId) -> Option<SimpleAuth> {
-        println!("🔍 Querying blockchain episode state for episode {}", episode_id);
+        println!("🔍 Querying blockchain episode state for episode {episode_id}");
 
         match self.peer_state.blockchain_episodes.lock() {
             Ok(episodes) => {
                 if let Some(episode) = episodes.get(&(episode_id as u64)) {
-                    println!("✅ Found episode {} in blockchain state", episode_id);
+                    println!("✅ Found episode {episode_id} in blockchain state");
                     Some(episode.clone())
                 } else {
-                    println!("⚠️ Episode {} not found in blockchain state", episode_id);
+                    println!("⚠️ Episode {episode_id} not found in blockchain state");
                     None
                 }
             }
             Err(e) => {
-                println!("❌ Failed to lock blockchain episodes: {}", e);
+                println!("❌ Failed to lock blockchain episodes: {e}");
                 None
             }
         }
@@ -164,11 +164,11 @@ impl AuthHttpPeer {
         if let Some(kaspad) = self.peer_state.kaspad_client.as_ref() {
             match kaspad.submit_transaction(tx.as_ref().into(), false).await {
                 Ok(_) => {
-                    println!("✅ Transaction {} submitted to blockchain via AuthHttpPeer", transaction_id);
+                    println!("✅ Transaction {transaction_id} submitted to blockchain via AuthHttpPeer");
                     Ok(transaction_id)
                 }
                 Err(e) => {
-                    println!("❌ Transaction {} submission failed: {}", transaction_id, e);
+                    println!("❌ Transaction {transaction_id} submission failed: {e}");
                     Err(e.into())
                 }
             }
@@ -186,14 +186,14 @@ pub struct HttpAuthHandler {
 
 impl EpisodeEventHandler<SimpleAuth> for HttpAuthHandler {
     fn on_initialize(&self, episode_id: EpisodeId, episode: &SimpleAuth) {
-        println!("🎬 Episode {} initialized on blockchain", episode_id);
+        println!("🎬 Episode {episode_id} initialized on blockchain");
 
         // Store episode in shared blockchain state
         if let Ok(mut episodes) = self.blockchain_episodes.lock() {
             episodes.insert(episode_id.into(), episode.clone());
-            println!("✅ Stored episode {} in blockchain state", episode_id);
+            println!("✅ Stored episode {episode_id} in blockchain state");
         } else {
-            println!("❌ Failed to store episode {} in blockchain state", episode_id);
+            println!("❌ Failed to store episode {episode_id} in blockchain state");
         }
 
         let message = WebSocketMessage {
@@ -215,7 +215,7 @@ impl EpisodeEventHandler<SimpleAuth> for HttpAuthHandler {
         _authorization: Option<kdapp::pki::PubKey>,
         _metadata: &kdapp::episode::PayloadMetadata,
     ) {
-        println!("⚡ Episode {} updated on blockchain", episode_id);
+        println!("⚡ Episode {episode_id} updated on blockchain");
 
         // Read previous state BEFORE updating (for session revocation detection)
         let previous_episode =
@@ -224,9 +224,9 @@ impl EpisodeEventHandler<SimpleAuth> for HttpAuthHandler {
         // Update episode in shared blockchain state
         if let Ok(mut episodes) = self.blockchain_episodes.lock() {
             episodes.insert(episode_id.into(), episode.clone());
-            println!("✅ Updated episode {} in blockchain state", episode_id);
+            println!("✅ Updated episode {episode_id} in blockchain state");
         } else {
-            println!("❌ Failed to update episode {} in blockchain state", episode_id);
+            println!("❌ Failed to update episode {episode_id} in blockchain state");
         }
 
         // Check what kind of update this is
@@ -253,7 +253,7 @@ impl EpisodeEventHandler<SimpleAuth> for HttpAuthHandler {
                         session_token: None,
                     };
                     let _ = self.websocket_tx.send(message);
-                    println!("📡 Sent session_revoked WebSocket message for episode {}", episode_id);
+                    println!("📡 Sent session_revoked WebSocket message for episode {episode_id}");
                     return; // Don't send challenge_issued message
                 }
             }
@@ -271,6 +271,6 @@ impl EpisodeEventHandler<SimpleAuth> for HttpAuthHandler {
     }
 
     fn on_rollback(&self, episode_id: EpisodeId, _episode: &SimpleAuth) {
-        println!("🔄 Episode {} rolled back on blockchain", episode_id);
+        println!("🔄 Episode {episode_id} rolled back on blockchain");
     }
 }

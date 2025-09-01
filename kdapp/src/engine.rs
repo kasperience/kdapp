@@ -158,12 +158,12 @@ impl<G: Episode, H: EpisodeEventHandler<G>> Engine<G, H> {
                     for (tx_id, payload, tx_outputs) in associated_txs {
                         let episode_action: EpisodeMessage<G> = match borsh::from_slice(&payload) {
                             Ok(EpisodeMessage::Revert { episode_id }) => {
-                                warn!("Episode: {}. Illegal revert attempted. Ignoring.", episode_id);
+                                warn!("Episode: {episode_id}. Illegal revert attempted. Ignoring.");
                                 continue;
                             }
                             Ok(episode_action) => episode_action,
                             Err(err) => {
-                                warn!("Payload: {:?} rejected. Parsing error: {}", payload, err);
+                                warn!("Payload: {payload:?} rejected. Parsing error: {err}");
                                 continue;
                             }
                         };
@@ -220,7 +220,7 @@ impl<G: Episode, H: EpisodeEventHandler<G>> Engine<G, H> {
         match episode_action {
             EpisodeMessage::NewEpisode { episode_id, participants } => {
                 if self.episodes.contains_key(&episode_id) {
-                    warn!("Episode with id {} already exists", episode_id);
+                    warn!("Episode with id {episode_id} already exists");
                     return None;
                 }
                 let ew = EpisodeWrapper::<G>::initialize(participants, metadata);
@@ -228,7 +228,7 @@ impl<G: Episode, H: EpisodeEventHandler<G>> Engine<G, H> {
                     handler.on_initialize(episode_id, &ew.episode);
                 }
                 self.episodes.insert(episode_id, ew);
-                debug!("Episode {} created.", episode_id);
+                debug!("Episode {episode_id} created.");
                 self.episode_creation_times.insert(episode_id, metadata.accepting_daa);
 
                 return Some((episode_id, metadata.clone()));
@@ -244,11 +244,11 @@ impl<G: Episode, H: EpisodeEventHandler<G>> Engine<G, H> {
                             return Some((episode_id, metadata.clone()));
                         }
                         Err(e) => {
-                            warn!("Episode {}: Command {:?} rejected: {}", episode_id, cmd, e)
+                            warn!("Episode {episode_id}: Command {cmd:?} rejected: {e}")
                         }
                     }
                 } else {
-                    warn!("Episode {} not found.", episode_id);
+                    warn!("Episode {episode_id} not found.");
                 }
             }
 
@@ -262,17 +262,17 @@ impl<G: Episode, H: EpisodeEventHandler<G>> Engine<G, H> {
                             return Some((episode_id, metadata.clone()));
                         }
                         Err(e) => {
-                            warn!("Episode {}: Command {:?} rejected: {}", episode_id, cmd, e)
+                            warn!("Episode {episode_id}: Command {cmd:?} rejected: {e}")
                         }
                     }
                 } else {
-                    warn!("Episode {} not found.", episode_id);
+                    warn!("Episode {episode_id} not found.");
                 }
             }
 
             EpisodeMessage::Revert { episode_id } => {
                 if let Some(wrapper) = self.episodes.get_mut(&episode_id) {
-                    info!("Episode {}: Reverting command: {:?}", episode_id, metadata.tx_id);
+                    info!("Episode {episode_id}: Reverting command: {:?}", metadata.tx_id);
                     let rollback_result = wrapper.rollback();
                     for handler in handlers.iter() {
                         handler.on_rollback(episode_id, &wrapper.episode);
@@ -283,7 +283,7 @@ impl<G: Episode, H: EpisodeEventHandler<G>> Engine<G, H> {
                         self.episode_creation_times.remove_entry(&episode_id);
                     }
                 } else {
-                    warn!("Episode {} not found.", episode_id);
+                    warn!("Episode {episode_id} not found.");
                 }
                 return None;
             }

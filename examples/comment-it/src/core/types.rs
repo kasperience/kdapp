@@ -94,12 +94,12 @@ pub struct RateLimitData {
 
 impl RateLimitData {
     pub fn is_rate_limited(&self, pubkey: &PubKey) -> bool {
-        let pubkey_str = format!("{}", pubkey);
-        self.attempts.get(&pubkey_str).map_or(false, |&attempts| attempts >= 5)
+        let pubkey_str = format!("{pubkey}");
+        self.attempts.get(&pubkey_str).is_some_and(|&attempts| attempts >= 5)
     }
 
     pub fn increment(&mut self, pubkey: &PubKey) {
-        let pubkey_str = format!("{}", pubkey);
+        let pubkey_str = format!("{pubkey}");
         *self.attempts.entry(pubkey_str).or_insert(0) += 1;
     }
 }

@@ -13,7 +13,7 @@ pub struct ResilientPeerConnection {
 }
 
 #[derive(Debug, Clone)]
-struct PeerStats {
+pub struct PeerStats {
     success_count: u32,
     failure_count: u32,
     last_success: Option<Instant>,
@@ -234,7 +234,7 @@ impl ResilientPeerConnection {
     }
 
     pub async fn get_challenge(&mut self, episode_id: u64) -> Result<ApiResponse, Box<dyn std::error::Error>> {
-        let request = ApiRequest { method: HttpMethod::GET, path: format!("/auth/challenge/{}", episode_id), body: None };
+        let request = ApiRequest { method: HttpMethod::GET, path: format!("/auth/challenge/{episode_id}"), body: None };
 
         self.request(request).await
     }

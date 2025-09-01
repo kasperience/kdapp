@@ -60,14 +60,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match cli {
         Cli::HttpPeer { port, key, wrpc_url: _wrpc_url, rpc_retry: _rpc_retry } => {
             // Dispatch directly to HTTP organizer peer server
-            info!("👂 HTTP organizer peer listening on: 0.0.0.0:{}", port);
+            info!("👂 HTTP organizer peer listening on: 0.0.0.0:{port}");
             comment_it::api::http::organizer_peer::run_http_peer(key.as_deref(), port).await?;
             return Ok(());
         }
         Cli::WsPeer { ws_addr } => {
             // Start WebSocket server for frontend communication
             let listener = TcpListener::bind(&ws_addr).await?;
-            info!("👂 WebSocket server listening on: {}", ws_addr);
+            info!("👂 WebSocket server listening on: {ws_addr}");
 
             // Initialize a shared kaspad client once and reuse (clone) per connection
             let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             while let Ok((stream, _)) = listener.accept().await {
                 let kaspad_client = shared_kaspad.clone();
-                tokio::spawn(handle_connection(stream, signer_keypair.clone(), signer_address.clone(), kaspad_client, network_id));
+                tokio::spawn(handle_connection(stream, signer_keypair, signer_address.clone(), kaspad_client, network_id));
             }
         } // close match cli
     }
@@ -110,11 +110,11 @@ async fn handle_connection(
         let message = message?;
         if message.is_text() {
             let text = message.to_text()?;
-            info!("Received message from frontend: {}", text);
+            info!("Received message from frontend: {text}");
 
             match serde_json::from_str::<FrontendCommand>(text) {
                 Ok(FrontendCommand::SubmitComment { text, episode_id }) => {
-                    info!("Processing SubmitComment command for episode {}: {}", episode_id, text);
+                    info!("Processing SubmitComment command for episode {episode_id}: {text}");
 
                     let command = comment_it::core::UnifiedCommand::SubmitComment { text: text.clone(), session_token: String::new() };
                     let public_key = PubKey(signer_keypair.public_key());
@@ -130,22 +130,22 @@ async fn handle_connection(
                     let entries = kaspad_client.get_utxos_by_addresses(vec![signer_address.clone()]).await?;
                     let first = entries.first().ok_or("No UTXOs found. Wallet needs funding.")?;
                     let utxo = (
-                        kaspa_consensus_core::tx::TransactionOutpoint::from(first.outpoint.clone()),
+                        kaspa_consensus_core::tx::TransactionOutpoint::from(first.outpoint),
                         kaspa_consensus_core::tx::UtxoEntry::from(first.utxo_entry.clone()),
                     );
 
-                    let tx_generator = create_auth_generator(signer_keypair.clone(), network_id);
+                    let tx_generator = create_auth_generator(signer_keypair, network_id);
                     let tx = tx_generator.build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000); // 1000 is placeholder fee
 
                     match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
                         Ok(()) => {
                             let tx_id = tx.id().to_string();
-                            info!("✅ Transaction submitted: {}", tx_id);
+                            info!("✅ Transaction submitted: {tx_id}");
                             let response = serde_json::to_string(&serde_json::json!({ "status": "submitted", "tx_id": tx_id }))?;
                             write.send(tokio_tungstenite::tungstenite::Message::text(response)).await?;
                         }
                         Err(e) => {
-                            warn!("❌ Failed to submit transaction: {}", e);
+                            warn!("❌ Failed to submit transaction: {e}");
                             let error_response = serde_json::to_string(
                                 &serde_json::json!({ "status": "error", "message": format!("Failed to submit transaction: {}", e) }),
                             )?;
@@ -154,7 +154,7 @@ async fn handle_connection(
                     }
                 }
                 Ok(FrontendCommand::RequestChallenge { episode_id }) => {
-                    info!("Processing RequestChallenge command for episode {}", episode_id);
+                    info!("Processing RequestChallenge command for episode {episode_id}");
                     let command = comment_it::core::UnifiedCommand::RequestChallenge;
                     let public_key = PubKey(signer_keypair.public_key());
                     let episode_message = EpisodeMessage::<comment_it::core::AuthWithCommentsEpisode>::new_signed_command(
@@ -167,24 +167,24 @@ async fn handle_connection(
                     let entries = kaspad_client.get_utxos_by_addresses(vec![signer_address.clone()]).await?;
                     let first = entries.first().ok_or("No UTXOs found. Wallet needs funding.")?;
                     let utxo = (
-                        kaspa_consensus_core::tx::TransactionOutpoint::from(first.outpoint.clone()),
+                        kaspa_consensus_core::tx::TransactionOutpoint::from(first.outpoint),
                         kaspa_consensus_core::tx::UtxoEntry::from(first.utxo_entry.clone()),
                     );
 
-                    let tx_generator = create_auth_generator(signer_keypair.clone(), network_id);
+                    let tx_generator = create_auth_generator(signer_keypair, network_id);
                     let tx = tx_generator.build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000);
 
                     match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
                         Ok(()) => {
                             let tx_id = tx.id().to_string();
-                            info!("✅ RequestChallenge transaction submitted: {}", tx_id);
+                            info!("✅ RequestChallenge transaction submitted: {tx_id}");
                             let response = serde_json::to_string(
                                 &serde_json::json!({ "status": "submitted", "tx_id": tx_id, "command": "RequestChallenge" }),
                             )?;
                             write.send(tokio_tungstenite::tungstenite::Message::text(response)).await?;
                         }
                         Err(e) => {
-                            warn!("❌ Failed to submit RequestChallenge transaction: {}", e);
+                            warn!("❌ Failed to submit RequestChallenge transaction: {e}");
                             let error_response = serde_json::to_string(
                                 &serde_json::json!({ "status": "error", "message": format!("Failed to submit RequestChallenge: {}", e) }),
                             )?;
@@ -193,7 +193,7 @@ async fn handle_connection(
                     }
                 }
                 Ok(FrontendCommand::SubmitResponse { episode_id, signature, nonce }) => {
-                    info!("Processing SubmitResponse command for episode {}", episode_id);
+                    info!("Processing SubmitResponse command for episode {episode_id}");
                     let command = comment_it::core::UnifiedCommand::SubmitResponse { signature, nonce };
                     let public_key = PubKey(signer_keypair.public_key());
                     let episode_message = EpisodeMessage::<comment_it::core::AuthWithCommentsEpisode>::new_signed_command(
@@ -206,24 +206,24 @@ async fn handle_connection(
                     let entries = kaspad_client.get_utxos_by_addresses(vec![signer_address.clone()]).await?;
                     let first = entries.first().ok_or("No UTXOs found. Wallet needs funding.")?;
                     let utxo = (
-                        kaspa_consensus_core::tx::TransactionOutpoint::from(first.outpoint.clone()),
+                        kaspa_consensus_core::tx::TransactionOutpoint::from(first.outpoint),
                         kaspa_consensus_core::tx::UtxoEntry::from(first.utxo_entry.clone()),
                     );
 
-                    let tx_generator = create_auth_generator(signer_keypair.clone(), network_id);
+                    let tx_generator = create_auth_generator(signer_keypair, network_id);
                     let tx = tx_generator.build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000);
 
                     match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
                         Ok(()) => {
                             let tx_id = tx.id().to_string();
-                            info!("✅ SubmitResponse transaction submitted: {}", tx_id);
+                            info!("✅ SubmitResponse transaction submitted: {tx_id}");
                             let response = serde_json::to_string(
                                 &serde_json::json!({ "status": "submitted", "tx_id": tx_id, "command": "SubmitResponse" }),
                             )?;
                             write.send(tokio_tungstenite::tungstenite::Message::text(response)).await?;
                         }
                         Err(e) => {
-                            warn!("❌ Failed to submit SubmitResponse transaction: {}", e);
+                            warn!("❌ Failed to submit SubmitResponse transaction: {e}");
                             let error_response = serde_json::to_string(
                                 &serde_json::json!({ "status": "error", "message": format!("Failed to submit SubmitResponse: {}", e) }),
                             )?;
@@ -232,7 +232,7 @@ async fn handle_connection(
                     }
                 }
                 Ok(FrontendCommand::RevokeSession { episode_id, signature }) => {
-                    info!("Processing RevokeSession command for episode {}", episode_id);
+                    info!("Processing RevokeSession command for episode {episode_id}");
                     let command = comment_it::core::UnifiedCommand::RevokeSession { session_token: String::new(), signature };
                     let public_key = PubKey(signer_keypair.public_key());
                     let episode_message = EpisodeMessage::<comment_it::core::AuthWithCommentsEpisode>::new_signed_command(
@@ -245,24 +245,24 @@ async fn handle_connection(
                     let entries = kaspad_client.get_utxos_by_addresses(vec![signer_address.clone()]).await?;
                     let first = entries.first().ok_or("No UTXOs found. Wallet needs funding.")?;
                     let utxo = (
-                        kaspa_consensus_core::tx::TransactionOutpoint::from(first.outpoint.clone()),
+                        kaspa_consensus_core::tx::TransactionOutpoint::from(first.outpoint),
                         kaspa_consensus_core::tx::UtxoEntry::from(first.utxo_entry.clone()),
                     );
 
-                    let tx_generator = create_auth_generator(signer_keypair.clone(), network_id);
+                    let tx_generator = create_auth_generator(signer_keypair, network_id);
                     let tx = tx_generator.build_command_transaction(utxo, &signer_address.clone(), &episode_message, 1000);
 
                     match submit_tx_retry(&kaspad_client, tx.as_ref(), 3).await {
                         Ok(()) => {
                             let tx_id = tx.id().to_string();
-                            info!("✅ RevokeSession transaction submitted: {}", tx_id);
+                            info!("✅ RevokeSession transaction submitted: {tx_id}");
                             let response = serde_json::to_string(
                                 &serde_json::json!({ "status": "submitted", "tx_id": tx_id, "command": "RevokeSession" }),
                             )?;
                             write.send(tokio_tungstenite::tungstenite::Message::text(response)).await?;
                         }
                         Err(e) => {
-                            warn!("❌ Failed to submit RevokeSession transaction: {}", e);
+                            warn!("❌ Failed to submit RevokeSession transaction: {e}");
                             let error_response = serde_json::to_string(
                                 &serde_json::json!({ "status": "error", "message": format!("Failed to submit RevokeSession: {}", e) }),
                             )?;
@@ -271,7 +271,7 @@ async fn handle_connection(
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to parse frontend command: {}. Error: {}", text, e);
+                    warn!("Failed to parse frontend command: {text}. Error: {e}");
                     let error_response = serde_json::to_string(
                         &serde_json::json!({ "status": "error", "message": format!("Invalid command: {}", e) }),
                     )?;
@@ -299,7 +299,7 @@ async fn submit_tx_retry(kaspad: &kaspa_wrpc_client::KaspaRpcClient, tx: &Transa
                     return Ok(());
                 }
                 if tries >= attempts {
-                    return Err(format!("{}", msg));
+                    return Err(msg.to_string());
                 }
                 if msg.contains("WebSocket") || msg.contains("not connected") || msg.contains("disconnected") {
                     let _ = kaspad.connect(Some(connect_options())).await;
@@ -309,7 +309,7 @@ async fn submit_tx_retry(kaspad: &kaspa_wrpc_client::KaspaRpcClient, tx: &Transa
                     // brief retry for orphan case
                     continue;
                 }
-                return Err(format!("{}", msg));
+                return Err(msg.to_string());
             }
         }
     }

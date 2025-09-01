@@ -8,11 +8,11 @@ use kdapp::{
 };
 use log::{error, info, warn};
 use reqwest::Client;
-use std::env;
 use secp256k1::Keypair;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
+use std::env;
 use std::sync::{atomic::AtomicBool, mpsc::channel, Arc, Mutex};
 
 use crate::{core::commands::AuthCommand, core::episode::SimpleAuth};
@@ -69,7 +69,7 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
                     let challenge_clone = episode.challenge.clone().unwrap_or_default();
                     let base = self.notify_base_url.clone();
                     tokio::spawn(async move {
-                        let url = format!("{}/internal/episode-authenticated", base);
+                        let url = format!("{base}/internal/episode-authenticated");
                         let res = participant_peer
                             .post(url)
                             .json(&json!({
@@ -81,7 +81,7 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
 
                         match res {
                             Ok(response) if response.status().is_success() => {
-                                info!("Successfully notified HTTP organizer peer for episode {}", episode_id_clone);
+                                info!("Successfully notified HTTP organizer peer for episode {episode_id_clone}");
                             }
                             Ok(response) => {
                                 error!(
@@ -91,7 +91,7 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
                                 );
                             }
                             Err(e) => {
-                                error!("Failed to notify HTTP organizer peer for episode {}: Error {}", episode_id_clone, e);
+                                error!("Failed to notify HTTP organizer peer for episode {episode_id_clone}: Error {e}");
                             }
                         }
                     });
@@ -110,8 +110,8 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
                     let session_token_clone = session_token.clone();
                     let base = self.notify_base_url.clone();
                     tokio::spawn(async move {
-                        let url = format!("{}/internal/session-revoked", base);
-                        info!("Attempting to notify HTTP organizer peer of session revocation at {}", url);
+                        let url = format!("{base}/internal/session-revoked");
+                        info!("Attempting to notify HTTP organizer peer of session revocation at {url}");
                         let res = participant_peer
                             .post(url)
                             .json(&json!({
@@ -124,8 +124,7 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
                         match res {
                             Ok(response) if response.status().is_success() => {
                                 info!(
-                                    "✅ Successfully notified HTTP organizer peer of session revocation for episode {}",
-                                    episode_id_clone
+                                    "✅ Successfully notified HTTP organizer peer of session revocation for episode {episode_id_clone}"
                                 );
                             }
                             Ok(response) => {
@@ -137,8 +136,7 @@ impl EpisodeEventHandler<SimpleAuth> for AuthEventHandler {
                             }
                             Err(e) => {
                                 error!(
-                                    "❌ Failed to notify HTTP organizer peer of session revocation for episode {}: Error {}",
-                                    episode_id_clone, e
+                                    "❌ Failed to notify HTTP organizer peer of session revocation for episode {episode_id_clone}: Error {e}"
                                 );
                             }
                         }
@@ -234,14 +232,14 @@ pub async fn run_auth_organizer_peer(config: AuthOrganizerConfig) -> Result<(), 
     // 5. Set up engines map for proxy
     let engines = std::iter::once((AUTH_PREFIX, (AUTH_PATTERN, sender))).collect();
 
-    info!("👂 Listening for auth transactions with prefix: 0x{:08X}", AUTH_PREFIX);
-    info!("🔍 Using pattern: {:?}", AUTH_PATTERN);
+    info!("👂 Listening for auth transactions with prefix: 0x{AUTH_PREFIX:08X}");
+    info!("🔍 Using pattern: {AUTH_PATTERN:?}");
 
     // 7. Start proxy listener
     proxy::run_listener(kaspad, engines, exit_signal).await;
 
     // Wait for engine to finish
-    let _ = engine_task.await?;
+    engine_task.await?;
 
     info!("✅ Auth organizer peer shutdown gracefully");
 

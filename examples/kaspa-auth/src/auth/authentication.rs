@@ -1,6 +1,5 @@
 use crate::core::{commands::AuthCommand, episode::SimpleAuth};
 use hex;
-use kaspa_hashes::Hash;
 use reqwest;
 use secp256k1::Keypair;
 use serde_json;
@@ -16,19 +15,19 @@ pub struct AuthenticationResult {
 /// 🚀 Working endpoint authentication - uses WORKING web UI pattern
 /// This function follows the exact same pattern as the working web UI endpoints
 pub async fn run_working_endpoint_authentication(
-    kaspa_signer: Keypair,
+    _kaspa_signer: Keypair,
     auth_signer: Keypair,
     peer_url: String,
 ) -> Result<AuthenticationResult, Box<dyn Error>> {
     let participant_peer = reqwest::Client::new();
     let public_key_hex = hex::encode(auth_signer.public_key().serialize());
 
-    println!("🔑 Using public key: {}", public_key_hex);
+    println!("🔑 Using public key: {public_key_hex}");
 
     // Step 1: Create episode using WORKING /auth/start endpoint
     println!("🚀 Step 1: Creating episode via /auth/start...");
     let start_response = participant_peer
-        .post(&format!("{}/auth/start", peer_url))
+        .post(format!("{peer_url}/auth/start"))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
             "public_key": public_key_hex
@@ -43,12 +42,12 @@ pub async fn run_working_endpoint_authentication(
     let start_data: serde_json::Value = start_response.json().await?;
     let episode_id = start_data["episode_id"].as_u64().ok_or("Organizer peer did not return valid episode_id")?;
 
-    println!("✅ Episode {} created by organizer peer", episode_id);
+    println!("✅ Episode {episode_id} created by organizer peer");
 
     // Step 2: Request challenge using WORKING /auth/request-challenge endpoint
     println!("📨 Step 2: Requesting challenge via /auth/request-challenge...");
     let challenge_response = participant_peer
-        .post(&format!("{}/auth/request-challenge", peer_url))
+        .post(format!("{peer_url}/auth/request-challenge"))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
             "episode_id": episode_id,
@@ -64,19 +63,19 @@ pub async fn run_working_endpoint_authentication(
     println!("✅ Challenge request submitted");
 
     // Step 3: Poll for challenge using WORKING /auth/status/{id} endpoint
-    println!("⏳ Step 3: Polling for challenge via /auth/status/{}...", episode_id);
+    println!("⏳ Step 3: Polling for challenge via /auth/status/{episode_id}...");
     let mut challenge = String::new();
 
     for attempt in 1..=10 {
-        println!("🔄 Polling attempt {} of 10...", attempt);
+        println!("🔄 Polling attempt {attempt} of 10...");
 
-        let status_response = participant_peer.get(&format!("{}/auth/status/{}", peer_url, episode_id)).send().await?;
+        let status_response = participant_peer.get(format!("{peer_url}/auth/status/{episode_id}")).send().await?;
 
         if status_response.status().is_success() {
             let status_data: serde_json::Value = status_response.json().await?;
             if let Some(organizer_challenge) = status_data["challenge"].as_str() {
                 challenge = organizer_challenge.to_string();
-                println!("🎯 Challenge retrieved from organizer peer: {}", challenge);
+                println!("🎯 Challenge retrieved from organizer peer: {challenge}");
                 break;
             }
         }
@@ -92,7 +91,7 @@ pub async fn run_working_endpoint_authentication(
     println!("✍️ Step 4: Signing challenge via /auth/sign-challenge...");
     let private_key_hex = hex::encode(auth_signer.secret_key().as_ref());
     let sign_response = participant_peer
-        .post(&format!("{}/auth/sign-challenge", peer_url))
+        .post(format!("{peer_url}/auth/sign-challenge"))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
             "challenge": challenge,
@@ -113,7 +112,7 @@ pub async fn run_working_endpoint_authentication(
     // Step 5: Submit verification using WORKING /auth/verify endpoint
     println!("📤 Step 5: Submitting verification via /auth/verify...");
     let verify_response = participant_peer
-        .post(&format!("{}/auth/verify", peer_url))
+        .post(format!("{peer_url}/auth/verify"))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
             "episode_id": episode_id,
@@ -131,18 +130,18 @@ pub async fn run_working_endpoint_authentication(
 
     // Step 6: Wait for authentication completion using WORKING polling
     println!("⏳ Step 6: Waiting for authentication completion...");
-    let mut session_token = String::new();
+    let mut session_token_opt: Option<String> = None;
 
-    for attempt in 1..=50 {
-        let status_response = participant_peer.get(&format!("{}/auth/status/{}", peer_url, episode_id)).send().await?;
+    for _attempt in 1..=50 {
+        let status_response = participant_peer.get(format!("{peer_url}/auth/status/{episode_id}")).send().await?;
 
         if status_response.status().is_success() {
             let status_data: serde_json::Value = status_response.json().await?;
             if let (Some(authenticated), Some(token)) = (status_data["authenticated"].as_bool(), status_data["session_token"].as_str())
             {
                 if authenticated && !token.is_empty() {
-                    session_token = token.to_string();
-                    println!("✅ REAL session token retrieved: {}", session_token);
+                    session_token_opt = Some(token.to_string());
+                    println!("✅ REAL session token retrieved: {token}");
                     break;
                 }
             }
@@ -151,10 +150,12 @@ pub async fn run_working_endpoint_authentication(
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
 
-    if session_token.is_empty() {
+    if session_token_opt.is_none() {
         return Err("❌ Could not retrieve session token from organizer peer".into());
     }
 
+    let session_token =
+        session_token_opt.ok_or_else(|| "? AUTHENTICATION FAILED: Missing session token after completion".to_string())?;
     Ok(AuthenticationResult { episode_id, session_token, authenticated: true })
 }
 
@@ -173,16 +174,15 @@ pub async fn run_http_coordinated_authentication(
         tx::{TransactionOutpoint, UtxoEntry},
     };
     use kaspa_rpc_core::api::rpc::RpcApi;
-    use kaspa_wrpc_client::prelude::*;
+
     use kdapp::{
         engine::EpisodeMessage,
         generator::{self, TransactionGenerator},
         proxy::connect_client,
     };
-    use rand::Rng;
 
     let participant_pubkey = kdapp::pki::PubKey(auth_signer.public_key());
-    println!("🔑 Auth public key: {}", participant_pubkey);
+    println!("🔑 Auth public key: {participant_pubkey}");
 
     // Connect to Kaspa network (real blockchain!)
     let network = NetworkId::with_suffix(kaspa_consensus_core::network::NetworkType::Testnet, 10);
@@ -192,7 +192,7 @@ pub async fn run_http_coordinated_authentication(
 
     // Create Kaspa address for funding transactions
     let kaspa_addr = Address::new(Prefix::Testnet, Version::PubKey, &kaspa_signer.x_only_public_key().0.serialize());
-    println!("💰 Kaspa address: {}", kaspa_addr);
+    println!("💰 Kaspa address: {kaspa_addr}");
 
     // Get UTXOs for transaction funding
     println!("🔍 Fetching UTXOs...");
@@ -202,10 +202,8 @@ pub async fn run_http_coordinated_authentication(
         return Err("No UTXOs found! Please fund the Kaspa address first.".into());
     }
 
-    let mut utxo = entries
-        .first()
-        .map(|entry| (TransactionOutpoint::from(entry.outpoint.clone()), UtxoEntry::from(entry.utxo_entry.clone())))
-        .unwrap();
+    let mut utxo =
+        entries.first().map(|entry| (TransactionOutpoint::from(entry.outpoint), UtxoEntry::from(entry.utxo_entry.clone()))).unwrap();
 
     println!("✅ UTXO found: {}", utxo.0);
 
@@ -220,7 +218,7 @@ pub async fn run_http_coordinated_authentication(
     let public_key_hex = hex::encode(participant_pubkey.0.serialize());
 
     // Use the /auth/start endpoint which creates episodes on the organizer peer side
-    let start_url = format!("{}/auth/start", peer_url);
+    let start_url = format!("{peer_url}/auth/start");
     let start_response = participant_peer
         .post(&start_url)
         .header("Content-Type", "application/json")
@@ -233,7 +231,7 @@ pub async fn run_http_coordinated_authentication(
     let start_data: serde_json::Value = start_response.json().await?;
     let episode_id = start_data["episode_id"].as_u64().ok_or("Organizer peer did not return valid episode_id")?;
 
-    println!("✅ Authentication episode {} created by organizer peer", episode_id);
+    println!("✅ Authentication episode {episode_id} created by organizer peer");
 
     // Step 2: Send RequestChallenge command to blockchain
     println!("📨 Sending RequestChallenge command to blockchain...");
@@ -264,25 +262,25 @@ pub async fn run_http_coordinated_authentication(
 
     // Get challenge via HTTP (polling until available)
     for retry_attempt in 1..=10 {
-        println!("🔄 Checking for challenge attempt {} of 10...", retry_attempt);
+        println!("🔄 Checking for challenge attempt {retry_attempt} of 10...");
 
-        let status_url = format!("{}/auth/status/{}", peer_url, episode_id);
+        let status_url = format!("{peer_url}/auth/status/{episode_id}");
 
         match participant_peer.get(&status_url).send().await {
             Ok(response) if response.status().is_success() => {
                 if let Ok(status_json) = response.text().await {
-                    println!("📡 HTTP status response: {}", status_json);
+                    println!("📡 HTTP status response: {status_json}");
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&status_json) {
                         if let Some(organizer_challenge) = parsed["challenge"].as_str() {
                             challenge = organizer_challenge.to_string();
-                            println!("🎯 Challenge retrieved from organizer peer: {}", challenge);
+                            println!("🎯 Challenge retrieved from organizer peer: {challenge}");
                             break;
                         }
                     }
                 }
             }
             _ => {
-                println!("❌ HTTP attempt {} failed", retry_attempt);
+                println!("❌ HTTP attempt {retry_attempt} failed");
             }
         }
 
@@ -323,7 +321,7 @@ pub async fn run_http_coordinated_authentication(
 
     // Wait for authentication to complete and get the real session token via HTTP
     println!("⏳ Waiting for authentication completion to retrieve session token...");
-    let mut session_token = String::new();
+    let mut session_token_opt: Option<String> = None;
     let mut wait_attempts = 0;
     let max_wait_attempts = 50; // 5 second timeout
 
@@ -331,14 +329,14 @@ pub async fn run_http_coordinated_authentication(
         wait_attempts += 1;
 
         // Check authentication status via HTTP (organizer peer has the real blockchain state)
-        let status_url = format!("{}/auth/status/{}", peer_url, episode_id);
+        let status_url = format!("{peer_url}/auth/status/{episode_id}");
         if let Ok(response) = participant_peer.get(&status_url).send().await {
             if let Ok(status_json) = response.text().await {
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&status_json) {
                     if let (Some(authenticated), Some(token)) = (parsed["authenticated"].as_bool(), parsed["session_token"].as_str()) {
                         if authenticated && !token.is_empty() {
-                            session_token = token.to_string();
-                            println!("✅ Real session token retrieved from organizer peer: {}", session_token);
+                            session_token_opt = Some(token.to_string());
+                            println!("✅ Real session token retrieved from organizer peer: {token}");
                             break 'auth_wait;
                         }
                     }
@@ -347,13 +345,13 @@ pub async fn run_http_coordinated_authentication(
         }
 
         if wait_attempts >= max_wait_attempts {
-            return Err(
-                "❌ AUTHENTICATION FAILED: Could not retrieve session token from organizer peer. Authentication incomplete.".into()
-            );
+            break 'auth_wait;
         }
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
 
+    let session_token =
+        session_token_opt.ok_or_else(|| "? AUTHENTICATION FAILED: Missing session token after completion".to_string())?;
     Ok(AuthenticationResult { episode_id, session_token, authenticated: true })
 }

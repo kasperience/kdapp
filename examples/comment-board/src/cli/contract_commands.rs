@@ -362,7 +362,7 @@ pub mod interaction {
             return None;
         }
         
-        let confirm = get_input(&format!("{} (y/N): ", confirmation_msg));
+        let confirm = get_input(&format!("{confirmation_msg} (y/N): "));
         if confirm.to_lowercase() == "y" || confirm.to_lowercase() == "yes" {
             Some(input)
         } else {

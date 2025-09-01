@@ -131,13 +131,11 @@ pub enum DaemonParticipantPeerCommand {
 
 impl DaemonCommand {
     pub fn set_storage_options(&mut self, use_keychain: bool, dev_mode: bool) {
-        match &mut self.action {
-            DaemonAction::Start(cmd) => {
-                cmd.use_keychain = use_keychain;
-                cmd.dev_mode = dev_mode;
-            }
-            _ => {} // Other commands don't need storage options
+        if let DaemonAction::Start(cmd) = &mut self.action {
+            cmd.use_keychain = use_keychain;
+            cmd.dev_mode = dev_mode;
         }
+        // Other commands don't need storage options
     }
 
     pub async fn execute(self) -> Result<(), Box<dyn Error>> {
@@ -190,7 +188,7 @@ impl DaemonStopCommand {
                 Ok(())
             }
             Err(e) => {
-                println!("❌ Failed to stop daemon: {}", e);
+                println!("❌ Failed to stop daemon: {e}");
                 Err(e)
             }
         }
@@ -208,17 +206,17 @@ impl DaemonStatusCommand {
                 println!("🔓 Unlocked: {}", if is_unlocked { "Yes" } else { "No" });
                 println!("👥 Loaded identities: {}", loaded_identities.len());
                 for identity in loaded_identities {
-                    println!("   - {}", identity);
+                    println!("   - {identity}");
                 }
-                println!("🔗 Active sessions: {}", active_sessions);
+                println!("🔗 Active sessions: {active_sessions}");
                 Ok(())
             }
             Ok(response) => {
-                println!("❌ Unexpected response: {:?}", response);
+                println!("❌ Unexpected response: {response:?}");
                 Err("Unexpected response".into())
             }
             Err(e) => {
-                println!("❌ Daemon not running or not responding: {}", e);
+                println!("❌ Daemon not running or not responding: {e}");
                 Err(e)
             }
         }
@@ -242,35 +240,35 @@ impl DaemonSendCommand {
             Ok(response) => {
                 match response {
                     DaemonResponse::Success { message } => {
-                        println!("✅ {}", message);
+                        println!("✅ {message}");
                     }
                     DaemonResponse::Error { error } => {
-                        println!("❌ Error: {}", error);
+                        println!("❌ Error: {error}");
                     }
                     DaemonResponse::Pong { version, uptime_seconds, identities_loaded } => {
                         println!("🏓 Pong!");
-                        println!("📊 Version: {}", version);
-                        println!("⏱️ Uptime: {}s", uptime_seconds);
-                        println!("👥 Identities loaded: {}", identities_loaded);
+                        println!("📊 Version: {version}");
+                        println!("⏱️ Uptime: {uptime_seconds}s");
+                        println!("👥 Identities loaded: {identities_loaded}");
                     }
                     DaemonResponse::Signature { signature, public_key } => {
-                        println!("✍️ Signature: {}", signature);
-                        println!("🔑 Public key: {}", public_key);
+                        println!("✍️ Signature: {signature}");
+                        println!("🔑 Public key: {public_key}");
                     }
                     DaemonResponse::AuthResult { success, episode_id, session_token, message } => {
                         println!("🔐 Authentication: {}", if success { "Success" } else { "Failed" });
                         if let Some(id) = episode_id {
-                            println!("📧 Episode ID: {}", id);
+                            println!("📧 Episode ID: {id}");
                         }
                         if let Some(token) = session_token {
-                            println!("🎫 Session token: {}", token);
+                            println!("🎫 Session token: {token}");
                         }
-                        println!("📝 Message: {}", message);
+                        println!("📝 Message: {message}");
                     }
                     DaemonResponse::Identities { usernames } => {
                         println!("👥 Available identities:");
                         for username in usernames {
-                            println!("   - {}", username);
+                            println!("   - {username}");
                         }
                     }
                     DaemonResponse::Sessions { sessions } => {
@@ -291,13 +289,13 @@ impl DaemonSendCommand {
                         }
                     }
                     _ => {
-                        println!("📨 Response: {:?}", response);
+                        println!("📨 Response: {response:?}");
                     }
                 }
                 Ok(())
             }
             Err(e) => {
-                println!("❌ Communication error: {}", e);
+                println!("❌ Communication error: {e}");
                 Err(e)
             }
         }
@@ -334,6 +332,6 @@ async fn create_participant_peer_connection(socket_path: &str) -> Result<Platfor
 async fn create_participant_peer_connection(_socket_path: &str) -> Result<PlatformStream, Box<dyn Error>> {
     // On Windows, connect to TCP socket on localhost
     let port = 8901; // Must match the port used in service.rs
-    let addr = format!("127.0.0.1:{}", port);
+    let addr = format!("127.0.0.1:{port}");
     Ok(TcpStream::connect(addr).await?)
 }

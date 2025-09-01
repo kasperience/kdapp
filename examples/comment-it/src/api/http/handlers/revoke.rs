@@ -31,7 +31,7 @@ pub async fn revoke_session(
             episodes.get(&episode_id).cloned()
         }
         Err(e) => {
-            println!("❌ Failed to lock blockchain episodes: {}", e);
+            println!("❌ Failed to lock blockchain episodes: {e}");
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
@@ -46,7 +46,7 @@ pub async fn revoke_session(
             (pubkey, ep.session_token())
         }
         None => {
-            println!("❌ Episode {} not found in blockchain state", episode_id);
+            println!("❌ Episode {episode_id} not found in blockchain state");
             return Err(StatusCode::NOT_FOUND);
         }
     };
@@ -58,7 +58,7 @@ pub async fn revoke_session(
 
     // 🎯 TRUE P2P: Participant funds their own session revocation transaction
     let participant_wallet = crate::wallet::get_wallet_for_command("web-participant", None).map_err(|e| {
-        println!("❌ Failed to load web-participant wallet: {}", e);
+        println!("❌ Failed to load web-participant wallet: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let participant_secret_key = participant_wallet.keypair.secret_key();
@@ -75,7 +75,7 @@ pub async fn revoke_session(
     let episode_id_u32 = match episode_id.try_into() {
         Ok(id) => id,
         Err(_) => {
-            println!("❌ Episode ID {} is too large to fit in u32", episode_id);
+            println!("❌ Episode ID {episode_id} is too large to fit in u32");
             return Err(StatusCode::BAD_REQUEST);
         }
     };
@@ -91,12 +91,12 @@ pub async fn revoke_session(
     println!("📤 Submitting RevokeSession transaction to Kaspa blockchain via AuthHttpPeer...");
     let submission_result = match state.auth_http_peer.as_ref().unwrap().submit_episode_message_transaction(step).await {
         Ok(tx_id) => {
-            println!("✅ MATRIX UI SUCCESS: Session revocation submitted - Transaction {}", tx_id);
+            println!("✅ MATRIX UI SUCCESS: Session revocation submitted - Transaction {tx_id}");
             println!("📊 Transaction submitted to Kaspa blockchain - organizer peer will detect and respond");
             (tx_id, "session_revocation_submitted".to_string())
         }
         Err(e) => {
-            println!("❌ MATRIX UI ERROR: Session revocation failed - {}", e);
+            println!("❌ MATRIX UI ERROR: Session revocation failed - {e}");
             ("error".to_string(), "session_revocation_failed".to_string())
         }
     };

@@ -3,7 +3,7 @@ use crate::api::http::{
     state::PeerState,
     types::{VerifyRequest, VerifyResponse},
 };
-use crate::core::{commands::AuthCommand, episode::SimpleAuth};
+use crate::core::commands::AuthCommand;
 use axum::http::StatusCode;
 use axum::{extract::State, Json};
 use kdapp::episode::{Episode, PayloadMetadata};
@@ -47,8 +47,8 @@ pub async fn verify_auth(State(state): State<PeerState>, Json(req): Json<VerifyR
     let signature_bytes = hex::decode(&req.signature).map_err(|_| StatusCode::BAD_REQUEST)?;
     let signature = Signature::from_der(&signature_bytes).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    if !secp.verify_ecdsa(&message, &signature, &participant_pubkey.0).is_ok() {
-        println!("❌ Signature verification failed for episode {}", episode_id);
+    if secp.verify_ecdsa(&message, &signature, &participant_pubkey.0).is_err() {
+        println!("❌ Signature verification failed for episode {episode_id}");
         return Err(StatusCode::UNAUTHORIZED);
     }
 
@@ -69,7 +69,7 @@ pub async fn verify_auth(State(state): State<PeerState>, Json(req): Json<VerifyR
                 Some(participant_pubkey),
                 &metadata,
             );
-            println!("✅ Episode {} in-memory state updated to authenticated.", episode_id);
+            println!("✅ Episode {episode_id} in-memory state updated to authenticated.");
         }
     }
 

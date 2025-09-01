@@ -85,10 +85,15 @@ fn render() {
     // Mechanics (from the first episode if any)
     if let Some((&id0, snap0)) = d.episodes.iter().min_by_key(|(k, _)| *k) {
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-        let mut eta = if snap0.next_draw_time > now { snap0.next_draw_time - now } else { 0 };
-        if snap0.paused { eta = 0; }
+        let mut eta = snap0.next_draw_time.saturating_sub(now);
+        if snap0.paused {
+            eta = 0;
+        }
         let price_kas = (snap0.ticket_price as f64) / 100_000_000.0;
-        println!("\x1b[2mMechanics (ep {}): pick 5 unique numbers in [{}..{}], ticket = {:.6} KAS, draw every {}s, next in {}s\x1b[0m\n", id0, snap0.numbers_lo, snap0.numbers_hi, price_kas, snap0.draw_interval_secs, eta);
+        println!(
+            "\x1b[2mMechanics (ep {}): pick 5 unique numbers in [{}..{}], ticket = {:.6} KAS, draw every {}s, next in {}s\x1b[0m\n",
+            id0, snap0.numbers_lo, snap0.numbers_hi, price_kas, snap0.draw_interval_secs, eta
+        );
     }
     println!("Episodes:");
     println!("  id   | pool (KAS) | tickets | last_winner | paused | last_tx");
@@ -110,7 +115,7 @@ fn render() {
     }
     println!("\nRecent events:");
     for line in d.events.iter().rev().take(10).rev() {
-        println!("  {}", line);
+        println!("  {line}");
     }
     // Ensure output is flushed so it appears immediately
     use std::io::Write as _;
@@ -120,11 +125,7 @@ fn render() {
 impl EpisodeEventHandler<LotteryEpisode> for Handler {
     fn on_initialize(&self, episode_id: EpisodeId, episode: &LotteryEpisode) {
         // reset state num for this episode
-        STATE_NUMS
-            .get_or_init(|| Mutex::new(HashMap::new()))
-            .lock()
-            .unwrap()
-            .insert(episode_id, 0);
+        STATE_NUMS.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().insert(episode_id, 0);
         let mut d = dash().lock().unwrap();
         d.episodes.insert(
             episode_id,
@@ -181,7 +182,7 @@ impl EpisodeEventHandler<LotteryEpisode> for Handler {
         m.insert(episode_id, next_num);
         drop(m);
         if let Some(tower) = &self.tower {
-            tower.on_state(episode_id as u64, next_num as u64, state_hash);
+            tower.on_state(episode_id as u64, next_num, state_hash);
             if matches!(cmd, LotteryCommand::CloseEpisode) {
                 tower.finalize(episode_id as u64, state_hash);
             }
@@ -214,7 +215,7 @@ impl EpisodeEventHandler<LotteryEpisode> for Handler {
                 ));
             }
             LotteryCommand::CloseEpisode => {
-                push_event(format!("ep {} CLOSE", episode_id));
+                push_event(format!("ep {episode_id} CLOSE"));
             }
         }
         // Emit current state root to help off-chain checkpointing
@@ -223,7 +224,7 @@ impl EpisodeEventHandler<LotteryEpisode> for Handler {
     }
 
     fn on_rollback(&self, episode_id: EpisodeId, _episode: &LotteryEpisode) {
-        push_event(format!("ep {} ROLLBACK one step", episode_id));
+        push_event(format!("ep {episode_id} ROLLBACK one step"));
         render();
     }
 }

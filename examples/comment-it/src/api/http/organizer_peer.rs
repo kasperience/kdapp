@@ -12,12 +12,15 @@ use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
-    use crate::api::http::websocket::websocket_handler;
-    use crate::api::http::{
-        blockchain_engine::AuthHttpPeer,
-        handlers::{auth::start_auth, challenge::request_challenge, comment, list_episodes::list_episodes, revoke::revoke_session, verify::verify_auth},
-        state::{PeerState, WebSocketMessage},
-    };
+use crate::api::http::websocket::websocket_handler;
+use crate::api::http::{
+    blockchain_engine::AuthHttpPeer,
+    handlers::{
+        auth::start_auth, challenge::request_challenge, comment, list_episodes::list_episodes, revoke::revoke_session,
+        verify::verify_auth,
+    },
+    state::{PeerState, WebSocketMessage},
+};
 use axum::Json;
 use kaspa_addresses::{Address, Prefix, Version};
 use kaspa_wrpc_client::prelude::RpcApi;
@@ -55,7 +58,7 @@ async fn wallet_status() -> Json<serde_json::Value> {
             Ok(wallet) => {
                 let kaspa_addr = Address::new(Prefix::Testnet, Version::PubKey, &wallet.keypair.public_key().serialize()[1..]);
 
-                println!("✅ MATRIX UI SUCCESS: Existing wallet found - {}", kaspa_addr);
+                println!("✅ MATRIX UI SUCCESS: Existing wallet found - {kaspa_addr}");
 
                 Json(json!({
                     "exists": true,
@@ -65,7 +68,7 @@ async fn wallet_status() -> Json<serde_json::Value> {
                 }))
             }
             Err(e) => {
-                println!("❌ MATRIX UI ERROR: Failed to load existing wallet - {}", e);
+                println!("❌ MATRIX UI ERROR: Failed to load existing wallet - {e}");
                 Json(json!({
                     "exists": false,
                     "needs_funding": true,
@@ -97,7 +100,7 @@ async fn wallet_participant() -> Json<serde_json::Value> {
                 let public_key_hex = hex::encode(wallet.keypair.public_key().serialize());
                 let kaspa_addr = Address::new(Prefix::Testnet, Version::PubKey, &wallet.keypair.public_key().serialize()[1..]);
 
-                println!("✅ MATRIX UI SUCCESS: Existing participant wallet - {}", kaspa_addr);
+                println!("✅ MATRIX UI SUCCESS: Existing participant wallet - {kaspa_addr}");
 
                 Json(json!({
                     "public_key": public_key_hex,
@@ -107,7 +110,7 @@ async fn wallet_participant() -> Json<serde_json::Value> {
                 }))
             }
             Err(e) => {
-                println!("❌ MATRIX UI ERROR: Failed to load participant wallet - {}", e);
+                println!("❌ MATRIX UI ERROR: Failed to load participant wallet - {e}");
                 Json(json!({
                     "error": format!("Failed to load participant wallet: {}", e),
                     "public_key": "error",
@@ -188,7 +191,7 @@ async fn wallet_participant_post(Json(req): Json<serde_json::Value>) -> Json<ser
                     if save_to_file { "created/imported and saved" } else { "created/imported temporarily" },
                     kaspa_addr
                 );
-                println!("🔑 Public Key: {}", public_key_hex);
+                println!("🔑 Public Key: {public_key_hex}");
                 if save_to_file {
                     println!("💾 Saved to: .kaspa-auth/participant-peer-wallet.key");
                 }
@@ -203,7 +206,7 @@ async fn wallet_participant_post(Json(req): Json<serde_json::Value>) -> Json<ser
                 }))
             }
             Err(e) => {
-                println!("❌ MATRIX UI ERROR: Failed to create wallet: {}", e);
+                println!("❌ MATRIX UI ERROR: Failed to create wallet: {e}");
                 Json(json!({
                     "error": format!("Failed to create wallet from private key: {}", e),
                     "success": false
@@ -225,7 +228,7 @@ async fn stats(State(state): State<PeerState>) -> Json<serde_json::Value> {
         Ok(episodes) => {
             let auth = episodes.len() as u64;
             let comments: u64 = episodes.values().map(|e| e.comments.len() as u64).sum();
-            (auth as u64, comments)
+            (auth, comments)
         }
         Err(_) => (0, 0),
     };
@@ -235,7 +238,7 @@ async fn stats(State(state): State<PeerState>) -> Json<serde_json::Value> {
         match kaspad.get_block_dag_info().await {
             Ok(info) => {
                 let vdaa = info.virtual_daa_score;
-                (Some(vdaa as u64), Some(vdaa as u64))
+                (Some(vdaa), Some(vdaa))
             }
             Err(_) => (None, None),
         }
@@ -362,7 +365,7 @@ async fn session_revoked(State(state): State<PeerState>, Json(payload): Json<ser
     let episode_id = payload["episode_id"].as_u64().unwrap_or(0);
     let session_token = payload["session_token"].as_str().unwrap_or("");
 
-    println!("🔔 Received session revocation notification for episode {}, token: {}", episode_id, session_token);
+    println!("🔔 Received session revocation notification for episode {episode_id}, token: {session_token}");
 
     // Broadcast WebSocket message for session revocation success
     let ws_message = WebSocketMessage {
@@ -378,10 +381,10 @@ async fn session_revoked(State(state): State<PeerState>, Json(payload): Json<ser
     // Send to all connected WebSocket clients
     match state.websocket_tx.send(ws_message) {
         Ok(_) => {
-            println!("✅ Session revocation WebSocket message sent for episode {}", episode_id);
+            println!("✅ Session revocation WebSocket message sent for episode {episode_id}");
         }
         Err(e) => {
-            println!("❌ Failed to send session revocation WebSocket message: {}", e);
+            println!("❌ Failed to send session revocation WebSocket message: {e}");
         }
     }
 
@@ -435,13 +438,13 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
         .route("/auth/revoke-session", post(revoke_session))
         .route(
             "/auth/status/{episode_id}",
-            get(|
-                state: axum::extract::State<crate::api::http::state::PeerState>,
-                path: axum::extract::Path<u64>,
-                query: axum::extract::Query<crate::api::http::handlers::status::StatusQuery>,
-            | async move {
-                crate::api::http::handlers::status::get_status(state, path, query).await
-            }),
+            get(
+                |state: axum::extract::State<crate::api::http::state::PeerState>,
+                 path: axum::extract::Path<u64>,
+                 query: axum::extract::Query<crate::api::http::handlers::status::StatusQuery>| async move {
+                    crate::api::http::handlers::status::get_status(state, path, query).await
+                },
+            ),
         )
         .route("/episodes", get(list_episodes))
         .route("/api/comments", post(comment::submit_comment))
@@ -452,14 +455,14 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
         .with_state(peer_state)
         .layer(cors);
 
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    println!("🚀 HTTP Authentication Coordination Peer starting on port {}", port);
+    println!("🚀 HTTP Authentication Coordination Peer starting on port {port}");
     println!("🔗 Starting kdapp blockchain engine...");
     println!();
     println!("🎭 MATRIX UI READY - Waiting for user actions...");
-    println!("💻 Web dashboard available at: http://localhost:{}/", port);
+    println!("💻 Web dashboard available at: http://localhost:{port}/");
     println!("🚀 Backend will respond to frontend wallet creation/import actions");
     println!();
 
@@ -467,7 +470,7 @@ pub async fn run_http_peer(provided_private_key: Option<&str>, port: u16) -> Res
     let auth_peer_clone = auth_peer.clone();
     tokio::spawn(async move {
         if let Err(e) = auth_peer_clone.start_blockchain_listener().await {
-            eprintln!("❌ Blockchain listener error: {}", e);
+            eprintln!("❌ Blockchain listener error: {e}");
         }
     });
 

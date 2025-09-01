@@ -23,10 +23,10 @@ pub mod diagnostics {
         let total_mass = base_mass + input_mass + script_mass;
         
         println!("🔍 Transaction Mass Breakdown:");
-        println!("  Base mass (size): {}", base_mass);
-        println!("  Input mass: {}", input_mass);
-        println!("  Script mass: {}", script_mass);
-        println!("  Total mass: {}", total_mass);
+        println!("  Base mass (size): {base_mass}");
+        println!("  Input mass: {input_mass}");
+        println!("  Script mass: {script_mass}");
+        println!("  Total mass: {total_mass}");
         println!("  Max allowed: 100,000");
         
         total_mass

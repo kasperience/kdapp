@@ -29,8 +29,8 @@ impl MsgType {
 
 #[derive(Clone)]
 pub struct TlvMsg {
-    pub version: u8,      // = TLV_VERSION
-    pub msg_type: u8,     // MsgType as u8
+    pub version: u8,  // = TLV_VERSION
+    pub msg_type: u8, // MsgType as u8
     pub episode_id: u64,
     pub seq: u64,
     pub state_hash: [u8; 32],
@@ -53,17 +53,23 @@ impl TlvMsg {
     }
 
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() < 1 + 1 + 8 + 8 + 32 + 2 { return None; }
+        if bytes.len() < 1 + 1 + 8 + 8 + 32 + 2 {
+            return None;
+        }
         let version = bytes[0];
         let msg_type = bytes[1];
-        if version != TLV_VERSION { return None; }
-        if MsgType::from_u8(msg_type).is_none() { return None; }
+        if version != TLV_VERSION {
+            return None;
+        }
+        MsgType::from_u8(msg_type)?;
         let episode_id = u64::from_le_bytes(bytes[2..10].try_into().ok()?);
         let seq = u64::from_le_bytes(bytes[10..18].try_into().ok()?);
         let mut state_hash = [0u8; 32];
         state_hash.copy_from_slice(&bytes[18..50]);
         let payload_len = u16::from_le_bytes(bytes[50..52].try_into().ok()?);
-        if bytes.len() < 52 + payload_len as usize { return None; }
+        if bytes.len() < 52 + payload_len as usize {
+            return None;
+        }
         let payload = bytes[52..(52 + payload_len as usize)].to_vec();
         Some(Self { version, msg_type, episode_id, seq, state_hash, payload })
     }

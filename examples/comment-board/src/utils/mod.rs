@@ -18,7 +18,7 @@ pub async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &Transaction, attempts
                 tries += 1;
                 let msg = e.to_string();
                 if tries >= attempts {
-                    return Err(format!("submit failed after {} attempts: {}", tries, msg));
+                    return Err(format!("submit failed after {tries} attempts: {msg}"));
                 }
                 // Try reconnect on websocket-related issues, then retry
                 if msg.contains("WebSocket") || msg.contains("not connected") || msg.contains("disconnected") {
@@ -31,7 +31,7 @@ pub async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &Transaction, attempts
                     // Treat as success from client perspective
                     return Ok(());
                 } else {
-                    return Err(format!("submit failed: {}", msg));
+                    return Err(format!("submit failed: {msg}"));
                 }
             }
         }

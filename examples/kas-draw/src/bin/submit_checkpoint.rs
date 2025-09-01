@@ -26,4 +26,3 @@ fn main() -> Result<()> {
     println!("{}", hex::encode(rec));
     Ok(())
 }
-

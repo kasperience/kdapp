@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::episode::contract::{RoomRules, ViolationType, VoteDecision};
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::pki::PubKey;
@@ -241,15 +242,15 @@ impl std::fmt::Display for ContractError {
                 )
             }
             ContractError::ReputationTooLow { current, required } => {
-                write!(f, "Reputation too low: {} (required: {})", current, required)
+                write!(f, "Reputation too low: {current} (required: {required})")
             }
             ContractError::NotModerator { user } => {
-                write!(f, "User {} is not a moderator", user)
+                write!(f, "User {user} is not a moderator")
             }
             ContractError::ContractExpired { episode_id } => {
-                write!(f, "Episode contract {} has expired", episode_id)
+                write!(f, "Episode contract {episode_id} has expired")
             }
-            _ => write!(f, "{:?}", self),
+            _ => write!(f, "{self:?}"),
         }
     }
 }
@@ -270,7 +271,7 @@ pub fn format_reputation(reputation: i32) -> String {
         r if r >= -75 => "\x1b[31m", // Red for poor
         _ => "\x1b[35m",             // Magenta for very poor
     };
-    format!("{}{}★\x1b[0m", color_code, reputation)
+    format!("{color_code}{reputation}★\x1b[0m")
 }
 
 /// Generate Twitter-friendly showcase message

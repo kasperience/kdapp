@@ -25,13 +25,13 @@ pub async fn start_auth(State(state): State<PeerState>, Json(req): Json<AuthRequ
                     PubKey(pk)
                 }
                 Err(e) => {
-                    println!("❌ Public key parsing failed: {}", e);
+                    println!("❌ Public key parsing failed: {e}");
                     return Err(StatusCode::BAD_REQUEST);
                 }
             }
         }
         Err(e) => {
-            println!("❌ Hex decode failed: {}", e);
+            println!("❌ Hex decode failed: {e}");
             return Err(StatusCode::BAD_REQUEST);
         }
     };
@@ -39,12 +39,12 @@ pub async fn start_auth(State(state): State<PeerState>, Json(req): Json<AuthRequ
     // Determine if we're creating a new episode or joining existing one
     let (episode_id, is_joining_existing) = match req.episode_id {
         Some(existing_id) => {
-            println!("🎯 Joining existing episode: {}", existing_id);
+            println!("🎯 Joining existing episode: {existing_id}");
             (existing_id, true)
         }
         None => {
             let new_id = rand::thread_rng().gen();
-            println!("🆕 Creating new episode: {}", new_id);
+            println!("🆕 Creating new episode: {new_id}");
             (new_id, false)
         }
     };
@@ -70,13 +70,13 @@ pub async fn start_auth(State(state): State<PeerState>, Json(req): Json<AuthRequ
     if let Some(ref kaspad) = state.kaspad_client {
         println!("🔍 Quick check for participant wallet funding...");
         let entries = state.utxo_cache.get(kaspad, &participant_funding_addr).await.map_err(|e| {
-            println!("❌ Failed to fetch UTXOs: {}", e);
+            println!("❌ Failed to fetch UTXOs: {e}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
         if entries.is_empty() {
             println!("❌ No UTXOs found! Participant wallet needs funding.");
-            println!("💰 Fund this address: {}", participant_funding_addr);
+            println!("💰 Fund this address: {participant_funding_addr}");
             println!("🚰 Get testnet funds: https://faucet.kaspanet.io/");
             return Err(StatusCode::SERVICE_UNAVAILABLE);
         }
@@ -87,8 +87,8 @@ pub async fn start_auth(State(state): State<PeerState>, Json(req): Json<AuthRequ
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    println!("🎯 Episode ID: {}", episode_id);
-    println!("👤 Participant PubKey: {}", participant_pubkey);
+    println!("🎯 Episode ID: {episode_id}");
+    println!("👤 Participant PubKey: {participant_pubkey}");
 
     let (transaction_id, status) = match episode_message {
         Some(new_episode) => {
@@ -96,8 +96,8 @@ pub async fn start_auth(State(state): State<PeerState>, Json(req): Json<AuthRequ
             println!("📤 Submitting transaction to Kaspa blockchain via AuthHttpPeer...");
             match state.auth_http_peer.as_ref().unwrap().submit_episode_message_transaction(new_episode).await {
                 Ok(tx_id) => {
-                    println!("✅ MATRIX UI SUCCESS: Auth episode created - Transaction {}", tx_id);
-                    println!("🎬 Episode {} initialized on blockchain", episode_id);
+                    println!("✅ MATRIX UI SUCCESS: Auth episode created - Transaction {tx_id}");
+                    println!("🎬 Episode {episode_id} initialized on blockchain");
                     (
                         tx_id,
                         if is_joining_existing {
@@ -108,8 +108,8 @@ pub async fn start_auth(State(state): State<PeerState>, Json(req): Json<AuthRequ
                     )
                 }
                 Err(e) => {
-                    println!("❌ MATRIX UI ERROR: Auth episode creation failed - {}", e);
-                    println!("💡 Make sure participant wallet is funded: {}", participant_funding_addr);
+                    println!("❌ MATRIX UI ERROR: Auth episode creation failed - {e}");
+                    println!("💡 Make sure participant wallet is funded: {participant_funding_addr}");
                     ("error".to_string(), "transaction_submission_failed".to_string())
                 }
             }

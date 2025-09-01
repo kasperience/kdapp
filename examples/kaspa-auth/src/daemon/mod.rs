@@ -43,7 +43,7 @@ impl DaemonConfig {
 
         Self {
             data_dir: ".".to_string(),
-            socket_path: format!("{}/kaspa-auth.sock", runtime_dir),
+            socket_path: format!("{runtime_dir}/kaspa-auth.sock"),
             auto_unlock: true,
             session_timeout: 3600,
             use_keychain: true,

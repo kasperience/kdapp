@@ -61,7 +61,7 @@ impl Episode for AuthWithCommentsEpisode {
     type CommandError = AuthError;
 
     fn initialize(participants: Vec<PubKey>, metadata: &PayloadMetadata) -> Self {
-        info!("[AuthWithCommentsEpisode] initialize comment room: {:?}", participants);
+        info!("[AuthWithCommentsEpisode] initialize comment room: {participants:?}");
         Self {
             // Comment Room Identity
             creator: participants.first().copied(),
@@ -101,12 +101,12 @@ impl Episode for AuthWithCommentsEpisode {
 
         match cmd {
             UnifiedCommand::RequestChallenge => {
-                info!("[AuthWithCommentsEpisode] RequestChallenge from: {:?}", participant);
+                info!("[AuthWithCommentsEpisode] RequestChallenge from: {participant:?}");
 
                 // Check if participant is already authenticated
-                let participant_key = format!("{}", participant);
+                let participant_key = format!("{participant}");
                 if self.authenticated_participants.contains(&participant_key) {
-                    info!("[AuthWithCommentsEpisode] Participant already authenticated: {:?}", participant);
+                    info!("[AuthWithCommentsEpisode] Participant already authenticated: {participant:?}");
                     return Err(EpisodeError::InvalidCommand(AuthError::AlreadyAuthenticated));
                 }
 
@@ -116,22 +116,22 @@ impl Episode for AuthWithCommentsEpisode {
                 // Store challenge for this participant so HTTP API can access it
                 self.active_challenges.insert(participant_key.clone(), new_challenge.clone());
 
-                info!("[AuthWithCommentsEpisode] Generated challenge {} for participant: {}", new_challenge, participant_key);
+                info!("[AuthWithCommentsEpisode] Generated challenge {new_challenge} for participant: {participant_key}");
 
                 // Increment rate limit
                 self.increment_rate_limit(&participant);
 
                 Ok(UnifiedRollback::Challenge {
-                    participant_key: format!("{}", participant),
+                    participant_key: format!("{participant}"),
                     previous_participant: None, // Simplified rollback
                 })
             }
 
             UnifiedCommand::SubmitResponse { signature, nonce } => {
-                info!("[AuthWithCommentsEpisode] SubmitResponse from: {:?}", participant);
+                info!("[AuthWithCommentsEpisode] SubmitResponse from: {participant:?}");
 
                 // Check if already authenticated
-                let participant_key = format!("{}", participant);
+                let participant_key = format!("{participant}");
                 if self.authenticated_participants.contains(&participant_key) {
                     return Err(EpisodeError::InvalidCommand(AuthError::AlreadyAuthenticated));
                 }
@@ -142,23 +142,23 @@ impl Episode for AuthWithCommentsEpisode {
                 }
 
                 // ✅ PURE P2P: Add public key to authenticated set (no session tokens!)
-                let participant_key = format!("{}", participant);
+                let participant_key = format!("{participant}");
                 let was_previously_authenticated = self.authenticated_participants.contains(&participant_key);
                 self.authenticated_participants.insert(participant_key.clone());
 
                 // Clean up the challenge since authentication succeeded
                 self.active_challenges.remove(&participant_key);
 
-                info!("[AuthWithCommentsEpisode] Authentication successful for: {:?}", participant);
+                info!("[AuthWithCommentsEpisode] Authentication successful for: {participant:?}");
 
                 Ok(UnifiedRollback::Authentication { participant_key, was_previously_authenticated })
             }
 
             UnifiedCommand::RevokeSession { session_token, signature } => {
-                info!("[AuthWithCommentsEpisode] RevokeSession from: {:?}", participant);
+                info!("[AuthWithCommentsEpisode] RevokeSession from: {participant:?}");
 
                 // Check if participant is authenticated
-                let participant_key = format!("{}", participant);
+                let participant_key = format!("{participant}");
                 if !self.authenticated_participants.contains(&participant_key) {
                     return Err(EpisodeError::InvalidCommand(AuthError::SessionNotFound));
                 }
@@ -171,13 +171,13 @@ impl Episode for AuthWithCommentsEpisode {
                 // ✅ PURE P2P: Remove public key from authenticated set
                 let was_previously_authenticated = self.authenticated_participants.remove(&participant_key);
 
-                info!("[AuthWithCommentsEpisode] Session revoked successfully for: {:?}", participant);
+                info!("[AuthWithCommentsEpisode] Session revoked successfully for: {participant:?}");
 
                 Ok(UnifiedRollback::SessionRevoked { participant_key, was_previously_authenticated })
             }
 
             UnifiedCommand::SubmitComment { text, .. } => {
-                info!("[AuthWithCommentsEpisode] SubmitComment from: {:?}", participant);
+                info!("[AuthWithCommentsEpisode] SubmitComment from: {participant:?}");
 
                 // Basic validation
                 if text.trim().is_empty() {
@@ -189,7 +189,7 @@ impl Episode for AuthWithCommentsEpisode {
                 }
 
                 // ✅ PURE P2P: Check if public key is authenticated (no session tokens!)
-                let participant_key = format!("{}", participant);
+                let participant_key = format!("{participant}");
                 if !self.authenticated_participants.contains(&participant_key) {
                     info!("[AuthWithCommentsEpisode] Comment rejected: Participant not authenticated");
                     return Err(EpisodeError::InvalidCommand(AuthError::InvalidSessionToken));
@@ -208,7 +208,7 @@ impl Episode for AuthWithCommentsEpisode {
                 self.comments.push(comment);
                 self.next_comment_id += 1;
 
-                info!("[AuthWithCommentsEpisode] ✅ Comment {} added successfully by participant {:?}", comment_id, participant);
+                info!("[AuthWithCommentsEpisode] ✅ Comment {comment_id} added successfully by participant {participant:?}");
 
                 Ok(UnifiedRollback::CommentAdded { comment_id })
             }
@@ -253,19 +253,19 @@ impl Episode for AuthWithCommentsEpisode {
 impl AuthWithCommentsEpisode {
     /// Check if a participant is rate limited
     fn is_rate_limited(&self, pubkey: &PubKey) -> bool {
-        let pubkey_str = format!("{}", pubkey);
-        self.rate_limits.get(&pubkey_str).map_or(false, |&attempts| attempts >= 5)
+        let pubkey_str = format!("{pubkey}");
+        self.rate_limits.get(&pubkey_str).is_some_and(|&attempts| attempts >= 5)
     }
 
     /// Increment rate limit counter for a participant
     fn increment_rate_limit(&mut self, pubkey: &PubKey) {
-        let pubkey_str = format!("{}", pubkey);
+        let pubkey_str = format!("{pubkey}");
         *self.rate_limits.entry(pubkey_str).or_insert(0) += 1;
     }
 
     /// Check if a participant is authenticated (pure P2P)
     pub fn is_participant_authenticated(&self, participant: &PubKey) -> bool {
-        let participant_key = format!("{}", participant);
+        let participant_key = format!("{participant}");
         self.authenticated_participants.contains(&participant_key)
     }
 
@@ -276,7 +276,7 @@ impl AuthWithCommentsEpisode {
 
     /// Check if a specific participant is authenticated
     pub fn is_user_authenticated(&self, participant: &PubKey) -> bool {
-        let participant_key = format!("{}", participant);
+        let participant_key = format!("{participant}");
         self.authenticated_participants.contains(&participant_key)
     }
 
@@ -288,7 +288,7 @@ impl AuthWithCommentsEpisode {
 
     /// Get active challenge for a participant (for HTTP API)
     pub fn get_challenge_for_participant(&self, participant: &PubKey) -> Option<String> {
-        let participant_key = format!("{}", participant);
+        let participant_key = format!("{participant}");
         self.active_challenges.get(&participant_key).cloned()
     }
 
@@ -304,7 +304,7 @@ impl AuthWithCommentsEpisode {
 
     /// Get rate limit attempts for a user
     pub fn get_rate_limit_attempts(&self, pubkey: &PubKey) -> u32 {
-        let pubkey_str = format!("{}", pubkey);
+        let pubkey_str = format!("{pubkey}");
         self.rate_limits.get(&pubkey_str).copied().unwrap_or(0)
     }
 
@@ -315,7 +315,7 @@ impl AuthWithCommentsEpisode {
 
     /// Get comments by a specific author (pure P2P - using PubKey)
     pub fn get_comments_by_author(&self, author: &PubKey) -> Vec<&Comment> {
-        let author_key = format!("{}", author);
+        let author_key = format!("{author}");
         self.comments.iter().filter(|c| c.author == author_key).collect()
     }
 
@@ -328,7 +328,7 @@ impl AuthWithCommentsEpisode {
 
     /// Pure P2P: Check if participant can comment (no session tokens!)
     pub fn can_comment(&self, participant: &PubKey) -> bool {
-        let participant_key = format!("{}", participant);
+        let participant_key = format!("{participant}");
         self.authenticated_participants.contains(&participant_key)
     }
 
@@ -388,9 +388,7 @@ mod tests {
         let mut auth = AuthWithCommentsEpisode::initialize(vec![p1], &metadata);
 
         // Request challenge
-        let rollback = auth
-            .execute(&UnifiedCommand::RequestChallenge, Some(p1), &metadata)
-            .unwrap();
+        let rollback = auth.execute(&UnifiedCommand::RequestChallenge, Some(p1), &metadata).unwrap();
 
         assert!(auth.get_challenge_for_participant(&p1).is_some());
         assert!(!auth.is_participant_authenticated(&p1));
@@ -440,36 +438,22 @@ mod tests {
         let mut auth = AuthWithCommentsEpisode::initialize(vec![p1], &metadata);
 
         // First authenticate
-        auth.execute(&UnifiedCommand::RequestChallenge, Some(p1), &metadata)
-            .unwrap();
-        let challenge = auth
-            .get_challenge_for_participant(&p1)
-            .expect("challenge should exist");
+        auth.execute(&UnifiedCommand::RequestChallenge, Some(p1), &metadata).unwrap();
+        let challenge = auth.get_challenge_for_participant(&p1).expect("challenge should exist");
         let msg = to_message(&challenge);
         let sig = sign_message(&s1, &msg);
         let sig_hex = hex::encode(sig.0.serialize_der());
-        auth.execute(
-            &UnifiedCommand::SubmitResponse {
-                signature: sig_hex,
-                nonce: challenge.clone(),
-            },
-            Some(p1),
-            &metadata,
-        )
-        .unwrap();
+        auth.execute(&UnifiedCommand::SubmitResponse { signature: sig_hex, nonce: challenge.clone() }, Some(p1), &metadata).unwrap();
         assert!(auth.is_participant_authenticated(&p1));
 
         // Submit a comment
-        let comment_cmd = UnifiedCommand::SubmitComment {
-            text: "Hello blockchain!".to_string(),
-            session_token: String::new(),
-        };
+        let comment_cmd = UnifiedCommand::SubmitComment { text: "Hello blockchain!".to_string(), session_token: String::new() };
 
         let rollback = auth.execute(&comment_cmd, Some(p1), &metadata).unwrap();
 
         assert_eq!(auth.comments.len(), 1);
         assert_eq!(auth.comments[0].text, "Hello blockchain!");
-        assert_eq!(auth.comments[0].author, format!("{}", p1));
+        assert_eq!(auth.comments[0].author, format!("{p1}"));
         assert_eq!(auth.comments[0].id, 1);
         assert_eq!(auth.next_comment_id, 2);
 

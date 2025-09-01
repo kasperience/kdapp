@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::{
     episode::{Episode, EpisodeError, PayloadMetadata},
@@ -173,18 +174,18 @@ impl Episode for CommentBoard {
             return Err(EpisodeError::Unauthorized);
         };
 
-        let participant_str = format!("{}", participant);
-        info!("[CommentBoard] execute: {:?} from {}", cmd, participant_str);
+        let participant_str = format!("{participant}");
+        info!("[CommentBoard] execute: {cmd:?} from {participant_str}");
 
         match cmd {
             CommentCommand::RequestChallenge => {
                 // Generate challenge for authentication (from kaspa-auth pattern)
                 if self.challenge.is_none() {
-                    let challenge = format!("auth_{}", metadata.tx_id);
+                    let challenge = format!("auth_{tx_id}", tx_id = metadata.tx_id);
                     self.challenge = Some(challenge.clone());
-                    info!("[CommentBoard] 🔑 Challenge generated for {}: {}", participant_str, challenge);
+                    info!("[CommentBoard] 🔑 Challenge generated for {participant_str}: {challenge}");
                 } else {
-                    info!("[CommentBoard] 🔑 Existing challenge for {}: {}", participant_str, self.challenge.as_ref().unwrap());
+                    info!("[CommentBoard] 🔑 Existing challenge for {participant_str}: {}", self.challenge.as_ref().unwrap());
                 }
                 let old_timestamp = self.timestamp;
                 self.timestamp = metadata.accepting_time;
@@ -198,20 +199,20 @@ impl Episode for CommentBoard {
                     if nonce == challenge && !signature.is_empty() {
                         // Authentication successful
                         self.authenticated_users.insert(participant_str.clone());
-                        let session_token = format!("sess_{}", rand::thread_rng().gen::<u64>());
+                        let session_token = format!("sess_{r}", r = rand::thread_rng().gen::<u64>());
                         self.session_tokens.insert(participant_str.clone(), session_token.clone());
                         self.challenge = None; // Clear the challenge after successful authentication
 
                         let old_timestamp = self.timestamp;
                         self.timestamp = metadata.accepting_time;
 
-                        info!("[CommentBoard] ✅ {} authenticated! Session: {}", participant_str, session_token);
+                        info!("[CommentBoard] ✅ {participant_str} authenticated! Session: {session_token}");
                         Ok(CommentRollback::new_join(false, old_timestamp))
                     } else {
-                        return Err(EpisodeError::InvalidCommand(CommentError::NotAuthenticated));
+                        Err(EpisodeError::InvalidCommand(CommentError::NotAuthenticated))
                     }
                 } else {
-                    return Err(EpisodeError::InvalidCommand(CommentError::NotAuthenticated));
+                    Err(EpisodeError::InvalidCommand(CommentError::NotAuthenticated))
                 }
             }
 
@@ -283,7 +284,7 @@ impl Episode for CommentBoard {
                 self.timestamp = metadata.accepting_time;
                 self.next_comment_id += 1;
 
-                info!("[CommentBoard] ✅ Comment {} added by {}", comment_id, participant_str);
+                info!("[CommentBoard] ✅ Comment {comment_id} added by {participant_str}");
                 Ok(CommentRollback::new_comment(comment_id, old_timestamp))
             }
 
@@ -301,7 +302,7 @@ impl Episode for CommentBoard {
                 self.timestamp = metadata.accepting_time;
                 self.forbidden_words = words.clone();
 
-                info!("[CommentBoard] 🚫 Forbidden words set: {:?}", words);
+                info!("[CommentBoard] 🚫 Forbidden words set: {words:?}");
                 Ok(CommentRollback::new_join(false, old_timestamp))
             }
         }
@@ -359,16 +360,16 @@ impl CommentBoard {
     }
 
     pub fn is_user_in_room(&self, participant: &PubKey) -> bool {
-        let participant_str = format!("{}", participant);
+        let participant_str = format!("{participant}");
         self.room_members.contains(&participant_str)
     }
 
     pub fn get_room_code(&self) -> String {
         if let Some(creator) = &self.creator {
             // Generate a memorable room code from the creator's pubkey
-            let creator_str = format!("{}", creator);
+            let creator_str = format!("{creator}");
             let hash = creator_str.chars().take(6).collect::<String>().to_uppercase();
-            format!("ROOM-{}", hash)
+            format!("ROOM-{hash}")
         } else {
             "ROOM-UNKNOWN".to_string()
         }
@@ -382,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_comment_authentication() {
-        let ((sk1, pk1), (sk2, pk2)) = (generate_keypair(), generate_keypair());
+        let ((_sk1, pk1), (_sk2, pk2)) = (generate_keypair(), generate_keypair());
         let metadata = PayloadMetadata {
             accepting_hash: 0u64.into(),
             accepting_daa: 0,
@@ -399,13 +400,13 @@ mod tests {
         let _rb2 = board
             .execute(&CommentCommand::SubmitResponse { signature: "sig".to_string(), nonce: challenge }, Some(pk1), &metadata)
             .unwrap();
-        assert!(board.authenticated_users.contains(&format!("{}", pk1)));
-        assert!(!board.authenticated_users.contains(&format!("{}", pk2)));
+        assert!(board.authenticated_users.contains(&format!("{pk1}")));
+        assert!(!board.authenticated_users.contains(&format!("{pk2}")));
     }
 
     #[test]
     fn test_comment_submission() {
-        let ((sk1, pk1), (sk2, pk2)) = (generate_keypair(), generate_keypair());
+        let ((_sk1, pk1), (_sk2, pk2)) = (generate_keypair(), generate_keypair());
         let metadata = PayloadMetadata {
             accepting_hash: 0u64.into(),
             accepting_daa: 0,
@@ -433,7 +434,7 @@ mod tests {
 
         assert_eq!(board.comments.len(), 1);
         assert_eq!(board.comments[0].text, "Hello, blockchain!");
-        assert_eq!(board.comments[0].author, format!("{}", pk1));
+        assert_eq!(board.comments[0].author, format!("{pk1}"));
         assert_eq!(board.comments[0].id, 1);
         assert_eq!(board.next_comment_id, 2);
 
@@ -445,7 +446,7 @@ mod tests {
 
     #[test]
     fn test_comment_without_auth() {
-        let ((sk1, pk1), (sk2, pk2)) = (generate_keypair(), generate_keypair());
+        let ((_sk1, pk1), (_sk2, pk2)) = (generate_keypair(), generate_keypair());
         let metadata = PayloadMetadata {
             accepting_hash: 0u64.into(),
             accepting_daa: 0,

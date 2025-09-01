@@ -49,13 +49,13 @@ impl KeychainManager {
 
             // Create .kaspa-auth directory if it doesn't exist
             let wallet_dir = std::path::Path::new(&self.data_dir).join(".kaspa-auth");
-            println!("DEBUG: Attempting to create directory: {:?}", wallet_dir);
+            println!("DEBUG: Attempting to create directory: {wallet_dir:?}");
             std::fs::create_dir_all(&wallet_dir)?;
-            println!("DEBUG: Directory created: {:?}", wallet_dir);
-            let dev_key_file = wallet_dir.join(format!("{}.key", username));
-            println!("DEBUG: Attempting to write key to file: {:?}", dev_key_file);
+            println!("DEBUG: Directory created: {wallet_dir:?}");
+            let dev_key_file = wallet_dir.join(format!("{username}.key"));
+            println!("DEBUG: Attempting to write key to file: {dev_key_file:?}");
             std::fs::write(&dev_key_file, &private_key_hex)?;
-            println!("DEBUG: Key written to file: {:?}", dev_key_file);
+            println!("DEBUG: Key written to file: {dev_key_file:?}");
             println!(" Wallet created and private key stored in '{}'.", dev_key_file.display());
         } else {
             // Store in OS keychain securely
@@ -72,7 +72,7 @@ impl KeychainManager {
         // Display wallet info
         let kaspa_address = wallet.get_kaspa_address();
         println!("🔑 Public Key: {}", wallet.get_public_key_hex());
-        println!("💰 Kaspa Address: {}", kaspa_address);
+        println!("💰 Kaspa Address: {kaspa_address}");
         println!("💡 Fund this address at: https://faucet.kaspanet.io/");
         println!("✅ Keychain wallet setup complete!\n");
 
@@ -82,11 +82,11 @@ impl KeychainManager {
     /// Create new wallet and save it to the filesystem.
     pub fn create_and_save_wallet(&self, username: &str) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
         let mut config = WalletConfig::new(&self.data_dir);
-        config.keypair_file = config.wallet_dir.join(format!("{}.key", username));
+        config.keypair_file = config.wallet_dir.join(format!("{username}.key"));
 
         // Generate new keypair
         use rand::rngs::OsRng;
-        use secp256k1::{Secp256k1, SecretKey};
+        use secp256k1::Secp256k1;
         let secp = Secp256k1::new();
         let (secret_key, _) = secp.generate_keypair(&mut OsRng);
         let keypair = Keypair::from_secret_key(&secp, &secret_key);
@@ -103,10 +103,10 @@ impl KeychainManager {
         println!("🔐 Loading wallet from OS keychain...");
 
         let private_key_hex = if self.config.dev_mode {
-            let dev_key_file = format!(".kaspa-auth/{}.key", username);
+            let dev_key_file = format!(".kaspa-auth/{username}.key");
             if !std::path::Path::new(&dev_key_file).exists() {
                 return Err(
-                    format!("Development key file '{}' not found. Please create a wallet in dev mode first.", dev_key_file).into()
+                    format!("Development key file '{dev_key_file}' not found. Please create a wallet in dev mode first.").into()
                 );
             }
             std::fs::read_to_string(&dev_key_file)?
@@ -128,7 +128,7 @@ impl KeychainManager {
         let kaspa_address = wallet.get_kaspa_address();
         println!("✅ Wallet loaded from keychain");
         println!("🔑 Public Key: {}", wallet.get_public_key_hex());
-        println!("💰 Kaspa Address: {}", kaspa_address);
+        println!("💰 Kaspa Address: {kaspa_address}");
         println!();
 
         Ok(wallet)
@@ -139,11 +139,11 @@ impl KeychainManager {
         // Check if wallet already exists in keychain
         match self.load_wallet(username) {
             Ok(wallet) => {
-                println!("🔄 REUSING existing keychain wallet for {}", username);
+                println!("🔄 REUSING existing keychain wallet for {username}");
                 Ok(wallet)
             }
             Err(_) => {
-                println!("🆕 Creating NEW keychain wallet for {}", username);
+                println!("🆕 Creating NEW keychain wallet for {username}");
                 self.create_wallet(username)
             }
         }
@@ -152,7 +152,7 @@ impl KeychainManager {
     /// Check if wallet exists in keychain
     pub fn wallet_exists(&self, username: &str) -> bool {
         if self.config.dev_mode {
-            let dev_key_file = format!(".kaspa-auth/{}.key", username);
+            let dev_key_file = format!(".kaspa-auth/{username}.key");
             std::path::Path::new(&dev_key_file).exists()
         } else {
             match Entry::new(&self.config.service, username) {
@@ -165,15 +165,15 @@ impl KeychainManager {
     /// Delete wallet from keychain
     pub fn delete_wallet(&self, username: &str) -> Result<(), Box<dyn std::error::Error>> {
         if self.config.dev_mode {
-            let dev_key_file = format!(".kaspa-auth/{}.key", username);
+            let dev_key_file = format!(".kaspa-auth/{username}.key");
             if std::path::Path::new(&dev_key_file).exists() {
                 std::fs::remove_file(&dev_key_file)?;
-                println!("🗑️  Deleted development wallet file: {}", dev_key_file);
+                println!("🗑️  Deleted development wallet file: {dev_key_file}");
             }
         } else {
             let entry = Entry::new(&self.config.service, username)?;
             entry.delete_credential()?;
-            println!("🗑️  Deleted wallet from OS keychain: {}", username);
+            println!("🗑️  Deleted wallet from OS keychain: {username}");
         }
         Ok(())
     }
@@ -207,7 +207,7 @@ impl KeychainManager {
 }
 
 /// Helper functions for easy integration with existing kaspa-auth code
-
+///
 /// Get wallet for command using keychain storage
 pub fn get_keychain_wallet_for_command(
     command: &str,
@@ -224,7 +224,7 @@ pub fn get_keychain_wallet_for_command(
         _ => "default-wallet",
     };
 
-    println!("🔐 Using OS keychain for {} wallet storage", username);
+    println!("🔐 Using OS keychain for {username} wallet storage");
     keychain_manager.load_or_create_wallet(username)
 }
 

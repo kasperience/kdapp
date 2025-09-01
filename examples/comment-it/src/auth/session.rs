@@ -21,9 +21,9 @@ pub async fn run_session_revocation(
 
     let client_pubkey = kdapp::pki::PubKey(auth_signer.public_key());
     println!("🔄 Revoking session on blockchain...");
-    println!("🔑 Auth public key: {}", client_pubkey);
-    println!("📧 Episode ID: {}", episode_id);
-    println!("🎫 Session token: {}", session_token);
+    println!("🔑 Auth public key: {client_pubkey}");
+    println!("📧 Episode ID: {episode_id}");
+    println!("🎫 Session token: {session_token}");
 
     // Step 1: Connect to Kaspa network
     let network = NetworkId::with_suffix(kaspa_consensus_core::network::NetworkType::Testnet, 10);
@@ -31,18 +31,16 @@ pub async fn run_session_revocation(
     let kaspa_addr = Address::new(Prefix::Testnet, Version::PubKey, &auth_signer.x_only_public_key().0.serialize());
 
     println!("🔗 Connected to Kaspa testnet-10");
-    println!("💰 Funding address: {}", kaspa_addr);
+    println!("💰 Funding address: {kaspa_addr}");
 
     // Step 2: Get UTXOs for transaction funding
     let entries = kaspad.get_utxos_by_addresses(vec![kaspa_addr.clone()]).await?;
     if entries.is_empty() {
-        return Err(format!("❌ No UTXOs found for address {}. Please fund this address first.", kaspa_addr).into());
+        return Err(format!("❌ No UTXOs found for address {kaspa_addr}. Please fund this address first.").into());
     }
 
-    let utxo = entries
-        .first()
-        .map(|entry| (TransactionOutpoint::from(entry.outpoint.clone()), UtxoEntry::from(entry.utxo_entry.clone())))
-        .unwrap();
+    let utxo =
+        entries.first().map(|entry| (TransactionOutpoint::from(entry.outpoint), UtxoEntry::from(entry.utxo_entry.clone()))).unwrap();
 
     println!("✅ Using UTXO: {}", utxo.0);
 
@@ -75,8 +73,8 @@ pub async fn run_session_revocation(
 
     println!("✅ Session revocation submitted to Kaspa blockchain!");
     println!("🔗 [ VERIFY ON KASPA EXPLORER → ] https://explorer-tn10.kaspa.org/txs/{}", tx.id());
-    println!("🔗 [ VIEW WALLET ON EXPLORER → ] https://explorer-tn10.kaspa.org/addresses/{}", kaspa_addr);
-    println!("🔄 Session token {} has been revoked", session_token);
+    println!("🔗 [ VIEW WALLET ON EXPLORER → ] https://explorer-tn10.kaspa.org/addresses/{kaspa_addr}");
+    println!("🔄 Session token {session_token} has been revoked");
     println!("📊 Transaction submitted to Kaspa blockchain - organizer peer will detect and respond");
 
     Ok(())
@@ -89,8 +87,8 @@ pub async fn run_logout_with_timeout(
     peer_url: String,
     timeout_seconds: u64,
 ) -> Result<(), Box<dyn Error>> {
-    println!("🚪 Starting focused logout test ({}s timeout)", timeout_seconds);
-    println!("📋 Episode: {}, Session: {}", episode_id, session_token);
+    println!("🚪 Starting focused logout test ({timeout_seconds}s timeout)");
+    println!("📋 Episode: {episode_id}, Session: {session_token}");
 
     let timeout_duration = tokio::time::Duration::from_secs(timeout_seconds);
     let logout_future = run_session_revocation(auth_keypair, episode_id, session_token, peer_url);
@@ -98,16 +96,16 @@ pub async fn run_logout_with_timeout(
     match tokio::time::timeout(timeout_duration, logout_future).await {
         Ok(result) => match result {
             Ok(_) => {
-                println!("✅ Logout completed within {}s timeout", timeout_seconds);
+                println!("✅ Logout completed within {timeout_seconds}s timeout");
                 Ok(())
             }
             Err(e) => {
-                println!("❌ Logout failed: {}", e);
+                println!("❌ Logout failed: {e}");
                 Err(e)
             }
         },
         Err(_) => {
-            println!("⏰ Logout timed out after {}s", timeout_seconds);
+            println!("⏰ Logout timed out after {timeout_seconds}s");
             Err("Logout timeout".into())
         }
     }

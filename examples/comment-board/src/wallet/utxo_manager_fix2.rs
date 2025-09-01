@@ -17,7 +17,7 @@ impl UtxoLockManager {
         info!("📡 Creating MINIMAL bond transaction to avoid mass limit...");
         
         // Create minimal payload - no kdapp pattern matching
-        let payload = format!("B{}:{}", comment_id, bond_amount).into_bytes();
+        let payload = format!("B{comment_id}:{bond_amount}").into_bytes();
         
         // Calculate exact change
         let fee = 5000; // Minimal fee
@@ -60,12 +60,12 @@ impl UtxoLockManager {
         // Submit transaction
         match self.kaspad_client.submit_transaction((&signed_tx).into(), false).await {
             Ok(_) => {
-                info!("✅ Minimal bond transaction {} submitted successfully", tx_id);
+                info!("✅ Minimal bond transaction {tx_id} submitted successfully");
                 Ok(tx_id)
             }
             Err(e) => {
-                error!("❌ Failed to submit minimal bond transaction: {}", e);
-                Err(format!("Transaction submission failed: {}", e).into())
+                error!("❌ Failed to submit minimal bond transaction: {e}");
+                Err(format!("Transaction submission failed: {e}").into())
             }
         }
     }
@@ -92,7 +92,7 @@ impl UtxoLockManager {
                     // ... rest of the tracking code ...
                     Ok(bond_tx_id)
                 }
-                Err(e) => Err(format!("Failed to create bond transaction: {}", e))
+                Err(e) => Err(format!("Failed to create bond transaction: {e}"))
             }
         } else {
             Err("No suitable UTXO for bond transaction".to_string())

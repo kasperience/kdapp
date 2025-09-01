@@ -20,6 +20,7 @@ struct ApiEndpoint {
     method: &'static str,
     path: &'static str,
     description: &'static str,
+    #[allow(dead_code)]
     needs_data: bool,
     test_data: Option<serde_json::Value>,
 }
@@ -29,7 +30,7 @@ impl TestApiCommand {
         let client = Client::new();
         let base_url = self.peer.trim_end_matches('/');
 
-        println!("🧪 Testing all API endpoints for: {}", base_url);
+        println!("🧪 Testing all API endpoints for: {base_url}");
         println!("==================================================");
         println!();
 
@@ -45,7 +46,7 @@ impl TestApiCommand {
                 if let Ok(ref response) = result {
                     if let Some(id) = self.extract_episode_id(response) {
                         episode_id = Some(id);
-                        println!("📝 Captured episode_id: {} for subsequent tests", id);
+                        println!("📝 Captured episode_id: {id} for subsequent tests");
                         println!();
                     }
                 }
@@ -75,7 +76,7 @@ impl TestApiCommand {
 
             if let Err(e) = result {
                 if self.verbose {
-                    println!("    Error: {}", e);
+                    println!("    Error: {e}");
                 }
             }
         }
@@ -200,7 +201,7 @@ impl TestApiCommand {
             return Err("Skipped - no episode_id available yet".into());
         }
 
-        let url = format!("{}{}", base_url, path);
+        let url = format!("{base_url}{path}");
 
         println!("🔍 Testing: {} {} - {}", endpoint.method, path, endpoint.description);
 
@@ -220,12 +221,12 @@ impl TestApiCommand {
         let response_text = response.text().await?;
 
         if self.verbose || !status.is_success() {
-            println!("   Status: {}", status);
+            println!("   Status: {status}");
             if self.json {
                 if let Ok(json) = serde_json::from_str::<Value>(&response_text) {
                     println!("   Response: {}", serde_json::to_string_pretty(&json)?);
                 } else {
-                    println!("   Response: {}", response_text);
+                    println!("   Response: {response_text}");
                 }
             } else {
                 println!(
@@ -245,7 +246,7 @@ impl TestApiCommand {
         if status.is_success() {
             Ok(response_text)
         } else {
-            Err(format!("HTTP {} - {}", status, response_text).into())
+            Err(format!("HTTP {status} - {response_text}").into())
         }
     }
 

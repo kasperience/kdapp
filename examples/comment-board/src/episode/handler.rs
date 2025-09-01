@@ -7,7 +7,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 pub struct CommentHandler {
     pub sender: UnboundedSender<(EpisodeId, ContractState)>,
-    pub participant: PubKey,
+    pub _participant: PubKey,
 }
 
 impl EpisodeEventHandler<ContractCommentBoard> for CommentHandler {

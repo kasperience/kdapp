@@ -17,18 +17,14 @@ pub async fn run_session_revocation(
         tx::{TransactionOutpoint, UtxoEntry},
     };
     use kaspa_rpc_core::api::rpc::RpcApi;
-    use kaspa_wrpc_client::prelude::*;
-    use kdapp::{
-        engine::EpisodeMessage,
-        generator::{self, TransactionGenerator},
-        proxy::connect_client,
-    };
+
+    use kdapp::{engine::EpisodeMessage, generator::TransactionGenerator, proxy::connect_client};
 
     let client_pubkey = kdapp::pki::PubKey(auth_signer.public_key());
     println!("🔄 Revoking session on blockchain...");
-    println!("🔑 Auth public key: {}", client_pubkey);
-    println!("📧 Episode ID: {}", episode_id);
-    println!("🎫 Session token: {}", session_token);
+    println!("🔑 Auth public key: {client_pubkey}");
+    println!("📧 Episode ID: {episode_id}");
+    println!("🎫 Session token: {session_token}");
 
     // Step 1: Connect to Kaspa network
     let network = NetworkId::with_suffix(kaspa_consensus_core::network::NetworkType::Testnet, 10);
@@ -36,18 +32,16 @@ pub async fn run_session_revocation(
     let kaspa_addr = Address::new(Prefix::Testnet, Version::PubKey, &auth_signer.x_only_public_key().0.serialize());
 
     println!("🔗 Connected to Kaspa testnet-10");
-    println!("💰 Funding address: {}", kaspa_addr);
+    println!("💰 Funding address: {kaspa_addr}");
 
     // Step 2: Get UTXOs for transaction funding
     let entries = kaspad.get_utxos_by_addresses(vec![kaspa_addr.clone()]).await?;
     if entries.is_empty() {
-        return Err(format!("❌ No UTXOs found for address {}. Please fund this address first.", kaspa_addr).into());
+        return Err(format!("❌ No UTXOs found for address {kaspa_addr}. Please fund this address first.").into());
     }
 
-    let utxo = entries
-        .first()
-        .map(|entry| (TransactionOutpoint::from(entry.outpoint.clone()), UtxoEntry::from(entry.utxo_entry.clone())))
-        .unwrap();
+    let utxo =
+        entries.first().map(|entry| (TransactionOutpoint::from(entry.outpoint), UtxoEntry::from(entry.utxo_entry.clone()))).unwrap();
 
     println!("✅ Using UTXO: {}", utxo.0);
 
@@ -74,7 +68,7 @@ pub async fn run_session_revocation(
     let _res = kaspad.submit_transaction(tx.as_ref().into(), false).await?;
 
     println!("✅ Session revocation submitted to Kaspa blockchain!");
-    println!("🔄 Session token {} has been revoked", session_token);
+    println!("🔄 Session token {session_token} has been revoked");
     println!("📊 Transaction is now being processed by auth organizer peer's kdapp engine");
 
     Ok(())

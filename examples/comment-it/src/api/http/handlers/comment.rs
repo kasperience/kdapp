@@ -23,7 +23,7 @@ pub async fn submit_comment(
     let episode_message: EpisodeMessage<AuthWithCommentsEpisode> = match borsh::from_slice(&request.episode_message) {
         Ok(msg) => msg,
         Err(e) => {
-            error!("❌ Failed to deserialize EpisodeMessage: {}", e);
+            error!("❌ Failed to deserialize EpisodeMessage: {e}");
             return Err(StatusCode::BAD_REQUEST);
         }
     };
@@ -35,7 +35,7 @@ pub async fn submit_comment(
     if let Some(auth_peer) = &state.auth_http_peer {
         match auth_peer.submit_episode_message_transaction(episode_message).await {
             Ok(tx_id) => {
-                info!("✅ COMMENT SUBMITTED TO BLOCKCHAIN: episode_id={}, tx_id={}", episode_id, tx_id);
+                info!("✅ COMMENT SUBMITTED TO BLOCKCHAIN: episode_id={episode_id}, tx_id={tx_id}");
                 Ok(ResponseJson(SubmitCommentResponse {
                     episode_id: episode_id.into(),
                     comment_id: 0, // Will be assigned by unified episode
@@ -44,7 +44,7 @@ pub async fn submit_comment(
                 }))
             }
             Err(e) => {
-                error!("❌ Comment submission failed: {}", e);
+                error!("❌ Comment submission failed: {e}");
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
             }
         }
@@ -79,7 +79,7 @@ pub async fn submit_comment_simple(
     let wallet = match crate::wallet::get_wallet_for_command("web-participant", None) {
         Ok(w) => w,
         Err(e) => {
-            error!("❌ No participant wallet available: {}", e);
+            error!("❌ No participant wallet available: {e}");
             return Err(StatusCode::BAD_REQUEST);
         }
     };
@@ -99,14 +99,15 @@ pub async fn submit_comment_simple(
     };
     if needs_auth {
         let base = env::var("INDEXER_URL").unwrap_or_else(|_| "http://127.0.0.1:8090".to_string());
-        let url = format!("{}/index/me/{}?pubkey={}", base.trim_end_matches('/'), request.episode_id, hex::encode(public_key.0.serialize()));
+        let url =
+            format!("{}/index/me/{}?pubkey={}", base.trim_end_matches('/'), request.episode_id, hex::encode(public_key.0.serialize()));
         if let Ok(resp) = reqwest::Client::new().get(url).send().await {
             if resp.status().is_success() {
                 if let Ok(val) = resp.json::<serde_json::Value>().await {
                     if val.get("member").and_then(|m| m.as_bool()) == Some(true) {
                         if let Ok(mut episodes) = state.blockchain_episodes.lock() {
                             if let Some(ep) = episodes.get_mut(&request.episode_id) {
-                                ep.authenticated_participants.insert(format!("{}", public_key));
+                                ep.authenticated_participants.insert(format!("{public_key}"));
                                 info!("🔐 Populated in-memory auth for ep {} via indexer membership", request.episode_id);
                             }
                         }
@@ -134,7 +135,7 @@ pub async fn submit_comment_simple(
                 }))
             }
             Err(e) => {
-                error!("❌ Simple comment submission failed: {}", e);
+                error!("❌ Simple comment submission failed: {e}");
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
             }
         }
@@ -171,7 +172,7 @@ pub async fn get_comments(
         .map(|comment| CommentData {
             id: comment.id,
             text: comment.text.clone(),
-            author: format!("{}", comment.author),
+            author: comment.author.to_string(),
             timestamp: comment.timestamp,
         })
         .collect();

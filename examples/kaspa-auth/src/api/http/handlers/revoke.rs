@@ -8,7 +8,7 @@ use axum::{extract::State, http::StatusCode, response::Json};
 use kaspa_addresses::{Address, Prefix, Version};
 use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
 use kaspa_wrpc_client::prelude::RpcApi;
-use kdapp::{engine::EpisodeMessage, generator::TransactionGenerator, pki::PubKey};
+use kdapp::{engine::EpisodeMessage, pki::PubKey};
 
 pub async fn revoke_session(
     State(state): State<PeerState>,
@@ -25,7 +25,7 @@ pub async fn revoke_session(
     let episode = match state.blockchain_episodes.lock() {
         Ok(episodes) => episodes.get(&episode_id).cloned(),
         Err(e) => {
-            println!("❌ Failed to lock blockchain episodes: {}", e);
+            println!("❌ Failed to lock blockchain episodes: {e}");
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
@@ -40,7 +40,7 @@ pub async fn revoke_session(
             (pubkey, ep.session_token.clone())
         }
         None => {
-            println!("❌ Episode {} not found in blockchain state", episode_id);
+            println!("❌ Episode {episode_id} not found in blockchain state");
             return Err(StatusCode::NOT_FOUND);
         }
     };
@@ -52,7 +52,7 @@ pub async fn revoke_session(
             return Err(StatusCode::BAD_REQUEST);
         }
     } else {
-        println!("❌ No active session found for episode {}", episode_id);
+        println!("❌ No active session found for episode {episode_id}");
         return Err(StatusCode::BAD_REQUEST);
     }
 
@@ -75,21 +75,21 @@ pub async fn revoke_session(
         let entries = match kaspad.get_utxos_by_addresses(vec![participant_addr.clone()]).await {
             Ok(entries) => entries,
             Err(e) => {
-                println!("❌ Failed to fetch UTXOs: {}", e);
+                println!("❌ Failed to fetch UTXOs: {e}");
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }
         };
 
         if entries.is_empty() {
             println!("❌ No UTXOs found! Participant wallet needs funding.");
-            println!("💰 Fund this address: {}", participant_addr);
+            println!("💰 Fund this address: {participant_addr}");
             println!("🚰 Get testnet funds: https://faucet.kaspanet.io/");
             return Err(StatusCode::SERVICE_UNAVAILABLE);
         }
 
         let utxo = entries
             .first()
-            .map(|entry| (TransactionOutpoint::from(entry.outpoint.clone()), UtxoEntry::from(entry.utxo_entry.clone())))
+            .map(|entry| (TransactionOutpoint::from(entry.outpoint), UtxoEntry::from(entry.utxo_entry.clone())))
             .unwrap();
 
         println!("✅ Using UTXO: {}", utxo.0);
@@ -106,7 +106,7 @@ pub async fn revoke_session(
     let episode_id_u32 = match episode_id.try_into() {
         Ok(id) => id,
         Err(_) => {
-            println!("❌ Episode ID {} is too large to fit in u32", episode_id);
+            println!("❌ Episode ID {episode_id} is too large to fit in u32");
             return Err(StatusCode::BAD_REQUEST);
         }
     };
@@ -128,12 +128,12 @@ pub async fn revoke_session(
         .await
     {
         Ok(tx_id) => {
-            println!("✅ RevokeSession transaction {} submitted successfully to blockchain via AuthHttpPeer!", tx_id);
+            println!("✅ RevokeSession transaction {tx_id} submitted successfully to blockchain via AuthHttpPeer!");
             println!("📊 Transaction is now being processed by auth organizer peer's kdapp engine");
             (tx_id, "session_revocation_submitted".to_string())
         }
         Err(e) => {
-            println!("❌ RevokeSession submission failed via AuthHttpPeer: {}", e);
+            println!("❌ RevokeSession submission failed via AuthHttpPeer: {e}");
             ("error".to_string(), "session_revocation_failed".to_string())
         }
     };

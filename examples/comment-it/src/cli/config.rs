@@ -221,7 +221,7 @@ mod tests {
     fn test_default_config() {
         let config = CommentItConfig::default();
         assert!(!config.organizer_peers.is_empty());
-        assert!(config.get_enabled_peers().len() >= 1);
+        assert!(!config.get_enabled_peers().is_empty());
     }
 
     #[test]

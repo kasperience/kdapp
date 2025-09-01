@@ -38,6 +38,7 @@ pub struct AgentWallet {
 
 impl AgentWallet {
     /// Load existing wallet or create new one
+    #[allow(dead_code)]
     pub fn load_or_create() -> Result<Self> {
         let config = WalletConfig::default();
         Self::load_or_create_with_config(config)
@@ -48,7 +49,7 @@ impl AgentWallet {
         let mut config = WalletConfig::default();
 
         // Use separate wallet files for different agents
-        config.keypair_file = config.wallet_dir.join(format!("{}-wallet.key", agent_name));
+        config.keypair_file = config.wallet_dir.join(format!("{agent_name}-wallet.key"));
 
         info!("📁 Loading {} wallet from: {}", agent_name, config.keypair_file.display());
         Self::load_or_create_with_config(config)
@@ -91,7 +92,7 @@ impl AgentWallet {
 
         info!("💾 Wallet saved to: {}", config.keypair_file.display());
         info!("🔑 Public Key: {}", hex::encode(keypair.public_key().serialize()));
-        info!("💰 Funding Address: {}", kaspa_address);
+        info!("💰 Funding Address: {kaspa_address}");
         info!("🌐 Network: {}", config.network_id);
         info!("💡 Fund this address at: https://faucet.kaspanet.io/");
         info!("✅ Wallet setup complete!");
@@ -119,7 +120,7 @@ impl AgentWallet {
 
         info!("✅ Wallet loaded successfully");
         info!("🔑 Public Key: {}", hex::encode(keypair.public_key().serialize()));
-        info!("💰 Funding Address: {}", kaspa_address);
+        info!("💰 Funding Address: {kaspa_address}");
         info!("🌐 Network: {}", config.network_id);
 
         Ok(Self { keypair, config, was_created: false })
@@ -132,6 +133,7 @@ impl AgentWallet {
     }
 
     /// Get public key as hex string
+    #[allow(dead_code)]
     pub fn get_public_key_hex(&self) -> String {
         hex::encode(self.keypair.public_key().serialize())
     }

@@ -198,12 +198,12 @@ async fn get_challenge(
     State(_state): State<OrganizerState>,
     axum::extract::Path(episode_id): axum::extract::Path<u64>,
 ) -> Result<Json<ChallengeResponse>, StatusCode> {
-    info!("🎲 Getting challenge for episode {}", episode_id);
+    info!("🎲 Getting challenge for episode {episode_id}");
 
     // TODO: Get real challenge from auth episode
     Ok(Json(ChallengeResponse {
         episode_id,
-        nonce: format!("auth_challenge_{}", episode_id),
+        nonce: format!("auth_challenge_{episode_id}"),
         transaction_id: Some("challenge_tx".to_string()),
         status: "challenge_ready".to_string(),
     }))
@@ -244,7 +244,7 @@ async fn get_auth_status(
     State(_state): State<OrganizerState>,
     axum::extract::Path(episode_id): axum::extract::Path<u64>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    info!("📊 Getting auth status for episode {}", episode_id);
+    info!("📊 Getting auth status for episode {episode_id}");
 
     // TODO: Get real auth status from episode
     Ok(Json(serde_json::json!({
@@ -266,7 +266,7 @@ async fn submit_comment(
     let episode_message: EpisodeMessage<AuthWithCommentsEpisode> = match borsh::from_slice(&request.episode_message) {
         Ok(msg) => msg,
         Err(e) => {
-            error!("❌ Failed to deserialize EpisodeMessage: {}", e);
+            error!("❌ Failed to deserialize EpisodeMessage: {e}");
             return Err(StatusCode::BAD_REQUEST);
         }
     };
@@ -287,7 +287,7 @@ async fn submit_comment(
     // to submit an already constructed EpisodeMessage.
     // For now, we'll simulate success.
 
-    info!("✅ COMMENT SUBMITTED TO BLOCKCHAIN (simulated): episode_id={}, tx_id={}", episode_id, tx_id);
+    info!("✅ COMMENT SUBMITTED TO BLOCKCHAIN (simulated): episode_id={episode_id}, tx_id={tx_id}");
     Ok(Json(SubmitCommentResponse {
         episode_id: episode_id.into(),
         comment_id: 0, // Will be assigned by unified episode
@@ -379,7 +379,7 @@ async fn handle_websocket(socket: axum::extract::ws::WebSocket, state: Organizer
     let recv_task = tokio::spawn(async move {
         while let Some(msg) = receiver.next().await {
             if let Ok(Message::Text(text)) = msg {
-                info!("📨 WebSocket message received: {}", text);
+                info!("📨 WebSocket message received: {text}");
                 // TODO: Handle incoming WebSocket messages if needed
             }
         }

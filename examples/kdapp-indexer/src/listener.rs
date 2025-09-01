@@ -1,18 +1,24 @@
+#![allow(dead_code)]
 use crate::models::{CommentRow, EpisodeSnapshot};
 use crate::storage::{Store, StoreError};
 
 use comment_it::core::{AuthWithCommentsEpisode, UnifiedCommand};
 use comment_it::episode_runner::{AUTH_PATTERN, AUTH_PREFIX};
+use kaspa_wrpc_client::prelude::NetworkId;
 use kdapp::engine::{self};
 use kdapp::episode::{EpisodeEventHandler, EpisodeId, PayloadMetadata};
 use kdapp::pki::PubKey;
 use kdapp::proxy::{self, connect_client};
-use kaspa_wrpc_client::prelude::NetworkId;
 use log::{info, warn};
 use std::sync::{mpsc::channel, Arc};
 
 // Main listener: wires kdapp proxy + engine and persists events to the store
-pub async fn run_with_config(store: Store, network_id: NetworkId, wrpc_url: Option<String>, exit_signal: Arc<std::sync::atomic::AtomicBool>) -> Result<(), StoreError> {
+pub async fn run_with_config(
+    store: Store,
+    network_id: NetworkId,
+    wrpc_url: Option<String>,
+    exit_signal: Arc<std::sync::atomic::AtomicBool>,
+) -> Result<(), StoreError> {
     // Channel for engine events
     let (sender, receiver) = channel();
 
@@ -28,9 +34,7 @@ pub async fn run_with_config(store: Store, network_id: NetworkId, wrpc_url: Opti
     let engines = std::iter::once((AUTH_PREFIX, (AUTH_PATTERN, sender))).collect();
 
     // Connect to kaspad and start proxy listener
-    let kaspad = connect_client(network_id, wrpc_url)
-        .await
-        .map_err(|_| StoreError::Internal)?;
+    let kaspad = connect_client(network_id, wrpc_url).await.map_err(|_| StoreError::Internal)?;
     info!("Indexer listener connected. Following AUTH_PREFIX transactions...");
     proxy::run_listener(kaspad, engines, exit_signal).await;
     Ok(())
@@ -43,7 +47,7 @@ struct IndexerHandler {
 
 impl EpisodeEventHandler<AuthWithCommentsEpisode> for IndexerHandler {
     fn on_initialize(&self, episode_id: EpisodeId, episode: &AuthWithCommentsEpisode) {
-        let creator_pubkey = episode.get_creator().map(|pk| format!("{}", pk));
+        let creator_pubkey = episode.get_creator().map(|pk| format!("{pk}"));
         let created_at = episode.created_at;
         let snapshot = EpisodeSnapshot {
             episode_id: episode_id.into(),
@@ -52,7 +56,7 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for IndexerHandler {
             authenticated_count: episode.get_authenticated_count(),
         };
         if let Err(e) = self.store.upsert_episode(snapshot) {
-            warn!("indexer: failed to upsert episode {}: {:?}", episode_id, e);
+            warn!("indexer: failed to upsert episode {episode_id}: {e:?}");
         }
     }
 
@@ -68,19 +72,19 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for IndexerHandler {
             UnifiedCommand::SubmitResponse { .. } => {
                 if let Some(pk) = authorization {
                     // Command succeeded → participant is authenticated; track membership
-                    let pk_str = format!("{}", pk);
+                    let pk_str = format!("{pk}");
                     if let Err(e) = self.store.add_membership(&pk_str, episode_id.into()) {
-                        warn!("indexer: failed to add membership for ep {}: {:?}", episode_id, e);
+                        warn!("indexer: failed to add membership for ep {episode_id}: {e:?}");
                     }
                     // Also update snapshot with new authenticated count
                     let snapshot = EpisodeSnapshot {
                         episode_id: episode_id.into(),
-                        creator_pubkey: episode.get_creator().map(|p| format!("{}", p)),
+                        creator_pubkey: episode.get_creator().map(|p| format!("{p}")),
                         created_at: episode.created_at,
                         authenticated_count: episode.get_authenticated_count(),
                     };
                     if let Err(e) = self.store.upsert_episode(snapshot) {
-                        warn!("indexer: failed to refresh episode {}: {:?}", episode_id, e);
+                        warn!("indexer: failed to refresh episode {episode_id}: {e:?}");
                     }
                 }
             }
@@ -95,19 +99,19 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for IndexerHandler {
                         timestamp: new_comment.timestamp,
                     };
                     if let Err(e) = self.store.add_comment(row) {
-                        warn!("indexer: failed to add comment for ep {}: {:?}", episode_id, e);
+                        warn!("indexer: failed to add comment for ep {episode_id}: {e:?}");
                     }
                 } else if let Some(pk) = authorization {
                     // Fallback: use command data when episode.comments not visible (shouldn't happen)
                     let row = CommentRow {
                         episode_id: episode_id.into(),
                         comment_id: 0,
-                        author: format!("{}", pk),
+                        author: format!("{pk}"),
                         text: text.clone(),
                         timestamp: metadata.accepting_time,
                     };
                     if let Err(e) = self.store.add_comment(row) {
-                        warn!("indexer: fallback add_comment failed for ep {}: {:?}", episode_id, e);
+                        warn!("indexer: fallback add_comment failed for ep {episode_id}: {e:?}");
                     }
                 }
             }
@@ -115,12 +119,12 @@ impl EpisodeEventHandler<AuthWithCommentsEpisode> for IndexerHandler {
                 // No-op for index storage beyond snapshot refresh
                 let snapshot = EpisodeSnapshot {
                     episode_id: episode_id.into(),
-                    creator_pubkey: episode.get_creator().map(|p| format!("{}", p)),
+                    creator_pubkey: episode.get_creator().map(|p| format!("{p}")),
                     created_at: episode.created_at,
                     authenticated_count: episode.get_authenticated_count(),
                 };
                 if let Err(e) = self.store.upsert_episode(snapshot) {
-                    warn!("indexer: failed to refresh episode {}: {:?}", episode_id, e);
+                    warn!("indexer: failed to refresh episode {episode_id}: {e:?}");
                 }
             }
         }
@@ -142,7 +146,14 @@ pub fn apply_auth_update(store: &Store, episode_id: u64, pubkey: &str, _authenti
     store.add_membership(pubkey, episode_id)
 }
 
-pub fn apply_new_comment(store: &Store, episode_id: u64, comment_id: u64, author: String, text: String, timestamp: u64) -> Result<(), StoreError> {
+pub fn apply_new_comment(
+    store: &Store,
+    episode_id: u64,
+    comment_id: u64,
+    author: String,
+    text: String,
+    timestamp: u64,
+) -> Result<(), StoreError> {
     let row = CommentRow { episode_id, comment_id, author, text, timestamp };
     store.add_comment(row)
 }

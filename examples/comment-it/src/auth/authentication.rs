@@ -16,12 +16,12 @@ pub async fn run_authentication_with_timeout(
     peer_url: String,
     timeout_seconds: u64,
 ) -> Result<AuthenticationResult, Box<dyn Error>> {
-    let kaspa_signer = auth_keypair.clone(); // Use same keypair for funding
+    let kaspa_signer = auth_keypair; // Use same keypair for funding
     let timeout_duration = tokio::time::Duration::from_secs(timeout_seconds);
 
     match tokio::time::timeout(timeout_duration, run_http_coordinated_authentication(kaspa_signer, auth_keypair, peer_url)).await {
         Ok(result) => result,
-        Err(_) => Err(format!("Authentication timeout after {} seconds", timeout_seconds).into()),
+        Err(_) => Err(format!("Authentication timeout after {timeout_seconds} seconds").into()),
     }
 }
 
@@ -30,7 +30,7 @@ pub async fn run_full_authentication_cycle(auth_keypair: Keypair, peer_url: Stri
     println!("🔄 Starting full authentication cycle...");
 
     // Step 1: Authenticate
-    let auth_result = run_authentication_with_timeout(auth_keypair.clone(), peer_url.clone(), 30).await?;
+    let auth_result = run_authentication_with_timeout(auth_keypair, peer_url.clone(), 30).await?;
     println!("✅ Authentication completed - Episode: {}, Session: {}", auth_result.episode_id, auth_result.session_token);
 
     // Step 2: Verify authentication worked
@@ -68,7 +68,7 @@ pub async fn run_http_coordinated_authentication(
     };
 
     let client_pubkey = kdapp::pki::PubKey(auth_signer.public_key());
-    println!("🔑 Auth public key: {}", client_pubkey);
+    println!("🔑 Auth public key: {client_pubkey}");
 
     // Connect to Kaspa network (real blockchain!)
     let network = NetworkId::with_suffix(kaspa_consensus_core::network::NetworkType::Testnet, 10);
@@ -78,7 +78,7 @@ pub async fn run_http_coordinated_authentication(
 
     // Create Kaspa address for funding transactions
     let kaspa_addr = Address::new(Prefix::Testnet, Version::PubKey, &kaspa_signer.x_only_public_key().0.serialize());
-    println!("💰 Kaspa address: {}", kaspa_addr);
+    println!("💰 Kaspa address: {kaspa_addr}");
 
     // Get UTXOs for transaction funding
     println!("🔍 Fetching UTXOs...");
@@ -88,10 +88,8 @@ pub async fn run_http_coordinated_authentication(
         return Err("No UTXOs found! Please fund the Kaspa address first.".into());
     }
 
-    let mut utxo = entries
-        .first()
-        .map(|entry| (TransactionOutpoint::from(entry.outpoint.clone()), UtxoEntry::from(entry.utxo_entry.clone())))
-        .unwrap();
+    let mut utxo =
+        entries.first().map(|entry| (TransactionOutpoint::from(entry.outpoint), UtxoEntry::from(entry.utxo_entry.clone()))).unwrap();
 
     println!("✅ UTXO found: {}", utxo.0);
 
@@ -106,7 +104,7 @@ pub async fn run_http_coordinated_authentication(
     let public_key_hex = hex::encode(client_pubkey.0.serialize());
 
     // Use the /auth/start endpoint which creates episodes on the server side
-    let start_url = format!("{}/auth/start", peer_url);
+    let start_url = format!("{peer_url}/auth/start");
     let start_response = client
         .post(&start_url)
         .header("Content-Type", "application/json")
@@ -119,7 +117,7 @@ pub async fn run_http_coordinated_authentication(
     let start_data: serde_json::Value = start_response.json().await?;
     let episode_id = start_data["episode_id"].as_u64().ok_or("Server did not return valid episode_id")?;
 
-    println!("✅ Authentication episode {} created by organizer peer", episode_id);
+    println!("✅ Authentication episode {episode_id} created by organizer peer");
 
     // Step 2: Send RequestChallenge command to blockchain
     println!("📨 Sending RequestChallenge command to blockchain...");
@@ -140,7 +138,7 @@ pub async fn run_http_coordinated_authentication(
 
     println!("✅ RequestChallenge transaction submitted to blockchain!");
     println!("🔗 [ VERIFY ON KASPA EXPLORER → ] https://explorer-tn10.kaspa.org/txs/{}", tx.id());
-    println!("🔗 [ VIEW WALLET ON EXPLORER → ] https://explorer-tn10.kaspa.org/addresses/{}", kaspa_addr);
+    println!("🔗 [ VIEW WALLET ON EXPLORER → ] https://explorer-tn10.kaspa.org/addresses/{kaspa_addr}");
     println!("⏳ Waiting for challenge response from auth server...");
 
     // Wait for server to process RequestChallenge and generate challenge
@@ -152,25 +150,25 @@ pub async fn run_http_coordinated_authentication(
 
     // Get challenge via HTTP (polling until available)
     for retry_attempt in 1..=10 {
-        println!("🔄 Checking for challenge attempt {} of 10...", retry_attempt);
+        println!("🔄 Checking for challenge attempt {retry_attempt} of 10...");
 
-        let status_url = format!("{}/auth/status/{}", peer_url, episode_id);
+        let status_url = format!("{peer_url}/auth/status/{episode_id}");
 
         match client.get(&status_url).send().await {
             Ok(response) if response.status().is_success() => {
                 if let Ok(status_json) = response.text().await {
-                    println!("📡 HTTP status response: {}", status_json);
+                    println!("📡 HTTP status response: {status_json}");
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&status_json) {
                         if let Some(server_challenge) = parsed["challenge"].as_str() {
                             challenge = server_challenge.to_string();
-                            println!("🎯 Challenge retrieved from server: {}", challenge);
+                            println!("🎯 Challenge retrieved from server: {challenge}");
                             break;
                         }
                     }
                 }
             }
             _ => {
-                println!("❌ HTTP attempt {} failed", retry_attempt);
+                println!("❌ HTTP attempt {retry_attempt} failed");
             }
         }
 
@@ -207,7 +205,7 @@ pub async fn run_http_coordinated_authentication(
 
     println!("✅ Authentication commands submitted to Kaspa blockchain!");
     println!("🔗 [ VERIFY ON KASPA EXPLORER → ] https://explorer-tn10.kaspa.org/txs/{}", tx.id());
-    println!("🔗 [ VIEW WALLET ON EXPLORER → ] https://explorer-tn10.kaspa.org/addresses/{}", kaspa_addr);
+    println!("🔗 [ VIEW WALLET ON EXPLORER → ] https://explorer-tn10.kaspa.org/addresses/{kaspa_addr}");
     println!("🎯 Real kdapp architecture: Generator → Proxy → Engine → Episode");
     println!("📊 Transactions submitted to Kaspa blockchain - organizer peer will detect and respond");
 
@@ -220,14 +218,14 @@ pub async fn run_http_coordinated_authentication(
         wait_attempts += 1;
 
         // Check authentication status via HTTP (server has the real blockchain state)
-        let status_url = format!("{}/auth/status/{}", peer_url, episode_id);
+        let status_url = format!("{peer_url}/auth/status/{episode_id}");
         if let Ok(response) = client.get(&status_url).send().await {
             if let Ok(status_json) = response.text().await {
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&status_json) {
                     if let (Some(authenticated), Some(token)) = (parsed["authenticated"].as_bool(), parsed["session_token"].as_str()) {
                         if authenticated && !token.is_empty() {
                             let session_token = token.to_string();
-                            println!("✅ Real session token retrieved from server: {}", session_token);
+                            println!("✅ Real session token retrieved from server: {session_token}");
                             break session_token;
                         }
                     }

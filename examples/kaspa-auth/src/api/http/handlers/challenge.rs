@@ -32,7 +32,7 @@ pub async fn request_challenge(
             match episode.execute(&challenge_cmd, episode.owner, &metadata) {
                 Ok(_) => {
                     if let Some(challenge) = &episode.challenge {
-                        println!("✅ Challenge generated: {}", challenge);
+                        println!("✅ Challenge generated: {challenge}");
 
                         // Return challenge immediately (no blockchain wait!)
                         return Ok(Json(ChallengeResponse {
@@ -44,7 +44,7 @@ pub async fn request_challenge(
                     }
                 }
                 Err(e) => {
-                    println!("❌ Challenge generation failed: {:?}", e);
+                    println!("❌ Challenge generation failed: {e:?}");
                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
                 }
             }

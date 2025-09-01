@@ -28,7 +28,7 @@ impl SignatureVerifier {
 
     /// Verify a signature with additional context
     pub fn verify_with_context(pubkey: &PubKey, message: &str, signature: &str, context: &str) -> bool {
-        let contextualized_message = format!("{}:{}", context, message);
+        let contextualized_message = format!("{context}:{message}");
         Self::verify(pubkey, &contextualized_message, signature)
     }
 
@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn test_signature_format_validation() {
         // Valid DER signature format (example)
-        let valid_sig = "304402207a8b1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789022055a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let _valid_sig = "304402207a8b1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789022055a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789";
 
         // Invalid formats
         let invalid_hex = "not_hex";
@@ -103,7 +103,7 @@ mod tests {
         let context = "auth_context";
 
         // Sign the contextualized message
-        let contextualized = format!("{}:{}", context, message);
+        let contextualized = format!("{context}:{message}");
         let msg = to_message(&contextualized);
         let sig = sign_message(&secret, &msg);
         let sig_hex = hex::encode(sig.0.serialize_der());

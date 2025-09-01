@@ -45,7 +45,7 @@ impl KaspaAuthWallet {
         let mut config = WalletConfig::default();
 
         // Use separate wallet files for server vs client
-        config.keypair_file = config.wallet_dir.join(format!("{}-wallet.key", role));
+        config.keypair_file = config.wallet_dir.join(format!("{role}-wallet.key"));
 
         println!("📁 Loading {} wallet from: {}", role, config.keypair_file.display());
         Self::load_or_create_with_config(config)
@@ -89,7 +89,7 @@ impl KaspaAuthWallet {
 
         println!("💾 Wallet saved to: {}", config.keypair_file.display());
         println!("🔑 Public Key: {}", hex::encode(keypair.public_key().serialize()));
-        println!("💰 Funding Address: {}", kaspa_address);
+        println!("💰 Funding Address: {kaspa_address}");
         println!("🌐 Network: {}", config.network_id);
         println!("💡 Fund this address at: https://faucet.kaspanet.io/");
         println!("✅ Wallet setup complete!");
@@ -118,7 +118,7 @@ impl KaspaAuthWallet {
 
         println!("✅ Wallet loaded successfully");
         println!("🔑 Public Key: {}", hex::encode(keypair.public_key().serialize()));
-        println!("💰 Funding Address: {}", kaspa_address);
+        println!("💰 Funding Address: {kaspa_address}");
         println!("🌐 Network: {}", config.network_id);
         println!();
 
@@ -171,11 +171,11 @@ impl KaspaAuthWallet {
                 let kaspa_addr = wallet.get_kaspa_address();
                 if wallet.was_created {
                     println!("🆕 Creating NEW organizer-peer wallet");
-                    println!("🔑 New Kaspa address: {}", kaspa_addr);
+                    println!("🔑 New Kaspa address: {kaspa_addr}");
                     println!("💾 Wallet saved to: .kaspa-auth/organizer-peer-wallet.key");
                 } else {
                     println!("🔄 REUSING existing organizer-peer wallet");
-                    println!("🔑 Existing Kaspa address: {}", kaspa_addr);
+                    println!("🔑 Existing Kaspa address: {kaspa_addr}");
                     println!("📁 Loaded from: .kaspa-auth/organizer-peer-wallet.key");
                 }
                 wallet.show_funding_reminder();
@@ -184,11 +184,11 @@ impl KaspaAuthWallet {
                 let kaspa_addr = wallet.get_kaspa_address();
                 if wallet.was_created {
                     println!("🆕 Creating NEW participant-peer wallet");
-                    println!("🔑 New Kaspa address: {}", kaspa_addr);
+                    println!("🔑 New Kaspa address: {kaspa_addr}");
                     println!("💾 Wallet saved to: .kaspa-auth/participant-peer-wallet.key");
                 } else {
                     println!("🔄 REUSING existing participant-peer wallet");
-                    println!("🔑 Existing Kaspa address: {}", kaspa_addr);
+                    println!("🔑 Existing Kaspa address: {kaspa_addr}");
                     println!("📁 Loaded from: .kaspa-auth/participant-peer-wallet.key");
                 }
             }
@@ -225,7 +225,7 @@ impl KaspaAuthWallet {
         let keypair = Keypair::from_secret_key(&secp, &secret_key);
 
         let public_key_bytes = keypair.public_key().serialize();
-        println!("🔍 DEBUG: Full public key (33 bytes): {}", hex::encode(&public_key_bytes));
+        println!("🔍 DEBUG: Full public key (33 bytes): {}", hex::encode(public_key_bytes));
         println!("🔍 DEBUG: Public key without prefix (32 bytes): {}", hex::encode(&public_key_bytes[1..]));
 
         // Create custom config with the specific file path
@@ -234,7 +234,7 @@ impl KaspaAuthWallet {
 
         println!("🔍 DEBUG: Network ID: {}", config.network_id);
         let network_prefix = Prefix::from(config.network_id);
-        println!("🔍 DEBUG: Network prefix: {:?}", network_prefix);
+        println!("🔍 DEBUG: Network prefix: {network_prefix:?}");
 
         // Create wallet directory if it doesn't exist
         fs::create_dir_all(&config.wallet_dir)?;
@@ -247,7 +247,7 @@ impl KaspaAuthWallet {
 
         println!("💾 Wallet saved to: {}", config.keypair_file.display());
         println!("🔑 Public Key: {}", hex::encode(keypair.public_key().serialize()));
-        println!("💰 Kaspa Address: {}", kaspa_address);
+        println!("💰 Kaspa Address: {kaspa_address}");
 
         Ok(Self {
             keypair,
@@ -261,7 +261,7 @@ impl KaspaAuthWallet {
 pub fn get_wallet_for_command(command: &str, private_key: Option<&str>) -> Result<KaspaAuthWallet, Box<dyn std::error::Error>> {
     match private_key {
         Some(key_hex) => {
-            println!("🔑 Using provided private key for {}", command);
+            println!("🔑 Using provided private key for {command}");
             KaspaAuthWallet::from_private_key(key_hex)
         }
         None => KaspaAuthWallet::load_for_command(command),

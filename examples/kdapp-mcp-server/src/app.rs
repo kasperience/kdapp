@@ -30,7 +30,7 @@ pub async fn run() -> Result<()> {
             Some(client)
         }
         Err(e) => {
-            println!("⚠️  Warning: Could not connect to Kaspa node: {}", e);
+            println!("⚠️  Warning: Could not connect to Kaspa node: {e}");
             println!("   The server will continue in offline mode");
             None
         }
@@ -51,7 +51,7 @@ pub async fn run() -> Result<()> {
                 match result {
                     Ok(Some(line)) => { process_request(line, state.clone()).await?; }
                     Ok(None) => { break; }
-                    Err(e) => { eprintln!("Error reading line: {}", e); break; }
+                    Err(e) => { eprintln!("Error reading line: {e}"); break; }
                 }
             }
             _ = signal::ctrl_c() => { println!("Received shutdown signal, exiting..."); break; }

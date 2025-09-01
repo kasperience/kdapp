@@ -46,8 +46,8 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
     let participant_pk = PubKey(kaspa_signer.public_key());
     let participant_sk = kaspa_signer.secret_key();
 
-    info!("Your identity (public key): {}", participant_pk);
-    info!("Your Kaspa address: {}", kaspa_addr);
+    info!("Your identity (public key): {participant_pk}");
+    info!("Your Kaspa address: {kaspa_addr}");
 
     let kaspad = connect_client(network, args.wrpc_url.clone()).await?;
     let participant_kaspad = connect_client(network, args.wrpc_url.clone()).await?;
@@ -59,7 +59,7 @@ pub async fn run_participant(args: Args) -> Result<(), Box<dyn std::error::Error
 
     let mut engine = engine::Engine::<ContractCommentBoard, CommentHandler>::new(receiver);
     let engine_task = tokio::task::spawn_blocking(move || {
-        engine.start(vec![CommentHandler { sender: response_sender, participant: participant_pk }]);
+        engine.start(vec![CommentHandler { sender: response_sender, _participant: participant_pk }]);
     });
 
     let args_clone = args.clone();

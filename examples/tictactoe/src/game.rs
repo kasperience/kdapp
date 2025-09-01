@@ -87,7 +87,7 @@ impl TTTState {
                 };
 
                 // Print the symbol with padding for nice spacing
-                print!(" {} ", symbol);
+                print!(" {symbol} ");
 
                 // Print a vertical separator between cells, but not after the last one
                 if col_index < 2 {
@@ -121,7 +121,7 @@ impl Episode for TicTacToe {
     type CommandError = TTTError;
 
     fn initialize(participants: Vec<PubKey>, metadata: &PayloadMetadata) -> Self {
-        info!("[TicTacToe] initialize: {:?}", participants);
+        info!("[TicTacToe] initialize: {participants:?}");
         Self {
             board: [[None; 3]; 3],
             players: participants,
@@ -151,7 +151,7 @@ impl Episode for TicTacToe {
             return Err(EpisodeError::InvalidCommand(TTTError::Occupied));
         }
 
-        info!("[TicTacToe] execute: {:?}, {:?}", player, cmd);
+        info!("[TicTacToe] execute: {player:?}, {cmd:?}");
 
         let mut removed_mv = None;
 
@@ -241,7 +241,7 @@ mod tests {
     use super::*;
     use kdapp::{
         engine::{self, EngineMsg as Msg, EpisodeMessage},
-        episode::{EpisodeEventHandler, EpisodeId, PayloadMetadata},
+        episode::PayloadMetadata,
         pki::{generate_keypair, sign_message, to_message, PubKey},
     };
 
@@ -321,7 +321,7 @@ mod tests {
         }
         let probe = Probe { m: Arc::new(Mutex::new(Metrics::default())) };
         let probe_clone = probe.clone();
-        let mut engine = engine::Engine::<TicTacToe>::new(receiver);
+        let mut engine = engine::Engine::<TicTacToe, Probe>::new(receiver);
         let engine_task = tokio::task::spawn_blocking(move || {
             engine.start(vec![probe_clone]);
         });
@@ -332,7 +332,7 @@ mod tests {
                 accepting_hash: 1u64.into(),
                 accepting_daa: 0,
                 accepting_time: 0,
-                associated_txs: vec![(2u64.into(), payload)],
+                associated_txs: vec![(2u64.into(), payload, None)],
             })
             .unwrap();
 
@@ -347,7 +347,7 @@ mod tests {
                 accepting_hash: 3u64.into(),
                 accepting_daa: 1,
                 accepting_time: 1,
-                associated_txs: vec![(4u64.into(), payload)],
+                associated_txs: vec![(4u64.into(), payload, None)],
             })
             .unwrap();
 
@@ -359,7 +359,7 @@ mod tests {
                 accepting_hash: 5u64.into(),
                 accepting_daa: 2,
                 accepting_time: 2,
-                associated_txs: vec![(4u64.into(), payload)],
+                associated_txs: vec![(4u64.into(), payload, None)],
             })
             .unwrap();
 

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::episode::commands::BondScriptKind;
 
 use kaspa_consensus_core::tx::ScriptPublicKey;
@@ -8,7 +9,7 @@ use secp256k1::PublicKey;
 ///
 /// This module provides script-based locking mechanisms that enforce spending conditions
 /// directly at the blockchain level, eliminating the need for application-layer trust.
-
+///
 /// Bond unlock conditions for Phase 2.0 script-based enforcement
 #[derive(Debug, Clone)]
 pub enum ScriptUnlockCondition {
@@ -24,7 +25,7 @@ pub enum ScriptUnlockCondition {
 /// Note: This is a simplified implementation for Phase 2.0 concept demonstration
 /// Full Kaspa script support would require integration with kaspa-txscript
 pub fn create_bond_timelock_script(unlock_time: u64, user_pubkey: &PublicKey) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    info!("🔒 Creating time-lock script: unlock_time={}, user_pubkey={}", unlock_time, user_pubkey);
+    info!("🔒 Creating time-lock script: unlock_time={unlock_time}, user_pubkey={user_pubkey}");
 
     // Phase 2.0 concept: Create a script representation
     // In a full implementation, this would use kaspa-txscript for real opcodes
@@ -180,76 +181,6 @@ pub fn validate_script_conditions(condition: &ScriptUnlockCondition, current_tim
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rand::thread_rng;
-    use secp256k1::{Secp256k1, SecretKey};
-
-    fn generate_test_keypair() -> (SecretKey, PublicKey) {
-        let secp = Secp256k1::new();
-        secp256k1::generate_keypair(&mut thread_rng())
-    }
-
-    #[test]
-    fn test_timelock_script_creation() {
-        let (_, user_pubkey) = generate_test_keypair();
-        let unlock_time = 1000000000; // Future timestamp
-
-        let script = create_bond_timelock_script(unlock_time, &user_pubkey).unwrap();
-        assert!(!script.is_empty());
-        assert!(script.len() > 10); // Should have meaningful content
-    }
-
-    #[test]
-    fn test_multisig_script_creation() {
-        let (_, user_pubkey) = generate_test_keypair();
-        let (_, mod1_pubkey) = generate_test_keypair();
-        let (_, mod2_pubkey) = generate_test_keypair();
-        let moderator_pubkeys = vec![mod1_pubkey, mod2_pubkey];
-
-        let script = create_moderator_multisig_script(&user_pubkey, &moderator_pubkeys, 2).unwrap();
-        assert!(!script.is_empty());
-    }
-
-    #[test]
-    fn test_combined_script_creation() {
-        let (_, user_pubkey) = generate_test_keypair();
-        let (_, mod1_pubkey) = generate_test_keypair();
-        let moderator_pubkeys = vec![mod1_pubkey];
-        let unlock_time = 2000000000; // Future timestamp
-
-        let script = create_combined_unlock_script(unlock_time, &user_pubkey, &moderator_pubkeys, 1).unwrap();
-        assert!(!script.is_empty());
-    }
-
-    #[test]
-    fn test_script_condition_validation() {
-        let (_, user_pubkey) = generate_test_keypair();
-        let (_, mod_pubkey) = generate_test_keypair();
-        let current_time = 1000000000;
-
-        // Valid time-lock condition
-        let timelock_condition = ScriptUnlockCondition::TimeLock {
-            unlock_time: current_time + 3600, // 1 hour in future
-            user_pubkey,
-        };
-        assert!(validate_script_conditions(&timelock_condition, current_time).is_ok());
-
-        // Invalid time-lock condition (in the past)
-        let invalid_timelock = ScriptUnlockCondition::TimeLock {
-            unlock_time: current_time - 3600, // 1 hour in past
-            user_pubkey,
-        };
-        assert!(validate_script_conditions(&invalid_timelock, current_time).is_err());
-
-        // Valid moderator condition
-        let moderator_condition =
-            ScriptUnlockCondition::ModeratorRelease { user_pubkey, moderator_pubkeys: vec![mod_pubkey], required_signatures: 1 };
-        assert!(validate_script_conditions(&moderator_condition, current_time).is_ok());
-    }
-}
-
 /// Draft: Encode a compact bond script descriptor for episode-side verification.
 /// This is a stable, compact byte layout we can later map to true kaspa-txscript templates.
 pub fn encode_bond_descriptor(
@@ -385,5 +316,75 @@ pub fn decode_bond_descriptor(bytes: &[u8]) -> Option<BondScriptKind> {
             Some(BondScriptKind::TimeOrModerator { unlock_time: t, required_signatures: req, moderator_count: cnt })
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::thread_rng;
+    use secp256k1::{Secp256k1, SecretKey};
+
+    fn generate_test_keypair() -> (SecretKey, PublicKey) {
+        let _secp = Secp256k1::new();
+        secp256k1::generate_keypair(&mut thread_rng())
+    }
+
+    #[test]
+    fn test_timelock_script_creation() {
+        let (_, user_pubkey) = generate_test_keypair();
+        let unlock_time = 1000000000; // Future timestamp
+
+        let script = create_bond_timelock_script(unlock_time, &user_pubkey).unwrap();
+        assert!(!script.is_empty());
+        assert!(script.len() > 10); // Should have meaningful content
+    }
+
+    #[test]
+    fn test_multisig_script_creation() {
+        let (_, user_pubkey) = generate_test_keypair();
+        let (_, mod1_pubkey) = generate_test_keypair();
+        let (_, mod2_pubkey) = generate_test_keypair();
+        let moderator_pubkeys = vec![mod1_pubkey, mod2_pubkey];
+
+        let script = create_moderator_multisig_script(&user_pubkey, &moderator_pubkeys, 2).unwrap();
+        assert!(!script.is_empty());
+    }
+
+    #[test]
+    fn test_combined_script_creation() {
+        let (_, user_pubkey) = generate_test_keypair();
+        let (_, mod1_pubkey) = generate_test_keypair();
+        let moderator_pubkeys = vec![mod1_pubkey];
+        let unlock_time = 2000000000; // Future timestamp
+
+        let script = create_combined_unlock_script(unlock_time, &user_pubkey, &moderator_pubkeys, 1).unwrap();
+        assert!(!script.is_empty());
+    }
+
+    #[test]
+    fn test_script_condition_validation() {
+        let (_, user_pubkey) = generate_test_keypair();
+        let (_, mod_pubkey) = generate_test_keypair();
+        let current_time = 1000000000;
+
+        // Valid time-lock condition
+        let timelock_condition = ScriptUnlockCondition::TimeLock {
+            unlock_time: current_time + 3600, // 1 hour in future
+            user_pubkey,
+        };
+        assert!(validate_script_conditions(&timelock_condition, current_time).is_ok());
+
+        // Invalid time-lock condition (in the past)
+        let invalid_timelock = ScriptUnlockCondition::TimeLock {
+            unlock_time: current_time - 3600, // 1 hour in past
+            user_pubkey,
+        };
+        assert!(validate_script_conditions(&invalid_timelock, current_time).is_err());
+
+        // Valid moderator condition
+        let moderator_condition =
+            ScriptUnlockCondition::ModeratorRelease { user_pubkey, moderator_pubkeys: vec![mod_pubkey], required_signatures: 1 };
+        assert!(validate_script_conditions(&moderator_condition, current_time).is_ok());
     }
 }

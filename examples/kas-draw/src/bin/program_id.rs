@@ -6,10 +6,7 @@ use std::process::{Command, Stdio};
 fn main() -> Result<()> {
     // Produce canonical bundle: git archive (tar), optionally gzip -n -9 if available
     let tar_bytes = {
-        let output = Command::new("git")
-            .args(["archive", "--format=tar", "--prefix=ep/", "HEAD"])
-            .stdout(Stdio::piped())
-            .output()?;
+        let output = Command::new("git").args(["archive", "--format=tar", "--prefix=ep/", "HEAD"]).stdout(Stdio::piped()).output()?;
         if !output.status.success() {
             eprintln!("git archive failed: status={}", output.status);
             std::process::exit(1);
@@ -21,11 +18,7 @@ fn main() -> Result<()> {
     let bytes = match Command::new("gzip").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
         Ok(_) => {
             // gzip exists; compress with -n -9
-            let mut child = Command::new("gzip")
-                .args(["-n", "-9"])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn()?;
+            let mut child = Command::new("gzip").args(["-n", "-9"]).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
             {
                 let mut stdin = child.stdin.take().unwrap();
                 stdin.write_all(&tar_bytes)?;

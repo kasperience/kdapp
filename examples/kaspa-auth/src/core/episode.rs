@@ -35,7 +35,7 @@ impl Episode for SimpleAuth {
     type CommandError = AuthError;
 
     fn initialize(participants: Vec<PubKey>, metadata: &PayloadMetadata) -> Self {
-        info!("[SimpleAuth] initialize: {:?}", participants);
+        info!("[SimpleAuth] initialize: {participants:?}");
         Self {
             owner: participants.first().copied(),
             challenge: None,
@@ -69,7 +69,7 @@ impl Episode for SimpleAuth {
 
         match cmd {
             AuthCommand::RequestChallenge => {
-                info!("[SimpleAuth] RequestChallenge from: {:?}", participant);
+                info!("[SimpleAuth] RequestChallenge from: {participant:?}");
 
                 // Store previous state for rollback
                 let previous_challenge = self.challenge.clone();
@@ -92,7 +92,7 @@ impl Episode for SimpleAuth {
             }
 
             AuthCommand::SubmitResponse { signature, nonce } => {
-                info!("[SimpleAuth] SubmitResponse from: {:?}", participant);
+                info!("[SimpleAuth] SubmitResponse from: {participant:?}");
 
                 // Check if already authenticated
                 if self.is_authenticated {
@@ -105,14 +105,14 @@ impl Episode for SimpleAuth {
                 };
 
                 if *nonce != *current_challenge {
-                    info!("[SimpleAuth] Challenge mismatch - received: '{}', expected: '{}'", nonce, current_challenge);
+                    info!("[SimpleAuth] Challenge mismatch - received: '{nonce}', expected: '{current_challenge}'");
                     return Err(EpisodeError::InvalidCommand(AuthError::InvalidChallenge));
                 }
 
                 // Check if challenge has expired (1 hour timeout)
                 if !ChallengeGenerator::is_valid(current_challenge, 3600) {
                     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-                    info!("[SimpleAuth] Challenge expired: {} (current time: {})", current_challenge, now);
+                    info!("[SimpleAuth] Challenge expired: {current_challenge} (current time: {now})");
                     return Err(EpisodeError::InvalidCommand(AuthError::ChallengeExpired));
                 }
 
@@ -129,13 +129,13 @@ impl Episode for SimpleAuth {
                 self.is_authenticated = true;
                 self.session_token = Some(self.generate_session_token());
 
-                info!("[SimpleAuth] Authentication successful for: {:?}", participant);
+                info!("[SimpleAuth] Authentication successful for: {participant:?}");
 
                 Ok(AuthRollback::Authentication { previous_auth_status, previous_session_token })
             }
 
             AuthCommand::RevokeSession { session_token, signature } => {
-                info!("[SimpleAuth] RevokeSession from: {:?}", participant);
+                info!("[SimpleAuth] RevokeSession from: {participant:?}");
 
                 // Check if session exists and matches
                 let Some(ref current_token) = self.session_token else {
@@ -164,7 +164,7 @@ impl Episode for SimpleAuth {
                 self.is_authenticated = false;
                 self.session_token = None;
 
-                info!("[SimpleAuth] Session revoked successfully for: {:?}", participant);
+                info!("[SimpleAuth] Session revoked successfully for: {participant:?}");
 
                 Ok(AuthRollback::SessionRevoked { previous_token, was_authenticated })
             }
@@ -211,7 +211,7 @@ impl SimpleAuth {
     fn increment_rate_limit(&mut self, pubkey: &PubKey, now: u64) {
         const WINDOW_SECS: u64 = 300;
         let key = pubkey.0.serialize().to_vec();
-        let entry = self.rate_limits.entry(key).or_insert_with(Vec::new);
+        let entry = self.rate_limits.entry(key).or_default();
         entry.push(now);
         // Drop old attempts outside the window to prevent unbounded growth
         entry.retain(|&t| now.saturating_sub(t) <= WINDOW_SECS);
@@ -244,7 +244,7 @@ impl SimpleAuth {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kdapp::pki::{generate_keypair, sign_message, to_message};
+    use kdapp::pki::generate_keypair;
 
     #[test]
     fn test_auth_challenge_flow() {

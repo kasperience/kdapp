@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::pki::PubKey;
 use serde::{Deserialize, Serialize};
@@ -287,10 +288,10 @@ impl CommentRoomContract {
             return self.room_rules.min_bond;
         }
 
-        let reputation = self.reputation_scores.get(&format!("{}", user)).copied().unwrap_or(0);
+        let reputation = self.reputation_scores.get(&format!("{user}")).copied().unwrap_or(0);
 
         // Better reputation = lower bond requirement
-        let reputation_discount = (reputation as f64 / 100.0).max(-0.5).min(0.5);
+        let reputation_discount = (reputation as f64 / 100.0).clamp(-0.5, 0.5);
         let base_bond = self.room_rules.min_bond as f64;
         let discounted_bond = base_bond * (1.0 - reputation_discount);
 
@@ -299,7 +300,7 @@ impl CommentRoomContract {
 
     /// Check if user meets participation requirements
     pub fn can_participate(&self, user: &PubKey) -> bool {
-        let reputation = self.reputation_scores.get(&format!("{}", user)).copied().unwrap_or(0);
+        let reputation = self.reputation_scores.get(&format!("{user}")).copied().unwrap_or(0);
 
         reputation >= self.room_rules.min_reputation_threshold
     }
