@@ -11,6 +11,7 @@ use kdapp::pki::PubKey;
 use secp256k1::PublicKey;
 use serde_json::Value;
 use std::sync::Arc;
+use crate::routing::{PATTERN, PREFIX};
 
 // Tool: kdapp_start_episode
 pub async fn start_episode(state: Arc<ServerState>, participants: Vec<String>) -> Result<String> {
