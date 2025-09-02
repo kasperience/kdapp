@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
+use crate::storage;
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum MerchantCommand {
@@ -69,7 +70,8 @@ impl Episode for ReceiptEpisode {
     type CommandError = MerchantError;
 
     fn initialize(participants: Vec<PubKey>, _metadata: &PayloadMetadata) -> Self {
-        Self { merchant_keys: participants, invoices: BTreeMap::new() }
+        let invoices = storage::load_invoices();
+        Self { merchant_keys: participants, invoices }
     }
 
     fn execute(
@@ -104,7 +106,8 @@ impl Episode for ReceiptEpisode {
                     payer: None,
                     carrier_tx: None,
                 };
-                self.invoices.insert(*invoice_id, created);
+                self.invoices.insert(*invoice_id, created.clone());
+                storage::put_invoice(&created);
                 Ok(MerchantRollback::UndoCreate { invoice_id: *invoice_id })
             }
             MerchantCommand::MarkPaid { invoice_id, payer } => {
@@ -129,6 +132,7 @@ impl Episode for ReceiptEpisode {
                 inv.last_update = metadata.accepting_time;
                 inv.payer = *payer;
                 inv.carrier_tx = Some(metadata.tx_id);
+                storage::put_invoice(inv);
                 Ok(MerchantRollback::UndoPaid { invoice_id: *invoice_id })
             }
             MerchantCommand::AckReceipt { invoice_id } => {
@@ -147,6 +151,7 @@ impl Episode for ReceiptEpisode {
                 }
                 inv.status = InvoiceStatus::Acked;
                 inv.last_update = metadata.accepting_time;
+                storage::put_invoice(inv);
                 Ok(MerchantRollback::UndoAck { invoice_id: *invoice_id })
             }
             MerchantCommand::CancelInvoice { invoice_id } => {
@@ -162,6 +167,7 @@ impl Episode for ReceiptEpisode {
                 }
                 inv.status = InvoiceStatus::Canceled;
                 inv.last_update = metadata.accepting_time;
+                storage::put_invoice(inv);
                 Ok(MerchantRollback::UndoCancel { invoice_id: *invoice_id })
             }
         }
@@ -169,12 +175,16 @@ impl Episode for ReceiptEpisode {
 
     fn rollback(&mut self, rollback: Self::CommandRollback) -> bool {
         match rollback {
-            MerchantRollback::UndoCreate { invoice_id } => self.invoices.remove(&invoice_id).is_some(),
+            MerchantRollback::UndoCreate { invoice_id } => {
+                storage::delete_invoice(invoice_id);
+                self.invoices.remove(&invoice_id).is_some()
+            }
             MerchantRollback::UndoPaid { invoice_id } => {
                 if let Some(inv) = self.invoices.get_mut(&invoice_id) {
                     inv.status = InvoiceStatus::Open;
                     inv.payer = None;
                     inv.carrier_tx = None;
+                    storage::put_invoice(inv);
                     true
                 } else {
                     false
@@ -183,6 +193,7 @@ impl Episode for ReceiptEpisode {
             MerchantRollback::UndoAck { invoice_id } => {
                 if let Some(inv) = self.invoices.get_mut(&invoice_id) {
                     inv.status = InvoiceStatus::Paid;
+                    storage::put_invoice(inv);
                     true
                 } else {
                     false
@@ -191,6 +202,7 @@ impl Episode for ReceiptEpisode {
             MerchantRollback::UndoCancel { invoice_id } => {
                 if let Some(inv) = self.invoices.get_mut(&invoice_id) {
                     inv.status = InvoiceStatus::Open;
+                    storage::put_invoice(inv);
                     true
                 } else {
                     false

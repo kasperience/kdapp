@@ -2,6 +2,7 @@ use kdapp::episode::{EpisodeEventHandler, EpisodeId, PayloadMetadata};
 use kdapp::pki::PubKey;
 
 use crate::episode::{MerchantCommand, ReceiptEpisode};
+use crate::storage;
 
 pub struct MerchantEventHandler;
 
@@ -25,6 +26,7 @@ impl EpisodeEventHandler<ReceiptEpisode> for MerchantEventHandler {
             metadata.tx_id,
             metadata.accepting_time
         );
+        storage::flush();
         if let MerchantCommand::AckReceipt { .. } = cmd {
             if let Ok(bytes) = borsh::to_vec(episode) {
                 let hash = crate::tlv::hash_state(&bytes);
