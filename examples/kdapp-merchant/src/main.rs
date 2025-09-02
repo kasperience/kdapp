@@ -7,18 +7,35 @@ mod tlv;
 mod storage;
 
 use clap::{Parser, Subcommand};
+use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kdapp::engine::{Engine, EngineMsg, EpisodeMessage};
+use kdapp::generator::{PatternType, PrefixType};
 use kdapp::pki::generate_keypair;
 use kdapp::pki::PubKey;
+use kdapp::proxy;
 use secp256k1::SecretKey;
+use std::sync::{atomic::AtomicBool, Arc};
+use tokio::runtime::Runtime;
 
 use episode::{MerchantCommand, ReceiptEpisode};
 use handler::MerchantEventHandler;
-use sim_router::SimRouter;
+use sim_router::{EngineChannel, SimRouter};
 
 #[derive(Parser, Debug)]
 #[command(name = "kdapp-merchant", version, about = "onlyKAS Merchant demo (scaffold)")]
 struct Args {
+    /// Optional wRPC endpoint; defaults to public node network
+    #[arg(long)]
+    wrpc_url: Option<String>,
+    /// Use mainnet (default testnet-10)
+    #[arg(long, default_value_t = false)]
+    mainnet: bool,
+    /// Override routing prefix
+    #[arg(long)]
+    prefix: Option<u32>,
+    /// Override routing pattern as "pos:bit,pos:bit,..."
+    #[arg(long)]
+    pattern: Option<String>,
     #[command(subcommand)]
     command: Option<CliCmd>,
 }
@@ -28,7 +45,9 @@ enum CliCmd {
     /// Run the original demo flow in-process
     Demo,
     /// Start a UDP TLV router that forwards TLV payloads to the engine
-    RouterUdp { #[arg(long, default_value = "127.0.0.1:9530")] bind: String },
+    RouterUdp { #[arg(long, default_value = "127.0.0.1:9530")] bind: String, #[arg(long, default_value_t = false)] proxy: bool },
+    /// Connect to a Kaspa node and forward accepted txs via kdapp proxy
+    Proxy { #[arg(long)] merchant_private_key: Option<String> },
     /// Create a new episode with the merchant public key as a participant
     New { #[arg(long)] episode_id: u32, #[arg(long)] merchant_private_key: Option<String> },
     /// Create an invoice (signed by merchant)
@@ -58,6 +77,21 @@ fn parse_secret_key(hex: &str) -> Option<SecretKey> {
     }
 }
 
+fn parse_pattern(s: &str) -> Option<PatternType> {
+    let mut out = [(0u8, 0u8); 10];
+    let parts: Vec<_> = s.split(',').collect();
+    if parts.len() != 10 {
+        return None;
+    }
+    for (i, part) in parts.iter().enumerate() {
+        let (p, b) = part.split_once(':')?;
+        let pos = p.parse().ok()?;
+        let bit = b.parse().ok()?;
+        out[i] = (pos, bit);
+    }
+    Some(out)
+}
+
 fn main() {
     env_logger::init();
     storage::init();
@@ -71,7 +105,7 @@ fn main() {
     });
 
     // In-process router for off-chain style delivery
-    let router = SimRouter::new(tx.clone());
+    let router = SimRouter::new(EngineChannel::Local(tx.clone()));
     match args.command.unwrap_or(CliCmd::Demo) {
         CliCmd::Demo => {
             let (merchant_sk, merchant_pk) = generate_keypair();
@@ -90,9 +124,41 @@ fn main() {
             let signed = EpisodeMessage::new_signed_command(episode_id, cmd, merchant_sk, merchant_pk);
             router.forward::<ReceiptEpisode>(signed);
         }
-        CliCmd::RouterUdp { bind } => {
-            let r = udp_router::UdpRouter::new(tx.clone());
+        CliCmd::RouterUdp { bind, proxy } => {
+            let channel = if proxy { EngineChannel::Proxy(tx.clone()) } else { EngineChannel::Local(tx.clone()) };
+            let r = udp_router::UdpRouter::new(channel);
             r.run(&bind);
+        }
+        CliCmd::Proxy { merchant_private_key } => {
+            let (_sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
+                Some(sk) => {
+                    let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk));
+                    (sk, pk)
+                }
+                None => generate_keypair(),
+            };
+            log::info!("merchant pubkey: {pk}");
+            let ids = match (args.prefix, args.pattern.as_deref().and_then(parse_pattern)) {
+                (Some(pref), Some(pat)) => (pref as PrefixType, pat),
+                _ => program_id::derive_routing_ids(&pk),
+            };
+            let (prefix, pattern) = ids;
+            log::info!("prefix=0x{prefix:08x}, pattern={pattern:?}");
+
+            let network = if args.mainnet {
+                NetworkId::new(NetworkType::Mainnet)
+            } else {
+                NetworkId::with_suffix(NetworkType::Testnet, 10)
+            };
+            let rt = Runtime::new().expect("runtime");
+            let exit = Arc::new(AtomicBool::new(false));
+            let engines = std::iter::once((prefix, (pattern, tx.clone()))).collect();
+            rt.block_on(async {
+                let kaspad = proxy::connect_client(network, args.wrpc_url.clone())
+                    .await
+                    .expect("kaspad connect");
+                proxy::run_listener(kaspad, engines, exit).await;
+            });
         }
         CliCmd::New { episode_id, merchant_private_key } => {
             let (sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
