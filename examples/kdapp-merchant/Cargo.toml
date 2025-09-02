@@ -1,0 +1,22 @@
+[package]
+name = "kdapp-merchant"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+kdapp = { path = "../../kdapp" }
+borsh = { workspace = true }
+secp256k1 = { workspace = true }
+sha2 = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "rt-multi-thread"] }
+clap = { workspace = true, features = ["derive"] }
+blake2 = "0.10"
+kaspa-consensus-core = { workspace = true }
+thiserror = { workspace = true }
+faster-hex = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
