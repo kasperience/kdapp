@@ -1,4 +1,3 @@
-use borsh::BorshSerialize;
 use kdapp::episode::{EpisodeEventHandler, EpisodeId, PayloadMetadata};
 use kdapp::pki::PubKey;
 
@@ -32,7 +31,7 @@ impl EpisodeEventHandler<ReceiptEpisode> for MerchantEventHandler {
                 let mut hex = [0u8; 64];
                 let _ = faster_hex::hex_encode(&hash, &mut hex);
                 if let Ok(hex_str) = std::str::from_utf8(&hex) {
-                    log::info!("watchtower checkpoint: state_hash={}", hex_str);
+                    log::info!("watchtower checkpoint: state_hash={hex_str}");
                 }
             }
         }
