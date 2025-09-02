@@ -5,6 +5,7 @@ mod rpc_handlers;
 mod state;
 mod tools;
 mod wallet;
+mod routing;
 use anyhow::Result;
 
 #[tokio::main]
