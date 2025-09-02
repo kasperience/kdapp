@@ -26,6 +26,11 @@ pub async fn handle_tools_list(request: Request, _state: Arc<ServerState>) -> Re
             "inputSchema": {"type":"object","properties": {"command":{"type":"object"}},"required":["command"]}
         }),
         serde_json::json!({
+            "name": "kdapp_submit_command_tx",
+            "description": "Build and submit an on-chain transaction for a signed command",
+            "inputSchema": {"type":"object","properties": {"episode_id":{"type":"string"},"command":{"type":"object"},"signer":{"type":"string"}},"required":["episode_id","command"]}
+        }),
+        serde_json::json!({
             "name": "kdapp_get_agent_pubkeys",
             "description": "Return the server agent public keys (hex)",
             "inputSchema": {"type":"object","properties": {}}
@@ -105,6 +110,22 @@ pub async fn handle_tools_call(request: Request, state: Arc<ServerState>) -> Res
         "kdapp_generate_transaction" => {
             let command = arguments.get("command").cloned().unwrap_or(serde_json::json!({}));
             match crate::tools::generate_transaction(state.clone(), command).await {
+                Ok(v) => v,
+                Err(e) => {
+                    return Response::error(
+                        request.id,
+                        -32000,
+                        "Tool execution error".to_string(),
+                        Some(serde_json::json!(e.to_string())),
+                    );
+                }
+            }
+        }
+        "kdapp_submit_command_tx" => {
+            let episode_id = arguments.get("episode_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let command = arguments.get("command").cloned().unwrap_or(serde_json::json!({}));
+            let signer = arguments.get("signer").and_then(|v| v.as_str()).map(|s| s.to_string());
+            match crate::tools::submit_command_tx(state.clone(), episode_id, command, signer).await {
                 Ok(v) => v,
                 Err(e) => {
                     return Response::error(

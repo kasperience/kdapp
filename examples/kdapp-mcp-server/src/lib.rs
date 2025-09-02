@@ -3,6 +3,7 @@
 // Re-export modules for public use
 pub mod jsonrpc;
 pub mod node_connector;
+pub mod routing;
 pub mod state;
 pub mod tools;
 pub mod wallet;

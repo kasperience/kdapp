@@ -291,9 +291,11 @@ impl ServerState {
         });
 
         let keypair = agent1_wallet.keypair;
-        let pattern: kdapp::generator::PatternType = [(0, 0); 10]; // Simple pattern for testing
-        let prefix: kdapp::generator::PrefixType = 0x12345678;
-        let transaction_generator = kdapp::generator::TransactionGenerator::new(keypair, pattern, prefix);
+        let transaction_generator = kdapp::generator::TransactionGenerator::new(
+            keypair,
+            crate::routing::PATTERN,
+            crate::routing::PREFIX,
+        );
 
         Self {
             sender,

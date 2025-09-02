@@ -221,7 +221,7 @@ pub async fn get_episode_state(state: Arc<ServerState>, episode_id: String) -> R
             }
         }
     }
-    Ok(serde_json::json!({"error":"episode not found"}))
+    Err(anyhow::anyhow!("episode not found"))
 }
 
 // Tool: kdapp_generate_transaction
@@ -238,9 +238,7 @@ pub async fn generate_transaction(state: Arc<ServerState>, command: Value) -> Re
 
     // Generate a transaction if we have a transaction generator
     let keypair = state.agent1_wallet.keypair;
-    let pattern: kdapp::generator::PatternType = [(0, 0); 10]; // Simple pattern for testing
-    let prefix: kdapp::generator::PrefixType = 0x12345678;
-    let generator = kdapp::generator::TransactionGenerator::new(keypair, pattern, prefix);
+    let generator = kdapp::generator::TransactionGenerator::new(keypair, PATTERN, PREFIX);
 
     // Create a dummy UTXO for transaction generation (in a real implementation, you would fetch real UTXOs)
     let dummy_outpoint = TransactionOutpoint::new(Hash::default(), 0);
@@ -263,6 +261,63 @@ pub async fn generate_transaction(state: Arc<ServerState>, command: Value) -> Re
     });
 
     Ok(tx_json)
+}
+
+// Tool: kdapp_submit_command_tx — build and submit a transaction for a signed command
+pub async fn submit_command_tx(
+    state: Arc<ServerState>,
+    episode_id: String,
+    command: Value,
+    signer: Option<String>,
+) -> Result<Value> {
+    // Parse episode and command
+    let episode_id: EpisodeId = episode_id.parse().map_err(|e| anyhow::anyhow!("Invalid episode ID: {}", e))?;
+    let cmd = match command.get("type").and_then(|v| v.as_str()) {
+        Some("move") => {
+            let row = command.get("row").and_then(|v| v.as_i64()).unwrap_or(-1);
+            let col = command.get("col").and_then(|v| v.as_i64()).unwrap_or(-1);
+            let player_code = match command.get("player") {
+                Some(p) if p.is_string() => match p.as_str().unwrap().to_ascii_uppercase().as_str() {
+                    "X" => 0u8,
+                    "O" => 1u8,
+                    _ => 255,
+                },
+                Some(p) if p.is_u64() => (p.as_u64().unwrap_or(255)) as u8,
+                _ => 255,
+            };
+            if !(0..=2).contains(&row) || !(0..=2).contains(&col) || player_code > 1 {
+                return Err(anyhow::anyhow!("Invalid move parameters"));
+            }
+            TttCommand::Move { row: row as u8, col: col as u8, player: player_code }
+        }
+        _ => return Err(anyhow::anyhow!("Unsupported command type")),
+    };
+
+    // Choose wallet
+    let wallet = match signer.as_deref() {
+        Some("agent2") => state.agent2_wallet.clone(),
+        _ => state.agent1_wallet.clone(),
+    };
+    let keypair = wallet.keypair;
+    let secret = keypair.secret_key();
+    let pubkey = PubKey(keypair.public_key());
+    let signed: EpisodeMessage<TicTacToeEpisode> = EpisodeMessage::new_signed_command(episode_id, cmd, secret, pubkey);
+
+    let client = state.node_client.as_ref().ok_or_else(|| anyhow::anyhow!("node client not available"))?;
+    let addr = Address::new(
+        kaspa_addresses::Prefix::from(wallet.config.network_id),
+        kaspa_addresses::Version::PubKey,
+        &keypair.public_key().serialize()[1..],
+    );
+    let utxos = client.get_utxos_by_addresses(vec![addr.clone()]).await?;
+    if utxos.is_empty() { return Err(anyhow::anyhow!("no UTXOs for signer address")); }
+    let outpoint = TransactionOutpoint::from(utxos[0].outpoint);
+    let entry = UtxoEntry::from(utxos[0].utxo_entry);
+    let generator = kdapp::generator::TransactionGenerator::new(keypair, PATTERN, PREFIX);
+    let tx = generator.build_command_transaction((outpoint, entry), &addr, &signed, 2000);
+    let txid = tx.id().to_string();
+    client.submit_transaction(tx.as_ref().into(), false).await?;
+    Ok(serde_json::json!({"txid": txid}))
 }
 
 // Tool: kdapp_get_agent_pubkeys

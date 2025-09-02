@@ -17,7 +17,15 @@ impl Default for NodeConfig {
         // Support custom RPC URL via environment variable
         let rpc_url = env::var("KASPA_RPC_URL").ok();
 
-        let network_id = NetworkId::with_suffix(NetworkType::Testnet, 10);
+        // Network selection via KDAPP_NETWORK env: e.g., "mainnet", "testnet-10"
+        let network_id = match env::var("KDAPP_NETWORK").ok().as_deref() {
+            Some("mainnet") => NetworkId::with_suffix(NetworkType::Mainnet, 0),
+            Some(val) if val.starts_with("testnet-") => {
+                let suffix = val.trim_start_matches("testnet-").parse::<u8>().unwrap_or(10);
+                NetworkId::with_suffix(NetworkType::Testnet, suffix)
+            }
+            _ => NetworkId::with_suffix(NetworkType::Testnet, 10),
+        };
 
         Self { network_id, rpc_url }
     }
