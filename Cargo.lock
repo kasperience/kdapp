@@ -2377,6 +2377,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdapp-merchant"
+version = "0.0.1"
+dependencies = [
+ "blake2",
+ "borsh",
+ "clap",
+ "env_logger",
+ "faster-hex",
+ "kaspa-consensus-core",
+ "kdapp",
+ "log",
+ "rand 0.8.5",
+ "secp256k1",
+ "sha2",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "kdapp-wallet"
 version = "0.0.1"
 dependencies = [
