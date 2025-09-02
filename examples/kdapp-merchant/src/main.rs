@@ -4,6 +4,7 @@ mod program_id;
 mod sim_router;
 mod udp_router;
 mod tlv;
+mod storage;
 
 use clap::{Parser, Subcommand};
 use kdapp::engine::{Engine, EngineMsg, EpisodeMessage};
@@ -59,6 +60,7 @@ fn parse_secret_key(hex: &str) -> Option<SecretKey> {
 
 fn main() {
     env_logger::init();
+    storage::init();
     let args = Args::parse();
 
     // Engine channel wiring
