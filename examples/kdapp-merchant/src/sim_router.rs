@@ -4,14 +4,29 @@ use kaspa_consensus_core::Hash;
 use kdapp::engine::{EngineMsg, EpisodeMessage};
 use kdapp::episode::TxOutputInfo;
 
+/// Destination for forwarded engine messages. When `Proxy` is selected the
+/// sender should correspond to the channel used by `proxy::run_listener`.
+pub enum EngineChannel {
+    Local(std::sync::mpsc::Sender<EngineMsg>),
+    Proxy(std::sync::mpsc::Sender<EngineMsg>),
+}
+
+impl EngineChannel {
+    pub fn send(&self, msg: EngineMsg) -> Result<(), std::sync::mpsc::SendError<EngineMsg>> {
+        match self {
+            EngineChannel::Local(tx) | EngineChannel::Proxy(tx) => tx.send(msg),
+        }
+    }
+}
+
 /// A minimal in-process router that forwards EpisodeMessage payloads
 /// to the engine as synthetic block-accepted events.
 pub struct SimRouter {
-    sender: std::sync::mpsc::Sender<EngineMsg>,
+    sender: EngineChannel,
 }
 
 impl SimRouter {
-    pub fn new(sender: std::sync::mpsc::Sender<EngineMsg>) -> Self { Self { sender } }
+    pub fn new(sender: EngineChannel) -> Self { Self { sender } }
 
     pub fn forward<G: kdapp::episode::Episode>(&self, msg: EpisodeMessage<G>) {
         let payload = borsh::to_vec(&msg).expect("serialize episode msg");

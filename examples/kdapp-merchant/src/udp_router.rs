@@ -8,18 +8,21 @@ use kdapp::engine::EngineMsg;
 use kdapp::episode::TxOutputInfo;
 use log::{info, warn};
 
-use crate::tlv::{MsgType, TlvMsg, TLV_VERSION};
+use crate::{
+    sim_router::EngineChannel,
+    tlv::{MsgType, TlvMsg, TLV_VERSION},
+};
 
 /// Minimal UDP TLV router for off-chain delivery.
 /// Accepts TLV messages carrying serialized `EpisodeMessage<ReceiptEpisode>` payloads
 /// and forwards them to the engine as synthetic block-accepted events.
 pub struct UdpRouter {
     last_seq: Arc<Mutex<HashMap<u64, u64>>>,
-    sender: std::sync::mpsc::Sender<EngineMsg>,
+    sender: EngineChannel,
 }
 
 impl UdpRouter {
-    pub fn new(sender: std::sync::mpsc::Sender<EngineMsg>) -> Self {
+    pub fn new(sender: EngineChannel) -> Self {
         Self { last_seq: Arc::new(Mutex::new(HashMap::new())), sender }
     }
 
