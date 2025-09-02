@@ -18,9 +18,22 @@ Files
 - examples/kdapp-merchant/src/main.rs: demo runner and wiring
 
 Quickstart
-- Build: cargo build -p kdapp-merchant
-- Demo: cargo run -p kdapp-merchant -- --demo
+- Build: `cargo build -p kdapp-merchant`
+- Demo: `cargo run -p kdapp-merchant -- demo`
   - Creates a new episode (merchant key), then CreateInvoice → MarkPaid → AckReceipt
+
+CLI subcommands (M0)
+- `demo` — run the default in-process demo.
+- `router-udp --bind 127.0.0.1:9530` — start the UDP TLV router.
+- `new --episode-id <u32> [--merchant-private-key <hex>]` — create episode with merchant pubkey.
+- `create --episode-id <u32> --invoice-id <u64> --amount <u64> [--memo <str>] [--merchant-private-key <hex>]` — signed.
+- `pay --episode-id <u32> --invoice-id <u64>` — unsigned (demo).
+- `ack --episode-id <u32> --invoice-id <u64> [--merchant-private-key <hex>]` — signed.
+- `cancel --episode-id <u32> --invoice-id <u64>` — unsigned (demo).
+
+Notes
+- For signed commands, pass `--merchant-private-key <hex>` so the pubkey matches the episode’s participant list. Otherwise, a fresh keypair is generated for the process which won’t match previous runs.
+- The UDP router expects TLV-encoded `EpisodeMessage<ReceiptEpisode>` payloads and forwards them to the engine; a simple sender can be added in M1.
 
 Episode API
 - Commands:
