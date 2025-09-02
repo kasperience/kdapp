@@ -3,7 +3,7 @@ use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kaspa_wrpc_client::prelude::*;
 use kdapp::engine::{Engine, EngineMsg, EpisodeMessage};
-use kdapp::generator::{PatternType, Payload, PrefixType, TransactionGenerator};
+use kdapp::generator::{Payload, TransactionGenerator};
 use log::info;
 use secp256k1::{rand::rngs::OsRng, Keypair, SecretKey};
 use std::sync::{atomic::AtomicBool, mpsc, Arc};
