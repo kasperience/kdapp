@@ -312,8 +312,8 @@ pub async fn submit_command_tx(
     );
     let utxos = client.get_utxos_by_addresses(vec![addr.clone()]).await?;
     if utxos.is_empty() { return Err(anyhow::anyhow!("no UTXOs for signer address")); }
-    let outpoint = TransactionOutpoint::from(utxos[0].outpoint);
-    let entry = UtxoEntry::from(utxos[0].utxo_entry);
+    let outpoint = TransactionOutpoint::from(utxos[0].outpoint.clone());
+    let entry = UtxoEntry::from(utxos[0].utxo_entry.clone());
     let generator = kdapp::generator::TransactionGenerator::new(keypair, PATTERN, PREFIX);
     let tx = generator.build_command_transaction((outpoint, entry), &addr, &signed, 2000);
     let txid = tx.id().to_string();
