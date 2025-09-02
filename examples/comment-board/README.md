@@ -31,6 +31,31 @@ kdapp example with economic enforcement on Kaspa L1.
 - Default: P2PK bond output in the combined comment transaction (standard-valid, on-chain value enforced by the episode)
 - Experimental: Script-based bonds (timelock/multisig) behind `--script-bonds` flag; may be non-standard until templates are finalized
 
+### Custom Transaction Flow (Script Bonds)
+- For script-based bonds, the client assembles a raw transaction directly instead of using the standard `TransactionGenerator` helper.
+- Why: Script outputs (timelock/multisig) require explicit construction and may be non-standard while templates stabilize.
+- Where: `src/wallet/utxo_manager.rs` — see `submit_comment_with_bond_payload` and the Phase 2.0 helpers for script-based locking.
+- The episode still validates the on-chain value and, once exposed, the script descriptor carried alongside the command.
+
+### CLI Separation (Message vs Wallet)
+- Episode commands are built as `EpisodeMessage::<ContractCommentBoard>` and routed by the generator for standard paths.
+- Wallet/UTXO logic is isolated under `src/wallet/` and never mixes with episode state logic.
+- This separation keeps signing/funding concerns independent from the episode’s state machine and engine.
+
+### Advanced Commands (Optional Feature)
+- Some extended contract commands are gated behind the cargo feature `advanced` to keep the example entry point small by default.
+- Enable them by building or running with the feature flag:
+  - Build: `cargo build -p comment-board --features advanced`
+  - Run: `cargo run -p comment-board --features advanced -- --help`
+
+### UTXO Manager Consolidation
+- Historical “fix” prototypes (`wallet/utxo_manager_fix*.rs`) are now consolidated into the main `wallet/utxo_manager.rs` module.
+- Use `split_large_utxo`, `ensure_micro_utxos`, and Phase 1.2/2.0 helpers in `UtxoLockManager` for current behavior.
+
+### Dev Defaults (Registration Path)
+- When an episode is registered with no participants, a deterministic, non-secret dev stub public key is used only for default initialization.
+- Real rooms derive the creator from the provided participants list; no secret key is embedded or used for signing in this path.
+
 ## 🎮 Usage - Modern CLI Interface
 
 ### 🆕 Create New Room (Organizer)

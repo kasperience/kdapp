@@ -4,6 +4,7 @@ use kdapp::{
     episode::{Episode, EpisodeError, PayloadMetadata},
     pki::PubKey,
 };
+use sha2::{Digest, Sha256};
 use log::{info, warn};
 use std::collections::{HashMap, HashSet};
 
@@ -60,12 +61,20 @@ impl Episode for ContractCommentBoard {
         if participants.is_empty() {
             info!("[ContractCommentBoard] Episode registration only - no state initialization");
             // Return minimal state for episode registration (participants will sync via commands)
+            // Development stub creator key (deterministic, non-secret).
+            // This is used ONLY for the registration-only path (no participants)
+            // so that a consistent public key is available for defaults. It is
+            // not used for signing or authentication and should not be treated
+            // as a real account. For real rooms, the creator is taken from
+            // the participants list in the normal initialization path below.
+            let seed = Sha256::digest(b"comment-board-dev-stub:room_creator");
+            let dev_sk = secp256k1::SecretKey::from_slice(&seed)
+                .unwrap_or_else(|_| secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap());
+            let dev_pk = secp256k1::PublicKey::from_secret_key(secp256k1::SECP256K1, &dev_sk);
+
             return Self {
                 contract: CommentRoomContract::new(
-                    PubKey(secp256k1::PublicKey::from_secret_key(
-                        secp256k1::SECP256K1,
-                        &secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap(),
-                    )),
+                    PubKey(dev_pk),
                     RoomRules::default(),
                     vec![],
                     0,
@@ -154,9 +163,9 @@ impl Episode for ContractCommentBoard {
             ContractCommand::SubmitComment { text, bond_amount, bond_output_index, bond_script } => {
                 self.execute_submit_comment(participant, text, *bond_amount, *bond_output_index, bond_script.as_ref(), metadata)
             }
-
+            #[cfg(feature = "advanced")]
             _ => {
-                // For now, return a simple rollback for unimplemented commands
+                // For now, return a simple rollback for unimplemented advanced commands
                 warn!("[ContractCommentBoard] Command {cmd:?} not yet implemented");
                 Ok(ContractRollback {
                     operation_type: "unimplemented".to_string(),

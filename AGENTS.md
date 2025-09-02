@@ -24,7 +24,7 @@ Generator → Kaspa Network ← Proxy (wRPC)
 
 ## Build, Test, and Development Commands
 - Build workspace: `cargo build --workspace` — compiles all crates.
-- Lint: `cargo clippy --workspace --all-targets -W warnings` — fail on warnings.
+- Lint: `cargo clippy --workspace --all-targets -- -D warnings` — deny warnings via clippy (recommended).
 - Format: `cargo fmt --all` — applies `.rustfmt.toml` rules.
 - Test: `cargo test --workspace` — runs unit/integration tests across members.
 - Run Tic‑Tac‑Toe: `cargo run -p ttt -- --help` or `cargo run -p ttt -- --kaspa-private-key <hex>`.
@@ -55,7 +55,7 @@ Generator → Kaspa Network ← Proxy (wRPC)
 ## Commit & Pull Request Guidelines
 - Commit style: Conventional prefixes (`feat:`, `fix(scope):`, `docs:`, `chore:`) as seen in history.
 - PRs must: describe scope and motivation, link issues, include usage notes or screenshots/log snippets when UX changes.
-- Pre-submit checklist: `cargo fmt`, `cargo clippy -W warnings`, `cargo test --workspace`. Update README/example docs if behavior changes.
+- Pre-submit checklist: `cargo fmt`, `cargo clippy -- -D warnings`, `cargo test --workspace`. Update README/example docs if behavior changes.
 
 ## Security & Configuration Tips
 - Never commit private keys or RPC secrets. Use flags like `--wrpc-url wss://host:port` and test on `testnet-10` unless explicitly targeting mainnet.

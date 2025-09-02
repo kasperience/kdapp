@@ -1,5 +1,7 @@
 #![allow(dead_code)]
-use crate::episode::contract::{RoomRules, ViolationType, VoteDecision};
+use crate::episode::contract::VoteDecision;
+#[cfg(feature = "advanced")]
+use crate::episode::contract::{RoomRules, ViolationType};
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::pki::PubKey;
 
@@ -17,9 +19,14 @@ pub enum BondScriptKind {
 }
 
 /// Enhanced Comment Commands for Episode Contract System
+///
+/// Note: To keep the example entry point manageable, advanced variants are
+/// compiled only when the "advanced" feature is enabled. The default build
+/// supports the core path used by the example (join/auth/comment).
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub enum ContractCommand {
     // Room Management Commands
+    #[cfg(feature = "advanced")]
     CreateRoom {
         rules: RoomRules,
         moderators: Vec<PubKey>,
@@ -31,6 +38,7 @@ pub enum ContractCommand {
     JoinRoom {
         bond_amount: u64,
     },
+    #[cfg(feature = "advanced")]
     LeaveRoom {
         forfeit_bond: bool,
     },
@@ -51,18 +59,21 @@ pub enum ContractCommand {
     },
 
     // Community Moderation System
+    #[cfg(feature = "advanced")]
     ReportViolation {
         comment_id: u64,
         violation_type: ViolationType,
         evidence: String,
     },
 
+    #[cfg(feature = "advanced")]
     InitiateCommunityVote {
         comment_id: u64,
         accusation: String,
         initial_stake: u64, // KAS staked on this vote
     },
 
+    #[cfg(feature = "advanced")]
     SubmitVote {
         vote_id: u64,
         decision: VoteDecision,
@@ -70,22 +81,26 @@ pub enum ContractCommand {
     },
 
     // Quality Scoring System
+    #[cfg(feature = "advanced")]
     UpvoteComment {
         comment_id: u64,
         stake: u64,
     },
+    #[cfg(feature = "advanced")]
     DownvoteComment {
         comment_id: u64,
         stake: u64,
     },
 
     // Moderator Actions (Multi-sig Required)
+    #[cfg(feature = "advanced")]
     EscalateToArbiters {
         comment_id: u64,
         evidence: String,
         moderator_signature: String,
     },
 
+    #[cfg(feature = "advanced")]
     SubmitArbitratorDecision {
         dispute_id: u64,
         ruling: VoteDecision,
@@ -94,44 +109,56 @@ pub enum ContractCommand {
     },
 
     // Economic Actions
+    #[cfg(feature = "advanced")]
     ClaimBondRefund {
         comment_id: u64,
     },
+    #[cfg(feature = "advanced")]
     ClaimQualityReward {
         comment_id: u64,
     },
+    #[cfg(feature = "advanced")]
     WithdrawFromPenaltyPool {
         amount: u64,
     }, // For room creator/moderators
 
     // Contract Management
+    #[cfg(feature = "advanced")]
     UpdateRoomRules {
         new_rules: RoomRules,
         moderator_signatures: Vec<String>,
     },
+    #[cfg(feature = "advanced")]
     AddModerator {
         new_moderator: PubKey,
         existing_moderator_signatures: Vec<String>,
     },
+    #[cfg(feature = "advanced")]
     RemoveModerator {
         moderator_to_remove: PubKey,
         remaining_moderator_signatures: Vec<String>,
     },
 
     // Analytics and Showcase
+    #[cfg(feature = "advanced")]
     GetContractStats,
+    #[cfg(feature = "advanced")]
     GetUserReputation {
         user: PubKey,
     },
+    #[cfg(feature = "advanced")]
     GetReputationLeaderboard,
 
     // Emergency Functions
+    #[cfg(feature = "advanced")]
     EmergencyPause {
         moderator_signatures: Vec<String>,
     },
+    #[cfg(feature = "advanced")]
     EmergencyUnpause {
         moderator_signatures: Vec<String>,
     },
+    #[cfg(feature = "advanced")]
     ForceResolveDispute {
         dispute_id: u64,
         admin_signature: String,

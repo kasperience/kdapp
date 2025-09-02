@@ -31,3 +31,8 @@ sha2.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "rt-multi-thread"] }
 clap.workspace = true
 smallvec = "1.11"
+
+[features]
+# Gate advanced command variants and moderation features to keep the
+# example entry point manageable by default.
+advanced = []
