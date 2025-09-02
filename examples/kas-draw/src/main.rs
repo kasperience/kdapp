@@ -15,11 +15,9 @@ mod handler;
 mod offchain;
 mod tlv;
 mod watchtower;
+mod routing;
 
 use episode::{LotteryCommand, LotteryEpisode};
-
-const PREFIX: PrefixType = u32::from_le_bytes(*b"KDRW");
-const PATTERN: PatternType = [(0, 1), (1, 0), (2, 1), (3, 0), (4, 1), (5, 0), (6, 1), (7, 0), (8, 1), (9, 0)];
 
 #[derive(Parser, Debug)]
 #[command(name = "kas-draw", version, about = "Kaspa lottery episode (M1 MVP)")]
@@ -184,7 +182,7 @@ async fn main() {
             // Build NewEpisode payload and print id/prefix/pattern for logs
             let cmd = EpisodeMessage::<LotteryEpisode>::NewEpisode { episode_id, participants: vec![] };
             let payload = borsh::to_vec(&cmd).unwrap();
-            let packed = Payload::pack_header(payload, PREFIX);
+            let packed = Payload::pack_header(payload, routing::PREFIX);
             info!("kas-draw NEW episode {} payload {} bytes (prefix=KDRW)", episode_id, packed.len());
             // In real run, submit tx via generator; here we just log size
         }
@@ -196,21 +194,21 @@ async fn main() {
             let pk = kdapp::pki::PubKey(secp256k1::PublicKey::from_secret_key(secp256k1::SECP256K1, &sk));
             let msg = EpisodeMessage::<LotteryEpisode>::new_signed_command(episode_id, cmd, sk, pk);
             let payload = borsh::to_vec(&msg).unwrap();
-            let packed = Payload::pack_header(payload, PREFIX);
+            let packed = Payload::pack_header(payload, routing::PREFIX);
             info!("kas-draw BUY ticket ep {} ({} bytes)", episode_id, packed.len());
         }
         Commands::Draw { episode_id, entropy } => {
             let cmd = LotteryCommand::ExecuteDraw { entropy_source: entropy };
             let msg = EpisodeMessage::<LotteryEpisode>::UnsignedCommand { episode_id, cmd };
             let payload = borsh::to_vec(&msg).unwrap();
-            let packed = Payload::pack_header(payload, PREFIX);
+            let packed = Payload::pack_header(payload, routing::PREFIX);
             info!("kas-draw DRAW ep {} ({} bytes)", episode_id, packed.len());
         }
         Commands::Claim { episode_id, ticket_id, round } => {
             let cmd = LotteryCommand::ClaimPrize { ticket_id, round };
             let msg = EpisodeMessage::<LotteryEpisode>::UnsignedCommand { episode_id, cmd };
             let payload = borsh::to_vec(&msg).unwrap();
-            let packed = Payload::pack_header(payload, PREFIX);
+            let packed = Payload::pack_header(payload, routing::PREFIX);
             info!("kas-draw CLAIM ep {} ({} bytes)", episode_id, packed.len());
         }
         Commands::Engine { mainnet, wrpc_url } => {
@@ -227,7 +225,12 @@ async fn main() {
             let exit = Arc::new(AtomicBool::new(false));
             let exit2 = exit.clone();
             let listener = tokio::spawn(async move {
-                kdapp::proxy::run_listener(kaspad, std::iter::once((PREFIX, (PATTERN, sender))).collect(), exit2).await;
+                kdapp::proxy::run_listener(
+                    kaspad,
+                    std::iter::once((routing::PREFIX, (routing::pattern(), sender))).collect(),
+                    exit2,
+                )
+                .await;
             });
             info!("engine running; press Ctrl+C to exit");
             let _ = signal::ctrl_c().await;
@@ -451,7 +454,7 @@ async fn submit_tx_flow(kind: SubmitKind, sk_hex_opt: Option<String>, mainnet: b
     };
 
     // Build and submit transaction carrying the payload
-    let gen = TransactionGenerator::new(keypair, PATTERN, PREFIX);
+    let gen = TransactionGenerator::new(keypair, routing::pattern(), routing::PREFIX);
     let tx = gen.build_command_transaction((op, entry), &addr, &msg, FEE);
     info!("built tx {} (payload)", tx.id());
     if let Err(e) = submit_tx_retry(&kaspad, &tx, 3).await {
@@ -547,8 +550,7 @@ async fn submit_checkpoint_tx(
     // Build payload: OKCP record
     let payload = encode_okcp(episode_id, seq, root);
     // Use a dedicated prefix for checkpoints (KDCK)
-    const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KDCK");
-    let gen = TransactionGenerator::new(keypair, PATTERN, CHECKPOINT_PREFIX);
+    let gen = TransactionGenerator::new(keypair, routing::pattern(), routing::CHECKPOINT_PREFIX);
     let send = entry.amount - FEE;
     let tx = gen.build_transaction(&[(op, entry)], send, 1, &addr, payload);
     submit_tx_retry(&kaspad, &tx, 3).await
@@ -633,6 +635,11 @@ fn resolve_dev_key_hex(cli_opt: &Option<String>) -> Option<String> {
                 return Some(t);
             }
         }
+    }
+    // Optional deterministic test key for demos (never use on mainnet)
+    if std::env::var("KAS_DRAW_USE_TEST_KEY").ok().as_deref() == Some("1") {
+        // sha256(b"kas-draw-dev-stub") truncated to 32 bytes hex
+        return Some("7f7c92f0382d3d02f3e0d5d1446f2e4e5a0f6aa8a8c9f2d7b2a1c0f9e8d7c6b5".to_string());
     }
     None
 }

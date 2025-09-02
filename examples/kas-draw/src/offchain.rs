@@ -30,20 +30,24 @@ impl OffchainRouter {
                 Ok(x) => x,
                 Err(e) => {
                     warn!("router recv error: {e}");
+                    eprintln!("offchain-router: recv error: {e}");
                     continue;
                 }
             };
             let bytes = &buf[..n];
             let Some(msg) = TlvMsg::decode(bytes) else {
                 warn!("router: invalid TLV from {src} (len={n})");
+                eprintln!("offchain-router: invalid TLV from {src} (len={n})");
                 continue;
             };
             if msg.version != TLV_VERSION {
                 warn!("router: bad version from {src}");
+                eprintln!("offchain-router: bad version from {src}");
                 continue;
             }
             let Some(mt) = MsgType::from_u8(msg.msg_type) else {
                 warn!("router: bad msg type from {src}");
+                eprintln!("offchain-router: bad msg type from {src}");
                 continue;
             };
 
@@ -57,6 +61,7 @@ impl OffchainRouter {
                         (true, false)
                     } else {
                         warn!("router: reject NEW for ep {} (seq {}), last={:?}", msg.episode_id, msg.seq, last);
+                        eprintln!("offchain-router: reject NEW for ep {} (seq {}), last={:?}", msg.episode_id, msg.seq, last);
                         (false, false)
                     }
                 }
@@ -67,10 +72,12 @@ impl OffchainRouter {
                     }
                     Some(prev) => {
                         warn!("router: stale/out-of-order CMD ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
+                        eprintln!("offchain-router: stale/out-of-order CMD ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
                         (false, false)
                     }
                     None => {
                         warn!("router: CMD before NEW for ep {} (got seq {} but no state)", msg.episode_id, msg.seq);
+                        eprintln!("offchain-router: CMD before NEW for ep {} (got seq {} but no state)", msg.episode_id, msg.seq);
                         (false, false)
                     }
                 },
@@ -81,6 +88,7 @@ impl OffchainRouter {
                 MsgType::Close => {
                     if !self.close_enabled {
                         warn!("router: close ignored (disabled)");
+                        eprintln!("offchain-router: close ignored (disabled)");
                         (false, true)
                     } else {
                         match last {
@@ -91,10 +99,12 @@ impl OffchainRouter {
                             }
                             Some(prev) => {
                                 warn!("router: stale/out-of-order CLOSE ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
+                                eprintln!("offchain-router: stale/out-of-order CLOSE ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
                                 (false, true)
                             }
                             None => {
                                 warn!("router: CLOSE before NEW for ep {} (got seq {} but no state)", msg.episode_id, msg.seq);
+                                eprintln!("offchain-router: CLOSE before NEW for ep {} (got seq {} but no state)", msg.episode_id, msg.seq);
                                 (false, true)
                             }
                         }
@@ -111,10 +121,12 @@ impl OffchainRouter {
                     }
                     Some(prev) => {
                         warn!("router: out-of-order CKPT ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
+                        eprintln!("offchain-router: out-of-order CKPT ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
                         (false, false)
                     }
                     None => {
                         warn!("router: CKPT before NEW for ep {} (seq {})", msg.episode_id, msg.seq);
+                        eprintln!("offchain-router: CKPT before NEW for ep {} (seq {})", msg.episode_id, msg.seq);
                         (false, false)
                     }
                 },

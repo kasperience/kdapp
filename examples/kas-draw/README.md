@@ -45,7 +45,15 @@ Notes
 - BuyTicket enforces `entry_amount == ticket_price` and, if proxy provides `tx_outputs`, at least one output value ≥ `ticket_price` (M1 relaxed).
 - Draw interval is short for demos (15s). If you submit draw too early, engine logs a rejection; wait a few seconds and try again.
 - Auto wRPC URL resolution: omit `--wrpc-url` to use the default for your network via resolver. You can also set `WRPC_URL` env var to override, e.g. `WRPC_URL=wss://host:port cargo run -p kas-draw -- engine`.
-- Dev key convenience (off-chain send): if you don’t pass `--kaspa-private-key`, the CLI will try `KASPA_PRIVATE_KEY`, then `KAS_DRAW_DEV_SK`, then a dev key file at `examples/kas-draw/dev.key` (gitignored). Put a testnet-only dev key hex in that file to auto-authorize NEW/BUY in local demos.
+- Dev key convenience (off-chain send): if you don't pass `--kaspa-private-key`, the CLI will try `KASPA_PRIVATE_KEY`, then `KAS_DRAW_DEV_SK`, then a dev key file at `examples/kas-draw/dev.key` (gitignored). Put a testnet-only dev key hex in that file to auto-authorize NEW/BUY in local demos.
+ - Routing constants are centralized under `src/routing.rs`. `PREFIX` identifies the episode family and the 10‑bit `PATTERN` is derived deterministically from the prefix to avoid copy‑paste drift across modules. External tools should import from `routing` instead of duplicating values.
+ - For new contributors, you may set `KAS_DRAW_USE_TEST_KEY=1` to use a deterministic test key for local demos. Never use this on mainnet; prefer explicit keys via flag/env for clarity.
+
+Watchtower flow
+
+- The included watchtower simulator (`watchtower::SimTower`) captures state roots emitted by the handler and illustrates how off‑chain checkpoints could be collected and later anchored on-chain.
+- See `src/handler.rs` for where state roots are computed and relayed, and `src/tlv.rs` for the TLV layout. The `submit_checkpoint` subcommand demonstrates posting roots using the `CHECKPOINT_PREFIX`.
+- This models the onlyKAS “off‑chain checkpoint + on‑chain anchor” philosophy; the simulator can be replaced with a real watcher once finalized.
 
 Demo Clip Criteria (M1)
 
