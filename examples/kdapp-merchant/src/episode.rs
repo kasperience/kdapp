@@ -1,9 +1,10 @@
 #![allow(clippy::enum_variant_names)]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
+use kaspa_consensus_core::Hash;
 use crate::storage;
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
@@ -44,6 +45,10 @@ pub enum MerchantError {
     AlreadyCanceled,
     #[error("unknown customer")]
     UnknownCustomer,
+    #[error("invalid script")]
+    InvalidScript,
+    #[error("duplicate payment")]
+    DuplicatePayment,
     #[error("subscription exists")]
     SubscriptionExists,
     #[error("subscription not found")]
@@ -67,7 +72,7 @@ pub struct Invoice {
     pub last_update: u64,
     pub status: InvoiceStatus,
     pub payer: Option<PubKey>,
-    pub carrier_tx: Option<kaspa_consensus_core::Hash>,
+    pub carrier_tx: Option<Hash>,
 }
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
@@ -91,6 +96,7 @@ pub struct ReceiptEpisode {
     pub invoices: BTreeMap<u64, Invoice>,
     pub subscriptions: BTreeMap<u64, Subscription>,
     pub customers: BTreeMap<PubKey, CustomerInfo>,
+    pub used_carrier_txs: BTreeSet<Hash>,
 }
 
 impl Episode for ReceiptEpisode {
@@ -102,7 +108,11 @@ impl Episode for ReceiptEpisode {
         let invoices = storage::load_invoices();
         let subscriptions = storage::load_subscriptions();
         let customers = storage::load_customers();
-        Self { merchant_keys: participants, invoices, subscriptions, customers }
+        let used_carrier_txs = invoices
+            .values()
+            .filter_map(|inv| inv.carrier_tx)
+            .collect::<BTreeSet<Hash>>();
+        Self { merchant_keys: participants, invoices, subscriptions, customers, used_carrier_txs }
     }
 
     fn execute(
@@ -142,6 +152,16 @@ impl Episode for ReceiptEpisode {
                 Ok(MerchantRollback::UndoCreate { invoice_id: *invoice_id })
             }
             MerchantCommand::MarkPaid { invoice_id, payer } => {
+                // Require payer signature
+                if authorization != Some(*payer) {
+                    return Err(EpisodeError::Unauthorized);
+                }
+
+                // Prevent reuse of carrier tx across invoices
+                if self.used_carrier_txs.contains(&metadata.tx_id) {
+                    return Err(EpisodeError::InvalidCommand(MerchantError::DuplicatePayment));
+                }
+
                 let inv = self
                     .invoices
                     .get_mut(invoice_id)
@@ -155,17 +175,49 @@ impl Episode for ReceiptEpisode {
                 if !self.customers.contains_key(payer) {
                     return Err(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer));
                 }
-                // If proxy provided tx summary, require at least one output is >= invoice amount (coarse check)
+
+                // If proxy provided tx summary, require output to satisfy amount and script policy
                 if let Some(outs) = &metadata.tx_outputs {
-                    let ok = outs.iter().any(|o| o.value >= inv.amount);
-                    if !ok {
+                    let mut amount_ok = false;
+                    let mut script_checked = false;
+                    let mut script_ok = false;
+                    // Precompute allowed scripts (standard P2PK for merchant keys)
+                    let allowed_scripts: Vec<Vec<u8>> = self
+                        .merchant_keys
+                        .iter()
+                        .map(|k| {
+                            let mut s = Vec::with_capacity(35);
+                            s.push(33); // OP_DATA_33
+                            s.extend_from_slice(&k.0.serialize());
+                            s.push(0xac); // OP_CHECKSIG
+                            s
+                        })
+                        .collect();
+                    for o in outs {
+                        if o.value >= inv.amount {
+                            amount_ok = true;
+                            if let Some(sb) = &o.script_bytes {
+                                script_checked = true;
+                                if allowed_scripts.iter().any(|s| s == sb) {
+                                    script_ok = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if script_checked && !script_ok {
+                        return Err(EpisodeError::InvalidCommand(MerchantError::InvalidScript));
+                    }
+                    if !amount_ok {
                         return Err(EpisodeError::InvalidCommand(MerchantError::InvalidAmount));
                     }
                 }
+
                 inv.status = InvoiceStatus::Paid;
                 inv.last_update = metadata.accepting_time;
                 inv.payer = Some(*payer);
                 inv.carrier_tx = Some(metadata.tx_id);
+                self.used_carrier_txs.insert(metadata.tx_id);
                 let entry = self.customers.entry(*payer).or_default();
                 if !entry.invoices.contains(invoice_id) {
                     entry.invoices.push(*invoice_id);
@@ -280,6 +332,9 @@ impl Episode for ReceiptEpisode {
                             storage::put_customer(&payer, info);
                         }
                     }
+                    if let Some(tx) = inv.carrier_tx {
+                        self.used_carrier_txs.remove(&tx);
+                    }
                     inv.status = InvoiceStatus::Open;
                     inv.payer = None;
                     inv.carrier_tx = None;
@@ -387,16 +442,110 @@ mod tests {
         // Create
         let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100, memo: Some("x".into()) };
         let _rb = ep.execute(&cmd, Some(pk), &metadata).expect("create ok");
-        // Pay (coarse check with outputs >= amount)
+        // Pay with script verification
         let mut md_paid = metadata.clone();
-        md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 100, script_version: 0, script_bytes: None }]);
+        let script = {
+            let mut s = Vec::with_capacity(35);
+            s.push(33);
+            s.extend_from_slice(&pk.0.serialize());
+            s.push(0xac);
+            s
+        };
+        md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 100, script_version: 0, script_bytes: Some(script) }]);
         let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: pk };
-        let _rb = ep.execute(&cmd, None, &md_paid).expect("pay ok");
+        let _rb = ep.execute(&cmd, Some(pk), &md_paid).expect("pay ok");
         assert!(matches!(ep.invoices.get(&1).unwrap().status, InvoiceStatus::Paid));
         // Ack
         let cmd = MerchantCommand::AckReceipt { invoice_id: 1 };
         let _rb = ep.execute(&cmd, Some(pk), &metadata).expect("ack ok");
         assert!(matches!(ep.invoices.get(&1).unwrap().status, InvoiceStatus::Acked));
+    }
+
+    #[test]
+    fn mark_paid_requires_signature() {
+        let (_sk, pk) = generate_keypair();
+        let metadata = md();
+        storage::init();
+        storage::put_customer(&pk, &CustomerInfo::default());
+        let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 50, memo: None };
+        ep.execute(&cmd, Some(pk), &metadata).expect("create");
+        let mut md_paid = metadata.clone();
+        md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 50, script_version: 0, script_bytes: None }]);
+        let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: pk };
+        let err = ep.execute(&cmd, None, &md_paid).unwrap_err();
+        assert!(matches!(err, EpisodeError::Unauthorized));
+    }
+
+    #[test]
+    fn duplicate_payment_rejected() {
+        let (_sk, pk) = generate_keypair();
+        let metadata = md();
+        storage::init();
+        storage::put_customer(&pk, &CustomerInfo::default());
+        let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
+        // Create two invoices
+        ep.execute(
+            &MerchantCommand::CreateInvoice { invoice_id: 1, amount: 10, memo: None },
+            Some(pk),
+            &metadata,
+        )
+        .unwrap();
+        ep.execute(
+            &MerchantCommand::CreateInvoice { invoice_id: 2, amount: 10, memo: None },
+            Some(pk),
+            &metadata,
+        )
+        .unwrap();
+        // Pay first invoice
+        let mut md_paid = metadata.clone();
+        let script = {
+            let mut s = Vec::with_capacity(35);
+            s.push(33);
+            s.extend_from_slice(&pk.0.serialize());
+            s.push(0xac);
+            s
+        };
+        md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 10, script_version: 0, script_bytes: Some(script.clone()) }]);
+        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk }, Some(pk), &md_paid)
+            .unwrap();
+        // Attempt to reuse same tx for second invoice
+        let err = ep
+            .execute(&MerchantCommand::MarkPaid { invoice_id: 2, payer: pk }, Some(pk), &md_paid)
+            .unwrap_err();
+        match err {
+            EpisodeError::InvalidCommand(MerchantError::DuplicatePayment) => {}
+            _ => panic!("expected duplicate payment"),
+        }
+    }
+
+    #[test]
+    fn invalid_script_rejected() {
+        let ((_sk_m, pk_m), (_sk_p, pk_p)) = (generate_keypair(), generate_keypair());
+        let metadata = md();
+        storage::init();
+        storage::put_customer(&pk_p, &CustomerInfo::default());
+        let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
+        ep.execute(
+            &MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None },
+            Some(pk_m),
+            &metadata,
+        )
+        .unwrap();
+        let mut md_paid = metadata.clone();
+        // Build script for wrong pubkey (payer instead of merchant)
+        let mut wrong = Vec::with_capacity(35);
+        wrong.push(33);
+        wrong.extend_from_slice(&pk_p.0.serialize());
+        wrong.push(0xac);
+        md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 20, script_version: 0, script_bytes: Some(wrong) }]);
+        let err = ep
+            .execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid)
+            .unwrap_err();
+        match err {
+            EpisodeError::InvalidCommand(MerchantError::InvalidScript) => {}
+            _ => panic!("expected invalid script"),
+        }
     }
 
     #[test]
