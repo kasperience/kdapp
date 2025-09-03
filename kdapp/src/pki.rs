@@ -21,6 +21,18 @@ impl std::fmt::Display for PubKey {
     }
 }
 
+impl Ord for PubKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.serialize().cmp(&other.0.serialize())
+    }
+}
+
+impl PartialOrd for PubKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sig(pub Signature);
 impl BorshSerialize for PubKey {
