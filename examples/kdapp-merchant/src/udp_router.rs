@@ -16,6 +16,7 @@ use crate::{
 /// Minimal UDP TLV router for off-chain delivery.
 /// Accepts TLV messages carrying serialized `EpisodeMessage<ReceiptEpisode>` payloads
 /// and forwards them to the engine as synthetic block-accepted events.
+#[derive(Clone)]
 struct AckState {
     seq: u64,
     ack: Vec<u8>,
@@ -44,7 +45,7 @@ impl UdpRouter {
                 }
             };
             let bytes = &buf[..n];
-            let Some(mut msg) = TlvMsg::decode(bytes) else {
+            let Some(msg) = TlvMsg::decode(bytes) else {
                 warn!("router: invalid TLV from {src} (len={n})");
                 continue;
             };

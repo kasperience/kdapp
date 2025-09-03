@@ -19,11 +19,11 @@ pub fn send_with_retry(dest: &str, mut tlv: TlvMsg, expect_close_ack: bool) {
         let mut buf = [0u8; 1024];
         if let Ok((n, _)) = sock.recv_from(&mut buf) {
             if let Some(ack) = TlvMsg::decode(&buf[..n]) {
-                if ack.msg_type == expected && ack.episode_id == tlv.episode_id && ack.seq == tlv.seq {
-                    if ack.verify(DEMO_HMAC_KEY) {
-                        println!("ack received for ep {} seq {}", tlv.episode_id, tlv.seq);
-                        return;
-                    }
+                if ack.msg_type == expected && ack.episode_id == tlv.episode_id && ack.seq == tlv.seq
+                    && ack.verify(DEMO_HMAC_KEY)
+                {
+                    println!("ack received for ep {} seq {}", tlv.episode_id, tlv.seq);
+                    return;
                 }
             }
         }
@@ -35,6 +35,7 @@ pub fn send_with_retry(dest: &str, mut tlv: TlvMsg, expect_close_ack: bool) {
     eprintln!("ack failed for ep {} seq {}", tlv.episode_id, tlv.seq);
 }
 
+#[allow(dead_code)]
 pub fn send_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>) {
     let payload = borsh::to_vec(&msg).expect("serialize cmd");
     let tlv = TlvMsg {
@@ -49,6 +50,7 @@ pub fn send_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<Recei
     send_with_retry(dest, tlv, false);
 }
 
+#[allow(dead_code)]
 pub fn send_new(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>) {
     let payload = borsh::to_vec(&msg).expect("serialize new");
     let tlv = TlvMsg {
@@ -63,6 +65,7 @@ pub fn send_new(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<Recei
     send_with_retry(dest, tlv, false);
 }
 
+#[allow(dead_code)]
 pub fn send_close(dest: &str, episode_id: u64, seq: u64) {
     let tlv = TlvMsg {
         version: TLV_VERSION,

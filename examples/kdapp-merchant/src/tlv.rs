@@ -59,16 +59,17 @@ impl TlvMsg {
 
     /// Compute the HMAC for this message and store it in `auth`.
     pub fn sign(&mut self, key: &[u8]) {
-        let mut h = Blake2b512::new_with_key(key);
-        h.update(&self.bytes_for_sign());
+        // Use a keyed prefix for MAC-like behavior
+        let mut h = Blake2b512::new_with_prefix(key);
+        h.update(self.bytes_for_sign());
         let out = h.finalize();
         self.auth.copy_from_slice(&out[..32]);
     }
 
     /// Verify the message HMAC with the provided key.
     pub fn verify(&self, key: &[u8]) -> bool {
-        let mut h = Blake2b512::new_with_key(key);
-        h.update(&self.bytes_for_sign());
+        let mut h = Blake2b512::new_with_prefix(key);
+        h.update(self.bytes_for_sign());
         let out = h.finalize();
         self.auth == out[..32]
     }

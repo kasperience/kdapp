@@ -5,7 +5,8 @@ use kaspa_consensus_core::{
     network::{NetworkId, NetworkType},
     tx::{TransactionOutpoint, UtxoEntry},
 };
-use kaspa_wrpc_client::prelude::*;
+use kaspa_wrpc_client::client::KaspaRpcClient;
+use kaspa_rpc_core::api::rpc::RpcApi;
 use kdapp::{
     generator::{PatternType, PrefixType, TransactionGenerator},
     proxy,

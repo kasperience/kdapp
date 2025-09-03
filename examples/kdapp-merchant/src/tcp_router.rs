@@ -14,6 +14,7 @@ use crate::{
     tlv::{MsgType, TlvMsg, TLV_VERSION, DEMO_HMAC_KEY},
 };
 
+#[derive(Clone)]
 struct AckState {
     seq: u64,
     ack: Vec<u8>,
@@ -57,7 +58,7 @@ impl TcpRouter {
             }
             let mut msg_bytes = header.to_vec();
             msg_bytes.extend_from_slice(&tail);
-            let mut msg = match TlvMsg::decode(&msg_bytes) {
+            let msg = match TlvMsg::decode(&msg_bytes) {
                 Some(m) => m,
                 None => {
                     warn!("router: invalid TLV from tcp peer");

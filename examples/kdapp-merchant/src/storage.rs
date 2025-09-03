@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use once_cell::sync::Lazy;
 use sled::Db;
 
-use crate::episode::{CustomerInfo, Invoice, Subscription};
+use super::episode::{CustomerInfo, Invoice, Subscription};
 use kdapp::pki::PubKey;
 use secp256k1::PublicKey as SecpPublicKey;
 
@@ -12,9 +12,16 @@ pub static DB: Lazy<Db> = Lazy::new(|| {
 
 pub fn init() {
     Lazy::force(&DB);
-    let _ = DB.open_tree("invoices");
-    let _ = DB.open_tree("customers");
-    let _ = DB.open_tree("subscriptions");
+    let _invoices = DB.open_tree("invoices").expect("invoices tree");
+    let _customers = DB.open_tree("customers").expect("customers tree");
+    let _subscriptions = DB.open_tree("subscriptions").expect("subscriptions tree");
+    #[cfg(test)]
+    {
+        // Ensure clean state for each test run
+        let _ = _invoices.clear();
+        let _ = _customers.clear();
+        let _ = _subscriptions.clear();
+    }
 }
 
 pub fn load_invoices() -> BTreeMap<u64, Invoice> {
@@ -46,6 +53,7 @@ pub fn delete_invoice(id: u64) {
     let _ = tree.remove(id.to_be_bytes());
 }
 
+#[allow(dead_code)]
 pub fn flush() {
     let _ = DB.flush();
 }

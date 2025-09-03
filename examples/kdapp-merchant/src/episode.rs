@@ -5,7 +5,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
 use kaspa_consensus_core::Hash;
-use crate::storage;
+// Use a relative path so this module works when compiled
+// as part of the crate and when included from tests/fixtures.rs
+use super::storage;
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum MerchantCommand {
@@ -406,7 +408,7 @@ mod tests {
     use kaspa_consensus_core::Hash;
     use kdapp::episode::{PayloadMetadata, TxOutputInfo};
     use kdapp::pki::generate_keypair;
-    use crate::storage;
+    use super::super::storage;
 
     fn md() -> PayloadMetadata {
         PayloadMetadata {

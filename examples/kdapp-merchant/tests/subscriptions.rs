@@ -1,6 +1,7 @@
 mod fixtures;
 use fixtures::{create_subscription, episode::{MerchantCommand, MerchantError}, setup};
 use kdapp::episode::EpisodeError;
+use kdapp::episode::Episode;
 
 #[test]
 fn subscription_creation_and_recurring_charges() {

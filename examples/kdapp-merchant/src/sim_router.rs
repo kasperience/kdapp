@@ -6,6 +6,7 @@ use kdapp::episode::TxOutputInfo;
 
 /// Destination for forwarded engine messages. When `Proxy` is selected the
 /// sender should correspond to the channel used by `proxy::run_listener`.
+#[derive(Clone)]
 pub enum EngineChannel {
     Local(std::sync::mpsc::Sender<EngineMsg>),
     Proxy(std::sync::mpsc::Sender<EngineMsg>),
@@ -21,6 +22,7 @@ impl EngineChannel {
 
 /// A minimal in-process router that forwards EpisodeMessage payloads
 /// to the engine as synthetic block-accepted events.
+#[derive(Clone)]
 pub struct SimRouter {
     sender: EngineChannel,
 }

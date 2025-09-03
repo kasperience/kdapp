@@ -28,7 +28,7 @@ fn now() -> u64 {
 fn emit_checkpoint(episode_id: EpisodeId, episode: &ReceiptEpisode, force: bool) {
     let now = now();
     let mut last = LAST_CKPT.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap();
-    let should = force || last.get(&episode_id).map_or(true, |t| now.saturating_sub(*t) >= CHECKPOINT_INTERVAL_SECS);
+    let should = force || last.get(&episode_id).is_none_or(|t| now.saturating_sub(*t) >= CHECKPOINT_INTERVAL_SECS);
     if !should {
         return;
     }

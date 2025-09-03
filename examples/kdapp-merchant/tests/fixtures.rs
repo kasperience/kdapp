@@ -4,6 +4,7 @@ pub mod episode;
 pub mod storage;
 
 use episode::{CustomerInfo, MerchantCommand, ReceiptEpisode};
+use kdapp::episode::Episode;
 use kdapp::episode::PayloadMetadata;
 use kdapp::pki::{generate_keypair, PubKey};
 use kaspa_consensus_core::Hash;

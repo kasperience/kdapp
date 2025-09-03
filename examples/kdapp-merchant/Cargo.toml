@@ -15,6 +15,9 @@ tokio = { workspace = true, features = ["rt", "macros", "rt-multi-thread"] }
 clap = { workspace = true, features = ["derive"] }
 blake2 = "0.10"
 kaspa-consensus-core = { workspace = true }
+kaspa-wrpc-client = { workspace = true }
+kaspa-rpc-core = { workspace = true }
+kaspa-addresses = { workspace = true }
 thiserror = { workspace = true }
 faster-hex = { workspace = true }
 sled = "0.34"

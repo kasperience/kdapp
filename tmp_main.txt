@@ -12,17 +12,12 @@ mod server;
 mod watcher;
 
 use clap::{Parser, Subcommand};
-use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
-use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
-use kaspa_rpc_core::api::rpc::RpcApi;
 use kdapp::engine::{Engine, EngineMsg, EpisodeMessage};
 use kdapp::generator::{PatternType, PrefixType};
 use kdapp::pki::generate_keypair;
 use kdapp::pki::PubKey;
 use kdapp::proxy;
-use kaspa_wrpc_client::client::KaspaRpcClient;
-use secp256k1::Keypair;
 use secp256k1::SecretKey;
 use std::sync::{atomic::AtomicBool, Arc};
 use tokio::runtime::Runtime;
@@ -94,30 +89,6 @@ enum CliCmd {
         #[arg(long)] api_key: String,
         #[arg(long)] merchant_private_key: Option<String>,
     },
-    /// Build and broadcast an on-chain transaction carrying a command
-    OnchainCreate {
-        #[arg(long)] episode_id: u32,
-        #[arg(long)] invoice_id: u64,
-        #[arg(long)] amount: u64,
-        #[arg(long)] memo: Option<String>,
-        /// Merchant private key (signs the EpisodeMessage)
-        #[arg(long)] merchant_private_key: Option<String>,
-        /// Kaspa funding private key (signs and funds the transaction)
-        #[arg(long)] kaspa_private_key: String,
-        /// Fee in sompis (default 5_000)
-        #[arg(long)] fee: Option<u64>,
-    },
-    /// Build and broadcast an on-chain transaction acknowledging a paid invoice
-    OnchainAck {
-        #[arg(long)] episode_id: u32,
-        #[arg(long)] invoice_id: u64,
-        /// Merchant private key (signs the EpisodeMessage)
-        #[arg(long)] merchant_private_key: Option<String>,
-        /// Kaspa funding private key (signs and funds the transaction)
-        #[arg(long)] kaspa_private_key: String,
-        /// Fee in sompis (default 5_000)
-        #[arg(long)] fee: Option<u64>,
-    },
     /// Register a customer and optionally supply a private key
     RegisterCustomer { #[arg(long)] customer_private_key: Option<String> },
     /// List registered customers
@@ -168,48 +139,6 @@ fn parse_public_key(hex: &str) -> Option<PubKey> {
     }
 }
 
-fn addr_for_keypair(keypair: &Keypair, mainnet: bool) -> Address {
-    let addr_prefix = if mainnet { AddrPrefix::Mainnet } else { AddrPrefix::Testnet };
-    Address::new(addr_prefix, AddrVersion::PubKey, &keypair.x_only_public_key().0.serialize())
-}
-
-async fn utxos_for_address(kaspad: &KaspaRpcClient, addr: &Address) -> Result<Vec<(TransactionOutpoint, UtxoEntry)>, String> {
-    let utxos = kaspad
-        .get_utxos_by_addresses(vec![addr.clone()])
-        .await
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|u| (TransactionOutpoint::from(u.outpoint), UtxoEntry::from(u.utxo_entry)))
-        .collect::<Vec<_>>();
-    Ok(utxos)
-}
-
-async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx::Transaction, attempts: usize) -> Result<(), String> {
-    let mut tries = 0usize;
-    loop {
-        match kaspad.submit_transaction(tx.into(), false).await {
-            Ok(_) => return Ok(()),
-            Err(e) => {
-                tries += 1;
-                let msg = e.to_string();
-                if tries >= attempts {
-                    return Err(format!("submit failed after {tries} attempts: {msg}"));
-                }
-                if msg.contains("WebSocket") || msg.contains("not connected") || msg.contains("disconnected") {
-                    let _ = kaspad.connect(Some(proxy::connect_options())).await;
-                    continue;
-                } else if msg.contains("orphan") {
-                    continue;
-                } else if msg.contains("already accepted") {
-                    return Ok(());
-                } else {
-                    return Err(format!("submit failed: {msg}"));
-                }
-            }
-        }
-    }
-}
-
 fn main() {
     env_logger::init();
     storage::init();
@@ -231,7 +160,7 @@ fn main() {
             storage::put_customer(&customer_pk, &CustomerInfo::default());
             let episode_id: u32 = 42;
             router.forward::<ReceiptEpisode>(EpisodeMessage::NewEpisode { episode_id, participants: vec![merchant_pk] });
-            scheduler::start(router.clone(), episode_id);
+            scheduler::start(tx.clone(), episode_id);
             let _label = program_id::derive_program_label(&merchant_pk, "merchant-pos");
             // Create
             let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100_000_000, memo: Some("Latte".into()) };
@@ -244,7 +173,7 @@ fn main() {
             let cmd = MerchantCommand::AckReceipt { invoice_id: 1 };
             let signed = EpisodeMessage::new_signed_command(episode_id, cmd, merchant_sk, merchant_pk);
             router.forward::<ReceiptEpisode>(signed);
-            log::info!("demo customer private key: {}", customer_sk.display_secret());
+            log::info!("demo customer private key: {customer_sk}");
         }
         CliCmd::RouterUdp { bind, proxy } => {
             let channel = if proxy { EngineChannel::Proxy(tx.clone()) } else { EngineChannel::Local(tx.clone()) };
@@ -288,7 +217,7 @@ fn main() {
             });
         }
         CliCmd::New { episode_id, merchant_private_key } => {
-            let (_sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
+            let (sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
                 Some(sk) => {
                     let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk));
                     (sk, pk)
@@ -365,7 +294,7 @@ fn main() {
                 None => generate_keypair(),
             };
             log::info!("merchant pubkey: {pk}");
-            scheduler::start(router.clone(), episode_id);
+            scheduler::start(tx.clone(), episode_id);
             let state = server::AppState::new(Arc::new(router), episode_id, sk, pk, api_key);
             let rt = Runtime::new().expect("runtime");
             rt.block_on(async {
@@ -382,85 +311,13 @@ fn main() {
             };
             storage::put_customer(&pk, &CustomerInfo::default());
             println!("registered customer pubkey: {pk}");
-            println!("customer private key: {}", sk.display_secret());
+            println!("customer private key: {sk}");
         }
         CliCmd::ListCustomers => {
             let customers = storage::load_customers();
             for (pk, info) in customers {
                 println!("{pk}: invoices {:?} subscriptions {:?}", info.invoices, info.subscriptions);
             }
-        }
-        CliCmd::OnchainCreate { episode_id, invoice_id, amount, memo, merchant_private_key, kaspa_private_key, fee } => {
-            let (m_sk, m_pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
-                Some(sk) => {
-                    let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk));
-                    (sk, pk)
-                }
-                None => generate_keypair(),
-            };
-            let ids = match (args.prefix, args.pattern.as_deref().and_then(parse_pattern)) {
-                (Some(pref), Some(pat)) => (pref as PrefixType, pat),
-                _ => program_id::derive_routing_ids(&m_pk),
-            };
-            let (prefix, pattern) = ids;
-            let fee = fee.unwrap_or(5_000);
-            let cmd = MerchantCommand::CreateInvoice { invoice_id, amount, memo };
-            let msg = EpisodeMessage::new_signed_command(episode_id, cmd, m_sk, m_pk);
-
-            let network = if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
-            let rt = Runtime::new().expect("runtime");
-            rt.block_on(async {
-                let kaspad = proxy::connect_client(network, args.wrpc_url.clone()).await.expect("kaspad connect");
-                let kaspa_sk = parse_secret_key(&kaspa_private_key).expect("invalid kaspa private key");
-                let keypair = Keypair::from_secret_key(&secp256k1::Secp256k1::new(), &kaspa_sk);
-                let addr = addr_for_keypair(&keypair, args.mainnet);
-                let utxos = utxos_for_address(&kaspad, &addr).await.expect("load utxos");
-                let Some((op, entry)) = utxos.into_iter().max_by_key(|(_, e)| e.amount) else {
-                    panic!("no UTXOs for address {addr:?}");
-                };
-                if entry.amount <= fee { panic!("selected UTXO too small: {}", entry.amount); }
-                let gen = kdapp::generator::TransactionGenerator::new(keypair, pattern, prefix);
-                let tx = gen.build_command_transaction::<ReceiptEpisode>((op, entry), &addr, &msg, fee);
-                let tx_id = tx.id();
-                submit_tx_retry(&kaspad, &tx, 3).await.expect("submit tx");
-                log::info!("on-chain create invoice submitted: tx_id={tx_id}");
-            });
-        }
-        CliCmd::OnchainAck { episode_id, invoice_id, merchant_private_key, kaspa_private_key, fee } => {
-            let (m_sk, m_pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
-                Some(sk) => {
-                    let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk));
-                    (sk, pk)
-                }
-                None => generate_keypair(),
-            };
-            let ids = match (args.prefix, args.pattern.as_deref().and_then(parse_pattern)) {
-                (Some(pref), Some(pat)) => (pref as PrefixType, pat),
-                _ => program_id::derive_routing_ids(&m_pk),
-            };
-            let (prefix, pattern) = ids;
-            let fee = fee.unwrap_or(5_000);
-            let cmd = MerchantCommand::AckReceipt { invoice_id };
-            let msg = EpisodeMessage::new_signed_command(episode_id, cmd, m_sk, m_pk);
-
-            let network = if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
-            let rt = Runtime::new().expect("runtime");
-            rt.block_on(async {
-                let kaspad = proxy::connect_client(network, args.wrpc_url.clone()).await.expect("kaspad connect");
-                let kaspa_sk = parse_secret_key(&kaspa_private_key).expect("invalid kaspa private key");
-                let keypair = Keypair::from_secret_key(&secp256k1::Secp256k1::new(), &kaspa_sk);
-                let addr = addr_for_keypair(&keypair, args.mainnet);
-                let utxos = utxos_for_address(&kaspad, &addr).await.expect("load utxos");
-                let Some((op, entry)) = utxos.into_iter().max_by_key(|(_, e)| e.amount) else {
-                    panic!("no UTXOs for address {addr:?}");
-                };
-                if entry.amount <= fee { panic!("selected UTXO too small: {}", entry.amount); }
-                let gen = kdapp::generator::TransactionGenerator::new(keypair, pattern, prefix);
-                let tx = gen.build_command_transaction::<ReceiptEpisode>((op, entry), &addr, &msg, fee);
-                let tx_id = tx.id();
-                submit_tx_retry(&kaspad, &tx, 3).await.expect("submit tx");
-                log::info!("on-chain ack submitted: tx_id={tx_id}");
-            });
         }
         CliCmd::Watch { bind, kaspa_private_key, mainnet, wrpc_url } => {
             watcher::run(&bind, kaspa_private_key, mainnet, wrpc_url).expect("watcher");
