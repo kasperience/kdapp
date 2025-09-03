@@ -7,6 +7,7 @@ mod tcp_router;
 mod client_sender;
 mod tlv;
 mod storage;
+mod scheduler;
 
 use clap::{Parser, Subcommand};
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
@@ -19,7 +20,7 @@ use secp256k1::SecretKey;
 use std::sync::{atomic::AtomicBool, Arc};
 use tokio::runtime::Runtime;
 
-use episode::{MerchantCommand, ReceiptEpisode};
+use episode::{CustomerInfo, MerchantCommand, ReceiptEpisode};
 use handler::MerchantEventHandler;
 use sim_router::{EngineChannel, SimRouter};
 
@@ -68,6 +69,17 @@ enum CliCmd {
     Ack { #[arg(long)] episode_id: u32, #[arg(long)] invoice_id: u64, #[arg(long)] merchant_private_key: Option<String> },
     /// Cancel an open invoice (unsigned demo)
     Cancel { #[arg(long)] episode_id: u32, #[arg(long)] invoice_id: u64 },
+    /// Create a subscription plan for a customer (signed by merchant)
+    CreateSubscription {
+        #[arg(long)] episode_id: u32,
+        #[arg(long)] subscription_id: u64,
+        #[arg(long)] customer_public_key: String,
+        #[arg(long)] amount: u64,
+        #[arg(long)] interval: u64,
+        #[arg(long)] merchant_private_key: Option<String>,
+    },
+    /// Cancel an existing subscription
+    CancelSubscription { #[arg(long)] episode_id: u32, #[arg(long)] subscription_id: u64 },
     /// Register a customer and optionally supply a private key
     RegisterCustomer { #[arg(long)] customer_private_key: Option<String> },
     /// List registered customers
@@ -129,9 +141,10 @@ fn main() {
         CliCmd::Demo => {
             let (merchant_sk, merchant_pk) = generate_keypair();
             let (customer_sk, customer_pk) = generate_keypair();
-            storage::put_customer(&customer_pk, &[]);
+            storage::put_customer(&customer_pk, &CustomerInfo::default());
             let episode_id: u32 = 42;
             router.forward::<ReceiptEpisode>(EpisodeMessage::NewEpisode { episode_id, participants: vec![merchant_pk] });
+            scheduler::start(tx.clone(), episode_id);
             let _label = program_id::derive_program_label(&merchant_pk, "merchant-pos");
             // Create
             let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100_000_000, memo: Some("Latte".into()) };
@@ -236,6 +249,25 @@ fn main() {
             let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id, cmd };
             router.forward::<ReceiptEpisode>(msg);
         }
+        CliCmd::CreateSubscription { episode_id, subscription_id, customer_public_key, amount, interval, merchant_private_key } => {
+            let customer = parse_public_key(&customer_public_key).expect("invalid public key");
+            let (sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
+                Some(sk) => {
+                    let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk));
+                    (sk, pk)
+                }
+                None => generate_keypair(),
+            };
+            log::info!("merchant pubkey: {pk}");
+            let cmd = MerchantCommand::CreateSubscription { subscription_id, customer, amount, interval };
+            let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
+            router.forward::<ReceiptEpisode>(msg);
+        }
+        CliCmd::CancelSubscription { episode_id, subscription_id } => {
+            let cmd = MerchantCommand::CancelSubscription { subscription_id };
+            let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id, cmd };
+            router.forward::<ReceiptEpisode>(msg);
+        }
         CliCmd::RegisterCustomer { customer_private_key } => {
             let (sk, pk) = match customer_private_key.and_then(|h| parse_secret_key(&h)) {
                 Some(sk) => {
@@ -244,14 +276,14 @@ fn main() {
                 }
                 None => generate_keypair(),
             };
-            storage::put_customer(&pk, &[]);
+            storage::put_customer(&pk, &CustomerInfo::default());
             println!("registered customer pubkey: {pk}");
             println!("customer private key: {sk}");
         }
         CliCmd::ListCustomers => {
             let customers = storage::load_customers();
-            for (pk, invoices) in customers {
-                println!("{pk}: {:?}", invoices);
+            for (pk, info) in customers {
+                println!("{pk}: invoices {:?} subscriptions {:?}", info.invoices, info.subscriptions);
             }
         }
     }

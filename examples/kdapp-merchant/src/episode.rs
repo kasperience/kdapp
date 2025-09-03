@@ -12,6 +12,9 @@ pub enum MerchantCommand {
     MarkPaid { invoice_id: u64, payer: PubKey },
     AckReceipt { invoice_id: u64 },
     CancelInvoice { invoice_id: u64 },
+    CreateSubscription { subscription_id: u64, customer: PubKey, amount: u64, interval: u64 },
+    ProcessSubscription { subscription_id: u64 },
+    CancelSubscription { subscription_id: u64 },
 }
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
@@ -20,6 +23,9 @@ pub enum MerchantRollback {
     UndoPaid { invoice_id: u64 },
     UndoAck { invoice_id: u64 },
     UndoCancel { invoice_id: u64 },
+    UndoCreateSubscription { subscription_id: u64 },
+    UndoProcessSubscription { subscription_id: u64, prev_next_run: u64 },
+    UndoCancelSubscription { subscription: Subscription },
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -38,6 +44,10 @@ pub enum MerchantError {
     AlreadyCanceled,
     #[error("unknown customer")]
     UnknownCustomer,
+    #[error("subscription exists")]
+    SubscriptionExists,
+    #[error("subscription not found")]
+    SubscriptionNotFound,
 }
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
@@ -61,10 +71,26 @@ pub struct Invoice {
 }
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+pub struct Subscription {
+    pub id: u64,
+    pub customer: PubKey,
+    pub amount: u64,
+    pub interval: u64,
+    pub next_run: u64,
+}
+
+#[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize)]
+pub struct CustomerInfo {
+    pub invoices: Vec<u64>,
+    pub subscriptions: Vec<u64>,
+}
+
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub struct ReceiptEpisode {
     pub merchant_keys: Vec<PubKey>,
     pub invoices: BTreeMap<u64, Invoice>,
-    pub customers: BTreeMap<PubKey, Vec<u64>>,
+    pub subscriptions: BTreeMap<u64, Subscription>,
+    pub customers: BTreeMap<PubKey, CustomerInfo>,
 }
 
 impl Episode for ReceiptEpisode {
@@ -74,8 +100,9 @@ impl Episode for ReceiptEpisode {
 
     fn initialize(participants: Vec<PubKey>, _metadata: &PayloadMetadata) -> Self {
         let invoices = storage::load_invoices();
+        let subscriptions = storage::load_subscriptions();
         let customers = storage::load_customers();
-        Self { merchant_keys: participants, invoices, customers }
+        Self { merchant_keys: participants, invoices, subscriptions, customers }
     }
 
     fn execute(
@@ -140,8 +167,8 @@ impl Episode for ReceiptEpisode {
                 inv.payer = Some(*payer);
                 inv.carrier_tx = Some(metadata.tx_id);
                 let entry = self.customers.entry(*payer).or_default();
-                if !entry.contains(invoice_id) {
-                    entry.push(*invoice_id);
+                if !entry.invoices.contains(invoice_id) {
+                    entry.invoices.push(*invoice_id);
                 }
                 storage::put_invoice(inv);
                 storage::put_customer(payer, entry);
@@ -182,6 +209,60 @@ impl Episode for ReceiptEpisode {
                 storage::put_invoice(inv);
                 Ok(MerchantRollback::UndoCancel { invoice_id: *invoice_id })
             }
+            MerchantCommand::CreateSubscription { subscription_id, customer, amount, interval } => {
+                if self.subscriptions.contains_key(subscription_id) {
+                    return Err(EpisodeError::InvalidCommand(MerchantError::SubscriptionExists));
+                }
+                if *amount == 0 || *interval == 0 {
+                    return Err(EpisodeError::InvalidCommand(MerchantError::InvalidAmount));
+                }
+                // Require merchant auth for creating subscriptions
+                if let Some(pk) = authorization {
+                    if !self.merchant_keys.contains(&pk) {
+                        return Err(EpisodeError::Unauthorized);
+                    }
+                } else {
+                    return Err(EpisodeError::Unauthorized);
+                }
+                let info = self
+                    .customers
+                    .get_mut(customer)
+                    .ok_or(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer))?;
+                let sub = Subscription {
+                    id: *subscription_id,
+                    customer: *customer,
+                    amount: *amount,
+                    interval: *interval,
+                    next_run: metadata.accepting_time + interval,
+                };
+                info.subscriptions.push(*subscription_id);
+                storage::put_customer(customer, info);
+                self.subscriptions.insert(*subscription_id, sub.clone());
+                storage::put_subscription(&sub);
+                Ok(MerchantRollback::UndoCreateSubscription { subscription_id: *subscription_id })
+            }
+            MerchantCommand::ProcessSubscription { subscription_id } => {
+                let sub = self
+                    .subscriptions
+                    .get_mut(subscription_id)
+                    .ok_or(EpisodeError::InvalidCommand(MerchantError::SubscriptionNotFound))?;
+                let prev = sub.next_run;
+                sub.next_run = metadata.accepting_time + sub.interval;
+                storage::put_subscription(sub);
+                Ok(MerchantRollback::UndoProcessSubscription { subscription_id: *subscription_id, prev_next_run: prev })
+            }
+            MerchantCommand::CancelSubscription { subscription_id } => {
+                let sub = self
+                    .subscriptions
+                    .remove(subscription_id)
+                    .ok_or(EpisodeError::InvalidCommand(MerchantError::SubscriptionNotFound))?;
+                if let Some(info) = self.customers.get_mut(&sub.customer) {
+                    info.subscriptions.retain(|id| id != subscription_id);
+                    storage::put_customer(&sub.customer, info);
+                }
+                storage::delete_subscription(*subscription_id);
+                Ok(MerchantRollback::UndoCancelSubscription { subscription: sub })
+            }
         }
     }
 
@@ -194,9 +275,9 @@ impl Episode for ReceiptEpisode {
             MerchantRollback::UndoPaid { invoice_id } => {
                 if let Some(inv) = self.invoices.get_mut(&invoice_id) {
                     if let Some(payer) = inv.payer {
-                        if let Some(list) = self.customers.get_mut(&payer) {
-                            list.retain(|id| *id != invoice_id);
-                            storage::put_customer(&payer, list);
+                        if let Some(info) = self.customers.get_mut(&payer) {
+                            info.invoices.retain(|id| *id != invoice_id);
+                            storage::put_customer(&payer, info);
                         }
                     }
                     inv.status = InvoiceStatus::Open;
@@ -226,6 +307,40 @@ impl Episode for ReceiptEpisode {
                     false
                 }
             }
+            MerchantRollback::UndoCreateSubscription { subscription_id } => {
+                storage::delete_subscription(subscription_id);
+                if let Some(sub) = self.subscriptions.remove(&subscription_id) {
+                    if let Some(info) = self.customers.get_mut(&sub.customer) {
+                        info.subscriptions.retain(|id| *id != subscription_id);
+                        storage::put_customer(&sub.customer, info);
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+            MerchantRollback::UndoProcessSubscription { subscription_id, prev_next_run } => {
+                if let Some(sub) = self.subscriptions.get_mut(&subscription_id) {
+                    sub.next_run = prev_next_run;
+                    storage::put_subscription(sub);
+                    true
+                } else {
+                    false
+                }
+            }
+            MerchantRollback::UndoCancelSubscription { subscription } => {
+                let id = subscription.id;
+                let customer = subscription.customer;
+                self.subscriptions.insert(id, subscription.clone());
+                storage::put_subscription(&subscription);
+                if let Some(info) = self.customers.get_mut(&customer) {
+                    if !info.subscriptions.contains(&id) {
+                        info.subscriptions.push(id);
+                        storage::put_customer(&customer, info);
+                    }
+                }
+                true
+            }
         }
     }
 }
@@ -252,6 +367,7 @@ mod tests {
     fn create_invoice_requires_auth() {
         let (_sk, pk) = generate_keypair();
         let metadata = md();
+        storage::init();
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
         let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 10, memo: None };
         let err = ep.execute(&cmd, None, &metadata).unwrap_err();
@@ -266,7 +382,7 @@ mod tests {
         let (_sk, pk) = generate_keypair();
         let metadata = md();
         storage::init();
-        storage::put_customer(&pk, &[]);
+        storage::put_customer(&pk, &CustomerInfo::default());
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
         // Create
         let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100, memo: Some("x".into()) };
@@ -281,5 +397,25 @@ mod tests {
         let cmd = MerchantCommand::AckReceipt { invoice_id: 1 };
         let _rb = ep.execute(&cmd, Some(pk), &metadata).expect("ack ok");
         assert!(matches!(ep.invoices.get(&1).unwrap().status, InvoiceStatus::Acked));
+    }
+
+    #[test]
+    fn create_and_process_subscription() {
+        let (_sk, pk) = generate_keypair();
+        let metadata = md();
+        storage::init();
+        storage::put_customer(&pk, &CustomerInfo::default());
+        let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
+        // Create subscription
+        let cmd = MerchantCommand::CreateSubscription { subscription_id: 5, customer: pk, amount: 10, interval: 5 };
+        let _rb = ep.execute(&cmd, Some(pk), &metadata).expect("create sub");
+        let next = metadata.accepting_time + 5;
+        assert_eq!(ep.subscriptions.get(&5).unwrap().next_run, next);
+        // Process subscription -> next_run moves forward
+        let mut md2 = metadata.clone();
+        md2.accepting_time = next;
+        let cmd = MerchantCommand::ProcessSubscription { subscription_id: 5 };
+        let _rb = ep.execute(&cmd, None, &md2).expect("process sub");
+        assert_eq!(ep.subscriptions.get(&5).unwrap().next_run, next + 5);
     }
 }
