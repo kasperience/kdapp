@@ -9,6 +9,7 @@ mod tlv;
 mod storage;
 mod scheduler;
 mod server;
+mod watcher;
 
 use clap::{Parser, Subcommand};
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
@@ -92,6 +93,13 @@ enum CliCmd {
     RegisterCustomer { #[arg(long)] customer_private_key: Option<String> },
     /// List registered customers
     ListCustomers,
+    /// Run a checkpoint watcher that anchors hashes on-chain
+    Watch {
+        #[arg(long, default_value = "127.0.0.1:9590")] bind: String,
+        #[arg(long)] kaspa_private_key: String,
+        #[arg(long, default_value_t = false)] mainnet: bool,
+        #[arg(long)] wrpc_url: Option<String>,
+    },
 }
 
 fn parse_secret_key(hex: &str) -> Option<SecretKey> {
@@ -310,6 +318,9 @@ fn main() {
             for (pk, info) in customers {
                 println!("{pk}: invoices {:?} subscriptions {:?}", info.invoices, info.subscriptions);
             }
+        }
+        CliCmd::Watch { bind, kaspa_private_key, mainnet, wrpc_url } => {
+            watcher::run(&bind, kaspa_private_key, mainnet, wrpc_url).expect("watcher");
         }
     }
 
