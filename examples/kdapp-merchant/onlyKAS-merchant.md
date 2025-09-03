@@ -33,6 +33,7 @@ CLI subcommands (M0)
 - `ack --episode-id <u32> --invoice-id <u64> [--merchant-private-key <hex>]` — signed.
 - `cancel --episode-id <u32> --invoice-id <u64>` — unsigned (demo).
 - `serve --episode-id <u32> --api-key <token> [--bind 127.0.0.1:3000] [--merchant-private-key <hex>]` — start an HTTP server.
+- `watch --kaspa-private-key <hex> [--bind 127.0.0.1:9590] [--wrpc-url wss://host:port] [--mainnet]` — anchor checkpoint hashes.
 - `register-customer [--customer-private-key <hex>]` — add customer keypair to storage.
 - `list-customers` — show registered customer pubkeys and invoice ids.
 
@@ -77,6 +78,13 @@ Routing
   - `pattern = [(d[4+i], d[14+i] & 1); i=0..9]` where `d` is the same hash
 - Override with `--prefix <u32>` and `--pattern "p:b,..."` if needed.
 - Off-chain path: use TLV to carry serialized EpisodeMessage; watchers can checkpoint periodically on-chain.
+
+## Checkpoint Protocol
+- `MerchantEventHandler` emits `Checkpoint` TLV messages with `{episode_id, seq, state_root}` when invoices are acknowledged
+  or at least once every 60 s.
+- A lightweight watcher (`watch` subcommand) listens on UDP, verifies the HMAC, and anchors the hash on-chain using an
+  `OKCP` record with prefix `KMCP`.
+- `seq` is strictly monotone; watchers ignore out‑of‑order checkpoints per `docs/PROGRAM_ID_AND_CHECKPOINTS.md`.
 
 Notes
 - This is a scaffold intended for extension: real receipt storage, richer invoice metadata, and actual off-chain transport are deferred to M1+.
