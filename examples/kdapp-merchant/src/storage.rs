@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use once_cell::sync::Lazy;
 use sled::Db;
 
-use crate::episode::Invoice;
+use crate::episode::{CustomerInfo, Invoice, Subscription};
 use kdapp::pki::PubKey;
 use secp256k1::PublicKey as SecpPublicKey;
 
@@ -14,6 +14,7 @@ pub fn init() {
     Lazy::force(&DB);
     let _ = DB.open_tree("invoices");
     let _ = DB.open_tree("customers");
+    let _ = DB.open_tree("subscriptions");
 }
 
 pub fn load_invoices() -> BTreeMap<u64, Invoice> {
@@ -49,7 +50,7 @@ pub fn flush() {
     let _ = DB.flush();
 }
 
-pub fn load_customers() -> BTreeMap<PubKey, Vec<u64>> {
+pub fn load_customers() -> BTreeMap<PubKey, CustomerInfo> {
     let tree = DB.open_tree("customers").expect("customers tree");
     tree.iter()
         .filter_map(|res| res.ok())
@@ -60,7 +61,7 @@ pub fn load_customers() -> BTreeMap<PubKey, Vec<u64>> {
                 SecpPublicKey::from_slice(&pk_bytes)
                     .ok()
                     .map(PubKey)
-                    .and_then(|pk| borsh::from_slice::<Vec<u64>>(&v).ok().map(|inv| (pk, inv)))
+                    .and_then(|pk| borsh::from_slice::<CustomerInfo>(&v).ok().map(|info| (pk, info)))
             } else {
                 None
             }
@@ -68,9 +69,38 @@ pub fn load_customers() -> BTreeMap<PubKey, Vec<u64>> {
         .collect()
 }
 
-pub fn put_customer(pk: &PubKey, invoices: &[u64]) {
+pub fn put_customer(pk: &PubKey, info: &CustomerInfo) {
     let tree = DB.open_tree("customers").expect("customers tree");
     let key = pk.0.serialize();
-    let val = borsh::to_vec(&invoices.to_vec()).expect("serialize customer");
+    let val = borsh::to_vec(info).expect("serialize customer");
     let _ = tree.insert(key, val);
+}
+
+pub fn load_subscriptions() -> BTreeMap<u64, Subscription> {
+    let tree = DB.open_tree("subscriptions").expect("subscriptions tree");
+    tree.iter()
+        .filter_map(|res| res.ok())
+        .filter_map(|(k, v)| {
+            if k.len() == 8 {
+                let mut id_bytes = [0u8; 8];
+                id_bytes.copy_from_slice(&k);
+                let id = u64::from_be_bytes(id_bytes);
+                borsh::from_slice::<Subscription>(&v).ok().map(|sub| (id, sub))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+pub fn put_subscription(sub: &Subscription) {
+    let tree = DB.open_tree("subscriptions").expect("subscriptions tree");
+    let key = sub.id.to_be_bytes();
+    let val = borsh::to_vec(sub).expect("serialize subscription");
+    let _ = tree.insert(key, val);
+}
+
+pub fn delete_subscription(id: u64) {
+    let tree = DB.open_tree("subscriptions").expect("subscriptions tree");
+    let _ = tree.remove(id.to_be_bytes());
 }
