@@ -29,9 +29,11 @@ CLI subcommands (M0)
 - `proxy [--merchant-private-key <hex>]` — connect to a Kaspa node and stream accepted txs via `kdapp::proxy::run_listener`.
 - `new --episode-id <u32> [--merchant-private-key <hex>]` — create episode with merchant pubkey.
 - `create --episode-id <u32> --invoice-id <u64> --amount <u64> [--memo <str>] [--merchant-private-key <hex>]` — signed.
-- `pay --episode-id <u32> --invoice-id <u64>` — unsigned (demo).
+- `pay --episode-id <u32> --invoice-id <u64> --payer-public-key <hex>` — unsigned (demo).
 - `ack --episode-id <u32> --invoice-id <u64> [--merchant-private-key <hex>]` — signed.
 - `cancel --episode-id <u32> --invoice-id <u64>` — unsigned (demo).
+- `register-customer [--customer-private-key <hex>]` — add customer keypair to storage.
+- `list-customers` — show registered customer pubkeys and invoice ids.
 
 Notes
 - For signed commands, pass `--merchant-private-key <hex>` so the pubkey matches the episode’s participant list. Otherwise, a fresh keypair is generated for the process which won’t match previous runs.

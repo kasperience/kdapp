@@ -63,11 +63,15 @@ enum CliCmd {
         #[arg(long)] merchant_private_key: Option<String>,
     },
     /// Mark an invoice as paid (unsigned for demo)
-    Pay { #[arg(long)] episode_id: u32, #[arg(long)] invoice_id: u64 },
+    Pay { #[arg(long)] episode_id: u32, #[arg(long)] invoice_id: u64, #[arg(long)] payer_public_key: String },
     /// Acknowledge a paid invoice (signed by merchant)
     Ack { #[arg(long)] episode_id: u32, #[arg(long)] invoice_id: u64, #[arg(long)] merchant_private_key: Option<String> },
     /// Cancel an open invoice (unsigned demo)
     Cancel { #[arg(long)] episode_id: u32, #[arg(long)] invoice_id: u64 },
+    /// Register a customer and optionally supply a private key
+    RegisterCustomer { #[arg(long)] customer_private_key: Option<String> },
+    /// List registered customers
+    ListCustomers,
 }
 
 fn parse_secret_key(hex: &str) -> Option<SecretKey> {
@@ -96,6 +100,17 @@ fn parse_pattern(s: &str) -> Option<PatternType> {
     Some(out)
 }
 
+fn parse_public_key(hex: &str) -> Option<PubKey> {
+    let mut buf = [0u8; 33];
+    let mut tmp = vec![0u8; hex.len() / 2 + hex.len() % 2];
+    if faster_hex::hex_decode(hex.as_bytes(), &mut tmp).is_ok() && tmp.len() == 33 {
+        buf.copy_from_slice(&tmp);
+        secp256k1::PublicKey::from_slice(&buf).ok().map(PubKey)
+    } else {
+        None
+    }
+}
+
 fn main() {
     env_logger::init();
     storage::init();
@@ -113,6 +128,8 @@ fn main() {
     match args.command.unwrap_or(CliCmd::Demo) {
         CliCmd::Demo => {
             let (merchant_sk, merchant_pk) = generate_keypair();
+            let (customer_sk, customer_pk) = generate_keypair();
+            storage::put_customer(&customer_pk, &[]);
             let episode_id: u32 = 42;
             router.forward::<ReceiptEpisode>(EpisodeMessage::NewEpisode { episode_id, participants: vec![merchant_pk] });
             let _label = program_id::derive_program_label(&merchant_pk, "merchant-pos");
@@ -121,12 +138,13 @@ fn main() {
             let signed = EpisodeMessage::new_signed_command(episode_id, cmd, merchant_sk, merchant_pk);
             router.forward::<ReceiptEpisode>(signed);
             // Pay
-            let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: None };
+            let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: customer_pk };
             router.forward::<ReceiptEpisode>(EpisodeMessage::UnsignedCommand { episode_id, cmd });
             // Ack
             let cmd = MerchantCommand::AckReceipt { invoice_id: 1 };
             let signed = EpisodeMessage::new_signed_command(episode_id, cmd, merchant_sk, merchant_pk);
             router.forward::<ReceiptEpisode>(signed);
+            log::info!("demo customer private key: {customer_sk}");
         }
         CliCmd::RouterUdp { bind, proxy } => {
             let channel = if proxy { EngineChannel::Proxy(tx.clone()) } else { EngineChannel::Local(tx.clone()) };
@@ -194,8 +212,9 @@ fn main() {
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
             router.forward::<ReceiptEpisode>(msg);
         }
-        CliCmd::Pay { episode_id, invoice_id } => {
-            let cmd = MerchantCommand::MarkPaid { invoice_id, payer: None };
+        CliCmd::Pay { episode_id, invoice_id, payer_public_key } => {
+            let pk = parse_public_key(&payer_public_key).expect("invalid public key");
+            let cmd = MerchantCommand::MarkPaid { invoice_id, payer: pk };
             let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id, cmd };
             router.forward::<ReceiptEpisode>(msg);
         }
@@ -216,6 +235,24 @@ fn main() {
             let cmd = MerchantCommand::CancelInvoice { invoice_id };
             let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id, cmd };
             router.forward::<ReceiptEpisode>(msg);
+        }
+        CliCmd::RegisterCustomer { customer_private_key } => {
+            let (sk, pk) = match customer_private_key.and_then(|h| parse_secret_key(&h)) {
+                Some(sk) => {
+                    let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk));
+                    (sk, pk)
+                }
+                None => generate_keypair(),
+            };
+            storage::put_customer(&pk, &[]);
+            println!("registered customer pubkey: {pk}");
+            println!("customer private key: {sk}");
+        }
+        CliCmd::ListCustomers => {
+            let customers = storage::load_customers();
+            for (pk, invoices) in customers {
+                println!("{pk}: {:?}", invoices);
+            }
         }
     }
 

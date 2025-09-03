@@ -3,6 +3,8 @@ use once_cell::sync::Lazy;
 use sled::Db;
 
 use crate::episode::Invoice;
+use kdapp::pki::PubKey;
+use secp256k1::PublicKey as SecpPublicKey;
 
 pub static DB: Lazy<Db> = Lazy::new(|| {
     sled::open("merchant.db").expect("failed to open merchant.db")
@@ -11,6 +13,7 @@ pub static DB: Lazy<Db> = Lazy::new(|| {
 pub fn init() {
     Lazy::force(&DB);
     let _ = DB.open_tree("invoices");
+    let _ = DB.open_tree("customers");
 }
 
 pub fn load_invoices() -> BTreeMap<u64, Invoice> {
@@ -44,4 +47,30 @@ pub fn delete_invoice(id: u64) {
 
 pub fn flush() {
     let _ = DB.flush();
+}
+
+pub fn load_customers() -> BTreeMap<PubKey, Vec<u64>> {
+    let tree = DB.open_tree("customers").expect("customers tree");
+    tree.iter()
+        .filter_map(|res| res.ok())
+        .filter_map(|(k, v)| {
+            if k.len() == 33 {
+                let mut pk_bytes = [0u8; 33];
+                pk_bytes.copy_from_slice(&k);
+                SecpPublicKey::from_slice(&pk_bytes)
+                    .ok()
+                    .map(PubKey)
+                    .and_then(|pk| borsh::from_slice::<Vec<u64>>(&v).ok().map(|inv| (pk, inv)))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+pub fn put_customer(pk: &PubKey, invoices: &[u64]) {
+    let tree = DB.open_tree("customers").expect("customers tree");
+    let key = pk.0.serialize();
+    let val = borsh::to_vec(&invoices.to_vec()).expect("serialize customer");
+    let _ = tree.insert(key, val);
 }

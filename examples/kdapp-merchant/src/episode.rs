@@ -9,7 +9,7 @@ use crate::storage;
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum MerchantCommand {
     CreateInvoice { invoice_id: u64, amount: u64, memo: Option<String> },
-    MarkPaid { invoice_id: u64, payer: Option<PubKey> },
+    MarkPaid { invoice_id: u64, payer: PubKey },
     AckReceipt { invoice_id: u64 },
     CancelInvoice { invoice_id: u64 },
 }
@@ -36,6 +36,8 @@ pub enum MerchantError {
     AlreadyAcked,
     #[error("already canceled")]
     AlreadyCanceled,
+    #[error("unknown customer")]
+    UnknownCustomer,
 }
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
@@ -62,6 +64,7 @@ pub struct Invoice {
 pub struct ReceiptEpisode {
     pub merchant_keys: Vec<PubKey>,
     pub invoices: BTreeMap<u64, Invoice>,
+    pub customers: BTreeMap<PubKey, Vec<u64>>,
 }
 
 impl Episode for ReceiptEpisode {
@@ -71,7 +74,8 @@ impl Episode for ReceiptEpisode {
 
     fn initialize(participants: Vec<PubKey>, _metadata: &PayloadMetadata) -> Self {
         let invoices = storage::load_invoices();
-        Self { merchant_keys: participants, invoices }
+        let customers = storage::load_customers();
+        Self { merchant_keys: participants, invoices, customers }
     }
 
     fn execute(
@@ -121,6 +125,9 @@ impl Episode for ReceiptEpisode {
                 if inv.status == InvoiceStatus::Acked || inv.status == InvoiceStatus::Paid {
                     return Err(EpisodeError::InvalidCommand(MerchantError::AlreadyPaid));
                 }
+                if !self.customers.contains_key(payer) {
+                    return Err(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer));
+                }
                 // If proxy provided tx summary, require at least one output is >= invoice amount (coarse check)
                 if let Some(outs) = &metadata.tx_outputs {
                     let ok = outs.iter().any(|o| o.value >= inv.amount);
@@ -130,9 +137,14 @@ impl Episode for ReceiptEpisode {
                 }
                 inv.status = InvoiceStatus::Paid;
                 inv.last_update = metadata.accepting_time;
-                inv.payer = *payer;
+                inv.payer = Some(*payer);
                 inv.carrier_tx = Some(metadata.tx_id);
+                let entry = self.customers.entry(*payer).or_default();
+                if !entry.contains(invoice_id) {
+                    entry.push(*invoice_id);
+                }
                 storage::put_invoice(inv);
+                storage::put_customer(payer, entry);
                 Ok(MerchantRollback::UndoPaid { invoice_id: *invoice_id })
             }
             MerchantCommand::AckReceipt { invoice_id } => {
@@ -181,6 +193,12 @@ impl Episode for ReceiptEpisode {
             }
             MerchantRollback::UndoPaid { invoice_id } => {
                 if let Some(inv) = self.invoices.get_mut(&invoice_id) {
+                    if let Some(payer) = inv.payer {
+                        if let Some(list) = self.customers.get_mut(&payer) {
+                            list.retain(|id| *id != invoice_id);
+                            storage::put_customer(&payer, list);
+                        }
+                    }
                     inv.status = InvoiceStatus::Open;
                     inv.payer = None;
                     inv.carrier_tx = None;
@@ -218,6 +236,7 @@ mod tests {
     use kaspa_consensus_core::Hash;
     use kdapp::episode::{PayloadMetadata, TxOutputInfo};
     use kdapp::pki::generate_keypair;
+    use crate::storage;
 
     fn md() -> PayloadMetadata {
         PayloadMetadata {
@@ -246,6 +265,8 @@ mod tests {
     fn pay_and_ack_happy_path() {
         let (_sk, pk) = generate_keypair();
         let metadata = md();
+        storage::init();
+        storage::put_customer(&pk, &[]);
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
         // Create
         let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100, memo: Some("x".into()) };
@@ -253,7 +274,7 @@ mod tests {
         // Pay (coarse check with outputs >= amount)
         let mut md_paid = metadata.clone();
         md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 100, script_version: 0, script_bytes: None }]);
-        let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: Some(pk) };
+        let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: pk };
         let _rb = ep.execute(&cmd, None, &md_paid).expect("pay ok");
         assert!(matches!(ep.invoices.get(&1).unwrap().status, InvoiceStatus::Paid));
         // Ack
