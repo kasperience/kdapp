@@ -3,7 +3,7 @@ onlyKAS Merchant — Scaffold (M0)
 This example sets up the minimal moving parts for an onlyKAS-style merchant flow using kdapp’s Engine/Episode primitives. It mirrors the plan in docs/DEV_WEEKLY_SUMMARY.md (M0: scaffold ReceiptEpisode + handler + SimRouter + TLV + program_id tools).
 
 Scope
-- Episode: ReceiptEpisode with commands CreateInvoice, MarkPaid, AckReceipt, CancelInvoice
+- Episode: ReceiptEpisode with commands CreateInvoice, MarkPaid, AckReceipt, CancelInvoice, CreateSubscription, ProcessSubscription, CancelSubscription
 - EventHandler: MerchantEventHandler for logging callbacks
 - SimRouter: in-process forwarder that wraps EpisodeMessage into EngineMsg::BlkAccepted
 - TLV: minimal encoder/decoder for future off-chain transport
@@ -26,12 +26,15 @@ Quickstart
 CLI subcommands (M0)
 - `demo` — run the default in-process demo.
 - `router-udp --bind 127.0.0.1:9530 [--proxy]` — start the UDP TLV router (optionally forwarding via proxy channel).
+- `router-tcp --bind 127.0.0.1:9531 [--proxy]` — start the TCP TLV router.
 - `proxy [--merchant-private-key <hex>]` — connect to a Kaspa node and stream accepted txs via `kdapp::proxy::run_listener`.
 - `new --episode-id <u32> [--merchant-private-key <hex>]` — create episode with merchant pubkey.
 - `create --episode-id <u32> --invoice-id <u64> --amount <u64> [--memo <str>] [--merchant-private-key <hex>]` — signed.
 - `pay --episode-id <u32> --invoice-id <u64> --payer-public-key <hex>` — unsigned (demo).
 - `ack --episode-id <u32> --invoice-id <u64> [--merchant-private-key <hex>]` — signed.
 - `cancel --episode-id <u32> --invoice-id <u64>` — unsigned (demo).
+- `create-subscription --episode-id <u32> --subscription-id <u64> --customer-public-key <hex> --amount <u64> --interval <u64> [--merchant-private-key <hex>]` — signed.
+- `cancel-subscription --episode-id <u32> --subscription-id <u64>` — unsigned (demo).
 - `serve --episode-id <u32> --api-key <token> [--bind 127.0.0.1:3000] [--merchant-private-key <hex>]` — start an HTTP server.
 - `watch --kaspa-private-key <hex> [--bind 127.0.0.1:9590] [--wrpc-url wss://host:port] [--mainnet]` — anchor checkpoint hashes.
 - `register-customer [--customer-private-key <hex>]` — add customer keypair to storage.
@@ -62,6 +65,8 @@ curl -H 'X-API-Key: token' http://127.0.0.1:3000/subscriptions
 Notes
 - For signed commands, pass `--merchant-private-key <hex>` so the pubkey matches the episode’s participant list. Otherwise, a fresh keypair is generated for the process which won’t match previous runs.
 - The UDP router expects TLV-encoded `EpisodeMessage<ReceiptEpisode>` payloads and forwards them to the engine; a simple sender can be added in M1.
+- `router-tcp` provides a reliable TCP alternative for TLV transport with the same forwarding semantics.
+- Local state persists in a sled database `merchant.db` with trees for invoices, customers, and subscriptions. Remove the directory to reset or adjust the path in `storage.rs`.
 
 Episode API
 - Commands:
@@ -69,6 +74,9 @@ Episode API
   - MarkPaid { invoice_id, payer }
   - AckReceipt { invoice_id }
   - CancelInvoice { invoice_id }
+  - CreateSubscription { subscription_id, customer, amount, interval }
+  - ProcessSubscription { subscription_id }
+  - CancelSubscription { subscription_id }
 - Rollbacks mirror each action for DAG reorg safety.
 - MarkPaid performs coarse validation using tx_outputs in PayloadMetadata when provided by the proxy (>= amount check).
 
