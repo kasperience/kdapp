@@ -8,6 +8,7 @@ mod client_sender;
 mod tlv;
 mod storage;
 mod scheduler;
+mod server;
 
 use clap::{Parser, Subcommand};
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
@@ -80,6 +81,13 @@ enum CliCmd {
     },
     /// Cancel an existing subscription
     CancelSubscription { #[arg(long)] episode_id: u32, #[arg(long)] subscription_id: u64 },
+    /// Run an HTTP server exposing merchant commands
+    Serve {
+        #[arg(long, default_value = "127.0.0.1:3000")] bind: String,
+        #[arg(long)] episode_id: u32,
+        #[arg(long)] api_key: String,
+        #[arg(long)] merchant_private_key: Option<String>,
+    },
     /// Register a customer and optionally supply a private key
     RegisterCustomer { #[arg(long)] customer_private_key: Option<String> },
     /// List registered customers
@@ -267,6 +275,23 @@ fn main() {
             let cmd = MerchantCommand::CancelSubscription { subscription_id };
             let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id, cmd };
             router.forward::<ReceiptEpisode>(msg);
+        }
+        CliCmd::Serve { bind, episode_id, api_key, merchant_private_key } => {
+            let router = SimRouter::new(EngineChannel::Local(tx.clone()));
+            let (sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
+                Some(sk) => {
+                    let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk));
+                    (sk, pk)
+                }
+                None => generate_keypair(),
+            };
+            log::info!("merchant pubkey: {pk}");
+            scheduler::start(tx.clone(), episode_id);
+            let state = server::AppState::new(Arc::new(router), episode_id, sk, pk, api_key);
+            let rt = Runtime::new().expect("runtime");
+            rt.block_on(async {
+                server::serve(bind, state).await.expect("server");
+            });
         }
         CliCmd::RegisterCustomer { customer_private_key } => {
             let (sk, pk) = match customer_private_key.and_then(|h| parse_secret_key(&h)) {

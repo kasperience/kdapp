@@ -32,8 +32,31 @@ CLI subcommands (M0)
 - `pay --episode-id <u32> --invoice-id <u64> --payer-public-key <hex>` — unsigned (demo).
 - `ack --episode-id <u32> --invoice-id <u64> [--merchant-private-key <hex>]` — signed.
 - `cancel --episode-id <u32> --invoice-id <u64>` — unsigned (demo).
+- `serve --episode-id <u32> --api-key <token> [--bind 127.0.0.1:3000] [--merchant-private-key <hex>]` — start an HTTP server.
 - `register-customer [--customer-private-key <hex>]` — add customer keypair to storage.
 - `list-customers` — show registered customer pubkeys and invoice ids.
+
+HTTP server example (uses `X-API-Key` header):
+
+```sh
+curl -X POST http://127.0.0.1:3000/invoice \
+  -H 'X-API-Key: token' \
+  -H 'Content-Type: application/json' \
+  -d '{"invoice_id":1,"amount":1000,"memo":"Latte"}'
+
+curl -X POST http://127.0.0.1:3000/pay \
+  -H 'X-API-Key: token' \
+  -H 'Content-Type: application/json' \
+  -d '{"invoice_id":1,"payer_public_key":"<hex>"}'
+
+curl -X POST http://127.0.0.1:3000/subscribe \
+  -H 'X-API-Key: token' \
+  -H 'Content-Type: application/json' \
+  -d '{"subscription_id":1,"customer_public_key":"<hex>","amount":1000,"interval":3600}'
+
+curl -H 'X-API-Key: token' http://127.0.0.1:3000/invoices
+curl -H 'X-API-Key: token' http://127.0.0.1:3000/subscriptions
+```
 
 Notes
 - For signed commands, pass `--merchant-private-key <hex>` so the pubkey matches the episode’s participant list. Otherwise, a fresh keypair is generated for the process which won’t match previous runs.
