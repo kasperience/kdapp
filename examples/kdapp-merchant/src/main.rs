@@ -3,6 +3,8 @@ mod handler;
 mod program_id;
 mod sim_router;
 mod udp_router;
+mod tcp_router;
+mod client_sender;
 mod tlv;
 mod storage;
 
@@ -46,6 +48,8 @@ enum CliCmd {
     Demo,
     /// Start a UDP TLV router that forwards TLV payloads to the engine
     RouterUdp { #[arg(long, default_value = "127.0.0.1:9530")] bind: String, #[arg(long, default_value_t = false)] proxy: bool },
+    /// Start a TCP TLV router that forwards TLV payloads to the engine
+    RouterTcp { #[arg(long, default_value = "127.0.0.1:9531")] bind: String, #[arg(long, default_value_t = false)] proxy: bool },
     /// Connect to a Kaspa node and forward accepted txs via kdapp proxy
     Proxy { #[arg(long)] merchant_private_key: Option<String> },
     /// Create a new episode with the merchant public key as a participant
@@ -127,6 +131,11 @@ fn main() {
         CliCmd::RouterUdp { bind, proxy } => {
             let channel = if proxy { EngineChannel::Proxy(tx.clone()) } else { EngineChannel::Local(tx.clone()) };
             let r = udp_router::UdpRouter::new(channel);
+            r.run(&bind);
+        }
+        CliCmd::RouterTcp { bind, proxy } => {
+            let channel = if proxy { EngineChannel::Proxy(tx.clone()) } else { EngineChannel::Local(tx.clone()) };
+            let r = tcp_router::TcpRouter::new(channel);
             r.run(&bind);
         }
         CliCmd::Proxy { merchant_private_key } => {
