@@ -2372,6 +2372,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdapp-guardian"
+version = "0.0.1"
+dependencies = [
+ "borsh",
+ "kdapp",
+ "log",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "kdapp-indexer"
 version = "0.1.0"
 dependencies = [

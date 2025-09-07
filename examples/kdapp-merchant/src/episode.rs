@@ -173,10 +173,7 @@ impl Episode for ReceiptEpisode {
                 }
 
                 // Require proxy-provided tx summary and enforce output amount and script policy
-                let outs = metadata
-                    .tx_outputs
-                    .as_ref()
-                    .ok_or(EpisodeError::InvalidCommand(MerchantError::InvalidScript))?;
+                let outs = metadata.tx_outputs.as_ref().ok_or(EpisodeError::InvalidCommand(MerchantError::InvalidScript))?;
                 let mut amount_ok = false;
                 let mut script_ok = false;
                 // Precompute allowed scripts (standard P2PK for merchant keys)
@@ -521,8 +518,7 @@ mod tests {
         storage::init();
         storage::put_customer(&pk_p, &CustomerInfo::default());
         let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
-        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None }, Some(pk_m), &metadata)
-            .unwrap();
+        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None }, Some(pk_m), &metadata).unwrap();
         let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p };
         let err = ep.execute(&cmd, Some(pk_p), &metadata).unwrap_err();
         match err {
