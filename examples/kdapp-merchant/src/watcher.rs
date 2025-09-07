@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::net::UdpSocket;
 
 #[cfg(feature = "okcp_relay")]
@@ -22,7 +23,8 @@ use secp256k1::Keypair;
 
 use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
 
-const FEE: u64 = 5_000;
+const MIN_FEE: u64 = 5_000;
+const CONGESTION_THRESHOLD: f64 = 0.7;
 const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KMCP");
 
 fn pattern() -> PatternType {
@@ -104,6 +106,28 @@ pub async fn relay_checkpoints(
     Ok(())
 }
 
+async fn fetch_fee_and_congestion(client: &KaspaRpcClient) -> Result<(u64, f64), String> {
+    let metrics = client.get_mempool_metrics().await.map_err(|e| e.to_string())?;
+    let value = serde_json::to_value(metrics).map_err(|e| e.to_string())?;
+    let base_fee = value
+        .get("recommended_fee")
+        .or_else(|| value.get("recommendedFees").and_then(|v| v.get("normal")))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(MIN_FEE);
+    let size = value
+        .get("size")
+        .or_else(|| value.get("virtual_size"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let limit = value
+        .get("size_limit")
+        .or_else(|| value.get("virtual_size_limit"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1);
+    let ratio = if limit > 0 { size as f64 / limit as f64 } else { 0.0 };
+    Ok((base_fee, ratio))
+}
+
 async fn submit_checkpoint_tx(
     episode_id: u64,
     seq: u64,
@@ -111,6 +135,7 @@ async fn submit_checkpoint_tx(
     sk_hex: &str,
     mainnet: bool,
     wrpc_url: Option<String>,
+    fee: u64,
 ) -> Result<(), String> {
     let mut sk_bytes = [0u8; 32];
     faster_hex::hex_decode(sk_hex.trim().as_bytes(), &mut sk_bytes).map_err(|_| "invalid private key hex".to_string())?;
@@ -131,13 +156,13 @@ async fn submit_checkpoint_tx(
         return Err(format!("no UTXOs for {addr}"));
     }
     let (op, entry) = utxos.iter().max_by_key(|(_, e)| e.amount).cloned().unwrap();
-    if entry.amount <= FEE {
+    if entry.amount <= fee {
         return Err(format!("selected UTXO too small: {}", entry.amount));
     }
 
     let payload = encode_okcp(episode_id, seq, root);
     let gen = TransactionGenerator::new(keypair, pattern(), CHECKPOINT_PREFIX);
-    let send = entry.amount - FEE;
+    let send = entry.amount - fee;
     let tx = gen.build_transaction(&[(op, entry)], send, 1, &addr, payload);
     submit_tx_retry(&kaspad, &tx, 3).await
 }
@@ -173,6 +198,7 @@ pub fn run(bind: &str, kaspa_private_key: String, mainnet: bool, wrpc_url: Optio
     info!("watcher listening on {bind}");
     let rt = tokio::runtime::Runtime::new()?;
     let mut buf = [0u8; 1024];
+    let mut pending: VecDeque<(u64, u64, [u8; 32])> = VecDeque::new();
     loop {
         let (n, src) = sock.recv_from(&mut buf)?;
         let Some(msg) = TlvMsg::decode(&buf[..n]) else {
@@ -214,12 +240,39 @@ pub fn run(bind: &str, kaspa_private_key: String, mainnet: bool, wrpc_url: Optio
         let ep = msg.episode_id;
         let seq = msg.seq;
         info!("checkpoint received: ep={ep} seq={seq}");
+        pending.push_back((ep, seq, root));
         let key = kaspa_private_key.clone();
         let url = wrpc_url.clone();
-        if let Err(e) = rt.block_on(submit_checkpoint_tx(ep, seq, root, &key, mainnet, url)) {
-            warn!("anchor failed: {e}");
-        } else {
-            info!("anchor submitted for ep={ep} seq={seq}");
+        let (base_fee, congestion) = match rt.block_on({
+            let url_clone = url.clone();
+            async move {
+                let network = if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+                let client = proxy::connect_client(network, url_clone).await.map_err(|e| e.to_string())?;
+                fetch_fee_and_congestion(&client).await
+            }
+        }) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("fee metrics unavailable: {e}");
+                (MIN_FEE, 0.0)
+            }
+        };
+        info!("mempool congestion: {congestion:.2}");
+        if congestion > CONGESTION_THRESHOLD {
+            info!("anchoring deferred: congestion above threshold");
+            continue;
+        }
+        info!("processing {} queued checkpoints", pending.len());
+        while let Some((ep, seq, root)) = pending.pop_front() {
+            let mut fee = ((base_fee as f64) * (1.0 + congestion)).ceil() as u64;
+            if fee < MIN_FEE {
+                fee = MIN_FEE;
+            }
+            if let Err(e) = rt.block_on(submit_checkpoint_tx(ep, seq, root, &key, mainnet, url.clone(), fee)) {
+                warn!("anchor failed: {e}");
+            } else {
+                info!("anchor submitted for ep={ep} seq={seq}");
+            }
         }
     }
 }
