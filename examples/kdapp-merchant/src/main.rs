@@ -204,6 +204,12 @@ enum CliCmd {
         mainnet: bool,
         #[arg(long)]
         wrpc_url: Option<String>,
+        /// Maximum fee in sompis for anchoring transactions
+        #[arg(long)]
+        max_fee: Option<u64>,
+        /// Defer anchoring when congestion ratio exceeds this value
+        #[arg(long)]
+        congestion_threshold: Option<f64>,
     },
     /// Derive a Kaspa address from a compressed secp256k1 public key (hex)
     Addr {
@@ -551,8 +557,16 @@ fn main() {
                 log::info!("on-chain ack submitted: tx_id={tx_id}");
             });
         }
-        CliCmd::Watch { bind, kaspa_private_key, mainnet, wrpc_url } => {
-            watcher::run(&bind, kaspa_private_key, mainnet, wrpc_url).expect("watcher");
+        CliCmd::Watch { bind, kaspa_private_key, mainnet, wrpc_url, max_fee, congestion_threshold } => {
+            watcher::run(
+                &bind,
+                kaspa_private_key,
+                mainnet,
+                wrpc_url,
+                max_fee.unwrap_or(u64::MAX),
+                congestion_threshold.unwrap_or(0.7),
+            )
+            .expect("watcher");
         }
         CliCmd::Addr { merchant_public_key } => {
             let pk = parse_public_key(&merchant_public_key).expect("invalid public key hex");

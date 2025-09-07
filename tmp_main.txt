@@ -99,6 +99,8 @@ enum CliCmd {
         #[arg(long)] kaspa_private_key: String,
         #[arg(long, default_value_t = false)] mainnet: bool,
         #[arg(long)] wrpc_url: Option<String>,
+        #[arg(long)] max_fee: Option<u64>,
+        #[arg(long)] congestion_threshold: Option<f64>,
     },
 }
 
@@ -319,8 +321,16 @@ fn main() {
                 println!("{pk}: invoices {:?} subscriptions {:?}", info.invoices, info.subscriptions);
             }
         }
-        CliCmd::Watch { bind, kaspa_private_key, mainnet, wrpc_url } => {
-            watcher::run(&bind, kaspa_private_key, mainnet, wrpc_url).expect("watcher");
+        CliCmd::Watch { bind, kaspa_private_key, mainnet, wrpc_url, max_fee, congestion_threshold } => {
+            watcher::run(
+                &bind,
+                kaspa_private_key,
+                mainnet,
+                wrpc_url,
+                max_fee.unwrap_or(u64::MAX),
+                congestion_threshold.unwrap_or(0.7),
+            )
+            .expect("watcher");
         }
     }
 
