@@ -1,15 +1,15 @@
 mod client_sender;
-mod tlv;
 mod episode;
+mod tlv;
 
 use clap::{Parser, Subcommand};
+use episode::{MerchantCommand, ReceiptEpisode};
 use kdapp::engine::EpisodeMessage;
 use kdapp::pki::PubKey;
-use episode::{MerchantCommand, ReceiptEpisode};
 use secp256k1::{Secp256k1, SecretKey};
 use serde::Deserialize;
 
-use client_sender::{send_cmd, send_new};
+use client_sender::{handshake, send_cmd, send_new};
 use tlv::DEMO_HMAC_KEY;
 
 #[derive(Parser, Debug)]
@@ -82,16 +82,21 @@ async fn main() {
             if let Some(key) = args.api_key.as_deref() {
                 req = req.header("x-api-key", key);
             }
-            match req.send().await.and_then(|r| r.json::<Vec<InvoiceOut>>().await) {
-                Ok(invoices) => {
-                    for inv in invoices {
-                        println!("invoice {} amount {} status {}", inv.id, inv.amount, inv.status);
+            match req.send().await {
+                Ok(resp) => match resp.json::<Vec<InvoiceOut>>().await {
+                    Ok(invoices) => {
+                        for inv in invoices {
+                            println!("invoice {} amount {} status {}", inv.id, inv.amount, inv.status);
+                        }
                     }
-                }
-                Err(e) => eprintln!("list failed: {e}"),
+                    Err(e) => eprintln!("list failed (decode): {e}"),
+                },
+                Err(e) => eprintln!("list failed (request): {e}"),
             }
         }
         Command::Pay { episode_id, invoice_id, payer_private_key } => {
+            // Establish per-destination key before sending signed messages
+            handshake(&args.dest, DEMO_HMAC_KEY);
             let sk = parse_secret_key(&payer_private_key).expect("invalid private key");
             let secp = Secp256k1::new();
             let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));
@@ -102,6 +107,8 @@ async fn main() {
             send_cmd(&args.dest, episode_id as u64, 1, msg, DEMO_HMAC_KEY);
         }
         Command::Ack { episode_id, invoice_id, merchant_private_key } => {
+            // Establish per-destination key before sending signed messages
+            handshake(&args.dest, DEMO_HMAC_KEY);
             let sk = parse_secret_key(&merchant_private_key).expect("invalid private key");
             let secp = Secp256k1::new();
             let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));

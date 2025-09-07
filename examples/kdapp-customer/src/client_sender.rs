@@ -34,12 +34,42 @@ pub fn send_with_retry(dest: &str, mut tlv: TlvMsg, key: &[u8]) {
 
 pub fn send_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>, key: &[u8]) {
     let payload = borsh::to_vec(&msg).expect("serialize cmd");
-    let tlv = TlvMsg { version: TLV_VERSION, msg_type: MsgType::Cmd as u8, episode_id, seq, state_hash: [0u8; 32], payload, auth: [0u8; 32] };
+    let tlv = TlvMsg {
+        version: TLV_VERSION,
+        msg_type: MsgType::Cmd as u8,
+        episode_id,
+        seq,
+        state_hash: [0u8; 32],
+        payload,
+        auth: [0u8; 32],
+    };
+    send_with_retry(dest, tlv, key);
+}
+
+pub fn handshake(dest: &str, key: &[u8]) {
+    let tlv = TlvMsg {
+        version: TLV_VERSION,
+        msg_type: MsgType::Handshake as u8,
+        episode_id: 0,
+        seq: 0,
+        state_hash: [0u8; 32],
+        payload: key.to_vec(),
+        auth: [0u8; 32],
+    };
+    // Sign using the same key; router does not verify handshake auth but will sign the Ack
     send_with_retry(dest, tlv, key);
 }
 
 pub fn send_new(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>, key: &[u8]) {
     let payload = borsh::to_vec(&msg).expect("serialize new");
-    let tlv = TlvMsg { version: TLV_VERSION, msg_type: MsgType::New as u8, episode_id, seq, state_hash: [0u8; 32], payload, auth: [0u8; 32] };
+    let tlv = TlvMsg {
+        version: TLV_VERSION,
+        msg_type: MsgType::New as u8,
+        episode_id,
+        seq,
+        state_hash: [0u8; 32],
+        payload,
+        auth: [0u8; 32],
+    };
     send_with_retry(dest, tlv, key);
 }

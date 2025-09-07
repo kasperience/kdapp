@@ -1,5 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
+use thiserror::Error;
 use kdapp::pki::PubKey;
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
@@ -13,8 +14,8 @@ pub struct ReceiptEpisode;
 
 impl Episode for ReceiptEpisode {
     type Command = MerchantCommand;
-    type CommandRollback = (); 
-    type CommandError = (); 
+    type CommandRollback = ();
+    type CommandError = CmdErr;
 
     fn initialize(_participants: Vec<PubKey>, _metadata: &PayloadMetadata) -> Self {
         Self
@@ -32,4 +33,10 @@ impl Episode for ReceiptEpisode {
     fn rollback(&mut self, _rollback: Self::CommandRollback) -> bool {
         true
     }
+}
+
+#[derive(Debug, Error, Clone)]
+pub enum CmdErr {
+    #[error("invalid command")]
+    Invalid,
 }
