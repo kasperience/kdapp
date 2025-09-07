@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
-use thiserror::Error;
 use kdapp::pki::PubKey;
+use thiserror::Error;
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum MerchantCommand {
@@ -36,6 +36,7 @@ impl Episode for ReceiptEpisode {
 }
 
 #[derive(Debug, Error, Clone)]
+#[allow(dead_code)]
 pub enum CmdErr {
     #[error("invalid command")]
     Invalid,

@@ -103,6 +103,7 @@ impl TlvMsg {
     }
 }
 
+#[allow(dead_code)]
 pub fn hash_state(bytes: &[u8]) -> [u8; 32] {
     let mut h = Blake2b512::new();
     h.update(bytes);
