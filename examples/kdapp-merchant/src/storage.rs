@@ -1,12 +1,18 @@
 use once_cell::sync::Lazy;
 use sled::Db;
 use std::collections::BTreeMap;
+use std::env;
 
 use super::episode::{CustomerInfo, Invoice, Subscription};
 use kdapp::pki::PubKey;
 use secp256k1::PublicKey as SecpPublicKey;
 
-pub static DB: Lazy<Db> = Lazy::new(|| sled::open("merchant.db").expect("failed to open merchant.db"));
+// Allows running multiple merchant processes concurrently by overriding the DB path.
+// Set MERCHANT_DB_PATH to a unique directory per process (e.g., merchant-udp.db, merchant-tcp.db).
+pub static DB: Lazy<Db> = Lazy::new(|| {
+    let path = env::var("MERCHANT_DB_PATH").unwrap_or_else(|_| "merchant.db".to_string());
+    sled::open(&path).unwrap_or_else(|e| panic!("failed to open {path}: {e}"))
+});
 
 pub fn init() {
     Lazy::force(&DB);

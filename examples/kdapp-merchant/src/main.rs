@@ -205,6 +205,12 @@ enum CliCmd {
         #[arg(long)]
         wrpc_url: Option<String>,
     },
+    /// Derive a Kaspa address from a compressed secp256k1 public key (hex)
+    Addr {
+        /// Compressed 33-byte secp256k1 public key in hex (02/03 + 32 bytes)
+        #[arg(long)]
+        merchant_public_key: String,
+    },
 }
 
 fn parse_secret_key(hex: &str) -> Option<SecretKey> {
@@ -247,6 +253,12 @@ fn parse_public_key(hex: &str) -> Option<PubKey> {
 fn addr_for_keypair(keypair: &Keypair, mainnet: bool) -> Address {
     let addr_prefix = if mainnet { AddrPrefix::Mainnet } else { AddrPrefix::Testnet };
     Address::new(addr_prefix, AddrVersion::PubKey, &keypair.x_only_public_key().0.serialize())
+}
+
+fn addr_for_pubkey(pk: &PubKey, mainnet: bool) -> Address {
+    let addr_prefix = if mainnet { AddrPrefix::Mainnet } else { AddrPrefix::Testnet };
+    let xonly = pk.0.x_only_public_key().0.serialize();
+    Address::new(addr_prefix, AddrVersion::PubKey, &xonly)
 }
 
 async fn utxos_for_address(kaspad: &KaspaRpcClient, addr: &Address) -> Result<Vec<(TransactionOutpoint, UtxoEntry)>, String> {
@@ -541,6 +553,11 @@ fn main() {
         }
         CliCmd::Watch { bind, kaspa_private_key, mainnet, wrpc_url } => {
             watcher::run(&bind, kaspa_private_key, mainnet, wrpc_url).expect("watcher");
+        }
+        CliCmd::Addr { merchant_public_key } => {
+            let pk = parse_public_key(&merchant_public_key).expect("invalid public key hex");
+            let addr = addr_for_pubkey(&pk, args.mainnet);
+            println!("{addr}");
         }
     }
 

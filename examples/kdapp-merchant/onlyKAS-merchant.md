@@ -23,6 +23,25 @@ Quickstart
   - Creates a new episode (merchant key), then CreateInvoice → MarkPaid → AckReceipt
 - Proxy listener: `cargo run -p kdapp-merchant -- proxy --merchant-private-key <hex> [--wrpc-url wss://host:port]`
 
+Testing (TLV, handshake, checkpoints)
+- Start UDP router (handshake + signed TLV enforced):
+  - `cargo run -p kdapp-merchant -- router-udp --bind 127.0.0.1:9530`
+- Start watcher to anchor checkpoints on-chain (optional):
+  - `cargo run -p kdapp-merchant -- watch --bind 127.0.0.1:9590 --kaspa-private-key <hex> [--wrpc-url wss://host:port] [--mainnet]`
+- Use kdapp-customer to Pay/Ack via TLV (client handshakes automatically):
+  - `cargo run -p kdapp-customer -- pay --episode-id 42 --invoice-id 1001 --payer-private-key <hex>`
+  - `cargo run -p kdapp-customer -- ack --episode-id 42 --invoice-id 1001 --merchant-private-key <hex>`
+Expected:
+- Router logs show handshake ack, then signed Cmd/Ack accepted and acknowledged.
+- Merchant handler logs show checkpoint emission (and watcher logs submission if enabled).
+
+Running multiple processes on one machine (Windows)
+- sled holds an exclusive file lock per DB directory. To run multiple merchant binaries (e.g., router-udp and router-tcp) concurrently, set a unique DB path per process:
+  - PowerShell:
+    - `setx MERCHANT_DB_PATH merchant-udp.db` then start: `cargo run -p kdapp-merchant -- router-udp --bind 127.0.0.1:9530`
+    - In a new shell: `setx MERCHANT_DB_PATH merchant-tcp.db` then start: `cargo run -p kdapp-merchant -- router-tcp --bind 127.0.0.1:9531`
+  - Or run one from a different working directory so `merchant.db` resolves to different folders.
+
 CLI subcommands (M0)
 - `demo` — run the default in-process demo.
 - `router-udp --bind 127.0.0.1:9530 [--proxy]` — start the UDP TLV router (optionally forwarding via proxy channel).
@@ -65,6 +84,7 @@ curl -H 'X-API-Key: token' http://127.0.0.1:3000/subscriptions
 Notes
 - For signed commands, pass `--merchant-private-key <hex>` so the pubkey matches the episode’s participant list. Otherwise, a fresh keypair is generated for the process which won’t match previous runs.
 - The UDP router expects TLV-encoded `EpisodeMessage<ReceiptEpisode>` payloads and forwards them to the engine; a simple sender can be added in M1.
+- Routers enforce a per-connection key handshake. Clients must send `MsgType::Handshake` once and sign subsequent messages.
 - `router-tcp` provides a reliable TCP alternative for TLV transport with the same forwarding semantics.
 - Local state persists in a sled database `merchant.db` with trees for invoices, customers, and subscriptions. Remove the directory to reset or adjust the path in `storage.rs`.
 
@@ -93,6 +113,7 @@ Routing
 - A lightweight watcher (`watch` subcommand) listens on UDP, verifies the HMAC, and anchors the hash on-chain using an
   `OKCP` record with prefix `KMCP`.
 - `seq` is strictly monotone; watchers ignore out‑of‑order checkpoints per `docs/PROGRAM_ID_AND_CHECKPOINTS.md`.
+ - The on-chain relay subscription is feature-gated as `okcp_relay`. Enable when wiring to your Kaspa RPC version.
 
 Notes
 - This is a scaffold intended for extension: real receipt storage, richer invoice metadata, and actual off-chain transport are deferred to M1+.

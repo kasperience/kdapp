@@ -179,10 +179,37 @@ pub fn run(bind: &str, kaspa_private_key: String, mainnet: bool, wrpc_url: Optio
             warn!("watcher: invalid TLV from {src}");
             continue;
         };
+        // Respond to handshake for compatibility with client_sender retries
+        if msg.msg_type == MsgType::Handshake as u8 {
+            let mut ack = TlvMsg {
+                version: msg.version,
+                msg_type: MsgType::Ack as u8,
+                episode_id: msg.episode_id,
+                seq: msg.seq,
+                state_hash: msg.state_hash,
+                payload: vec![],
+                auth: [0u8; 32],
+            };
+            ack.sign(DEMO_HMAC_KEY);
+            let _ = sock.send_to(&ack.encode(), src);
+            continue;
+        }
         if msg.msg_type != MsgType::Checkpoint as u8 || !msg.verify(DEMO_HMAC_KEY) {
             warn!("watcher: ignored msg from {src}");
             continue;
         }
+        // Acknowledge the checkpoint receipt to the sender
+        let mut ack = TlvMsg {
+            version: msg.version,
+            msg_type: MsgType::Ack as u8,
+            episode_id: msg.episode_id,
+            seq: msg.seq,
+            state_hash: msg.state_hash,
+            payload: vec![],
+            auth: [0u8; 32],
+        };
+        ack.sign(DEMO_HMAC_KEY);
+        let _ = sock.send_to(&ack.encode(), src);
         let root = msg.state_hash;
         let ep = msg.episode_id;
         let seq = msg.seq;

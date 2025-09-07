@@ -25,3 +25,28 @@ The `list` command uses HTTP and does not require these fields.
 ```sh
 cargo run -p kdapp-customer -- pay --episode-id 42 --invoice-id 1 --payer-private-key <hex>
 ```
+
+## Testing with kdapp-merchant
+
+1) Start the merchant UDP router (requires handshake + signed TLV):
+
+```
+cargo run -p kdapp-merchant -- router-udp --bind 127.0.0.1:9530
+```
+
+2) Optional: Start the watcher to anchor checkpoints on-chain:
+
+```
+cargo run -p kdapp-merchant -- watch --bind 127.0.0.1:9590 --kaspa-private-key <hex> [--wrpc-url wss://host:port] [--mainnet]
+```
+
+3) Perform actions with kdapp-customer (the client performs a handshake automatically):
+
+```
+cargo run -p kdapp-customer -- pay --episode-id 42 --invoice-id 1001 --payer-private-key <hex>
+cargo run -p kdapp-customer -- ack --episode-id 42 --invoice-id 1001 --merchant-private-key <hex>
+```
+
+Expected:
+- The router logs a `Handshake` ack and then acknowledges signed messages with `Ack`/`AckClose`.
+- The merchant emits periodic/signed checkpoints; the watcher (if running) submits OKCP anchors on-chain.

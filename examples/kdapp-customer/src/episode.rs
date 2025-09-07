@@ -3,10 +3,16 @@ use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
 use thiserror::Error;
 
+// Must mirror the wire shape used by kdapp-merchant to ensure Borsh compatibility
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum MerchantCommand {
+    CreateInvoice { invoice_id: u64, amount: u64, memo: Option<String> },
     MarkPaid { invoice_id: u64, payer: PubKey },
     AckReceipt { invoice_id: u64 },
+    CancelInvoice { invoice_id: u64 },
+    CreateSubscription { subscription_id: u64, customer: PubKey, amount: u64, interval: u64 },
+    ProcessSubscription { subscription_id: u64 },
+    CancelSubscription { subscription_id: u64 },
 }
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]

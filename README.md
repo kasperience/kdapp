@@ -111,6 +111,27 @@ This is a set of related tasks that build on each other to provide increasing le
 
 -----
 
+## Examples Quickstart
+
+Tic‑Tac‑Toe, merchant/customer flows, and more live under `examples/`.
+
+- Tic‑Tac‑Toe (`examples/tictactoe`)
+  - Player 1: `cargo run -p ttt -- --kaspa-private-key <hex>` (copy printed game pubkey)
+  - Player 2: `cargo run -p ttt -- --kaspa-private-key <hex> --game-opponent-key <player1_pubkey>`
+  - Options: `--wrpc-url wss://host:port`, `--mainnet`
+
+- Merchant + Customer (TLV + HTTP)
+  - Merchant UDP router (requires handshake + signed TLV):
+    - `cargo run -p kdapp-merchant -- router-udp --bind 127.0.0.1:9530`
+  - Optional watcher to anchor checkpoints on-chain:
+    - `cargo run -p kdapp-merchant -- watch --bind 127.0.0.1:9590 --kaspa-private-key <hex> [--wrpc-url wss://host:port] [--mainnet]`
+  - Customer actions (handshake performed automatically):
+    - `cargo run -p kdapp-customer -- pay --episode-id 42 --invoice-id 1001 --payer-private-key <hex>`
+    - `cargo run -p kdapp-customer -- ack --episode-id 42 --invoice-id 1001 --merchant-private-key <hex>`
+  - Details: `examples/kdapp-merchant/onlyKAS-merchant.md`, `examples/kdapp-customer/README.md`
+
+Explore `examples/kaspa-auth` and `examples/comment-board` for richer flows and docs.
+
 ## Kaspa‑Auth: What It Is and Isn’t
 
 Kaspa‑auth in this repository (e.g., comment‑it, comment‑board) is not a browser cookie/session system. It provides episode‑scoped authorization enforced on‑chain via signed commands.

@@ -9,7 +9,8 @@ use kdapp::pki::PubKey;
 use secp256k1::{Secp256k1, SecretKey};
 use serde::Deserialize;
 
-use client_sender::{handshake, send_cmd, send_new};
+use client_sender::{handshake_on, send_cmd_on, send_new_on};
+use std::net::UdpSocket;
 use tlv::DEMO_HMAC_KEY;
 
 #[derive(Parser, Debug)]
@@ -29,6 +30,19 @@ struct Args {
 enum Command {
     /// List invoices via HTTP
     List,
+    /// Create an invoice via TLV (signed by merchant)
+    Create {
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        invoice_id: u64,
+        #[arg(long)]
+        amount: u64,
+        #[arg(long)]
+        memo: Option<String>,
+        #[arg(long)]
+        merchant_private_key: String,
+    },
     /// Pay an invoice using TLV transport
     Pay {
         #[arg(long)]
@@ -97,29 +111,43 @@ async fn main() {
                 Err(e) => eprintln!("list failed (request): {e}"),
             }
         }
-        Command::Pay { episode_id, invoice_id, payer_private_key } => {
-            // Establish per-destination key before sending signed messages
-            handshake(&args.dest, DEMO_HMAC_KEY);
-            let sk = parse_secret_key(&payer_private_key).expect("invalid private key");
-            let secp = Secp256k1::new();
-            let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));
-            let new_msg = EpisodeMessage::<ReceiptEpisode>::NewEpisode { episode_id, participants: vec![pk] };
-            send_new(&args.dest, episode_id as u64, 0, new_msg, DEMO_HMAC_KEY);
-            let cmd = MerchantCommand::MarkPaid { invoice_id, payer: pk };
-            let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
-            send_cmd(&args.dest, episode_id as u64, 1, msg, DEMO_HMAC_KEY);
-        }
-        Command::Ack { episode_id, invoice_id, merchant_private_key } => {
-            // Establish per-destination key before sending signed messages
-            handshake(&args.dest, DEMO_HMAC_KEY);
+        Command::Create { episode_id, invoice_id, amount, memo, merchant_private_key } => {
+            let sock = UdpSocket::bind("0.0.0.0:0").expect("bind sender");
+            handshake_on(&sock, &args.dest, DEMO_HMAC_KEY);
             let sk = parse_secret_key(&merchant_private_key).expect("invalid private key");
             let secp = Secp256k1::new();
             let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));
             let new_msg = EpisodeMessage::<ReceiptEpisode>::NewEpisode { episode_id, participants: vec![pk] };
-            send_new(&args.dest, episode_id as u64, 0, new_msg, DEMO_HMAC_KEY);
+            send_new_on(&sock, &args.dest, episode_id as u64, 0, new_msg, DEMO_HMAC_KEY);
+            let cmd = MerchantCommand::CreateInvoice { invoice_id, amount, memo };
+            let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
+            send_cmd_on(&sock, &args.dest, episode_id as u64, 1, msg, DEMO_HMAC_KEY);
+        }
+        Command::Pay { episode_id, invoice_id, payer_private_key } => {
+            // Use one UDP socket for handshake + subsequent signed messages (stable src addr)
+            let sock = UdpSocket::bind("0.0.0.0:0").expect("bind sender");
+            handshake_on(&sock, &args.dest, DEMO_HMAC_KEY);
+            let sk = parse_secret_key(&payer_private_key).expect("invalid private key");
+            let secp = Secp256k1::new();
+            let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));
+            let new_msg = EpisodeMessage::<ReceiptEpisode>::NewEpisode { episode_id, participants: vec![pk] };
+            send_new_on(&sock, &args.dest, episode_id as u64, 0, new_msg, DEMO_HMAC_KEY);
+            let cmd = MerchantCommand::MarkPaid { invoice_id, payer: pk };
+            let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
+            send_cmd_on(&sock, &args.dest, episode_id as u64, 1, msg, DEMO_HMAC_KEY);
+        }
+        Command::Ack { episode_id, invoice_id, merchant_private_key } => {
+            // Use one UDP socket for handshake + subsequent signed messages (stable src addr)
+            let sock = UdpSocket::bind("0.0.0.0:0").expect("bind sender");
+            handshake_on(&sock, &args.dest, DEMO_HMAC_KEY);
+            let sk = parse_secret_key(&merchant_private_key).expect("invalid private key");
+            let secp = Secp256k1::new();
+            let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));
+            let new_msg = EpisodeMessage::<ReceiptEpisode>::NewEpisode { episode_id, participants: vec![pk] };
+            send_new_on(&sock, &args.dest, episode_id as u64, 0, new_msg, DEMO_HMAC_KEY);
             let cmd = MerchantCommand::AckReceipt { invoice_id };
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
-            send_cmd(&args.dest, episode_id as u64, 1, msg, DEMO_HMAC_KEY);
+            send_cmd_on(&sock, &args.dest, episode_id as u64, 1, msg, DEMO_HMAC_KEY);
         }
     }
 }
