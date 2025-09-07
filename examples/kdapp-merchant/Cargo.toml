@@ -28,3 +28,6 @@ axum = { version = "0.8", features = ["http1", "json", "tokio"] }
 
 [dev-dependencies]
 rand = { workspace = true }
+
+[features]
+okcp_relay = []
