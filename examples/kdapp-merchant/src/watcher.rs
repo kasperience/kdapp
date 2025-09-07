@@ -12,6 +12,9 @@ use kdapp::{
     proxy,
 };
 use log::{info, warn};
+use crate::sim_router::EngineChannel;
+use kdapp::engine::EngineMsg;
+use kdapp::episode::TxOutputInfo;
 use secp256k1::Keypair;
 
 use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
@@ -31,6 +34,65 @@ fn encode_okcp(episode_id: u64, seq: u64, root: [u8; 32]) -> Vec<u8> {
     rec.extend_from_slice(&seq.to_le_bytes());
     rec.extend_from_slice(&root);
     rec
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct OkcpRecord {
+    pub program_id: u64,
+    pub seq: u64,
+    pub root: [u8; 32],
+}
+
+pub fn decode_okcp(bytes: &[u8]) -> Option<OkcpRecord> {
+    use byteorder::{LittleEndian, ReadBytesExt};
+    if bytes.len() < 4 + 1 + 8 + 8 + 32 {
+        return None;
+    }
+    if &bytes[0..4] != b"OKCP" || bytes[4] != 1 {
+        return None;
+    }
+    let mut rdr = &bytes[5..];
+    let program_id = rdr.read_u64::<LittleEndian>().ok()?;
+    let seq = rdr.read_u64::<LittleEndian>().ok()?;
+    let mut root = [0u8; 32];
+    root.copy_from_slice(&rdr[..32]);
+    Some(OkcpRecord { program_id, seq, root })
+}
+
+pub async fn relay_checkpoints(
+    client: &KaspaRpcClient,
+    program_id: u64,
+    sender: EngineChannel,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use kaspa_rpc_core::notify::virtual_chain_changed::{VirtualChainChangedNotification, VirtualChainChangedNotificationType};
+    let mut stream = client.subscribe_virtual_chain_changed().await?;
+    while let Some(VirtualChainChangedNotification { ty, accepted_blocks, .. }) = stream.recv().await {
+        if !matches!(ty, VirtualChainChangedNotificationType::Accepted) {
+            continue;
+        }
+        for block in accepted_blocks {
+            let accepting_hash = block.hash();
+            let accepting_daa = block.header.daa_score;
+            let accepting_time = block.header.timestamp;
+            for tx in block.transactions { 
+                if let Some(payload) = tx.payload() {
+                    if let Some(rec) = decode_okcp(payload) {
+                        if rec.program_id == program_id {
+                            let tx_id = tx.id();
+                            let event = EngineMsg::BlkAccepted {
+                                accepting_hash,
+                                accepting_daa,
+                                accepting_time,
+                                associated_txs: vec![(tx_id, payload.to_vec(), None::<Vec<TxOutputInfo>>)],
+                            };
+                            let _ = sender.send(event);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn submit_checkpoint_tx(
@@ -94,6 +156,21 @@ async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx:
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn okcp_roundtrip() {
+        let root = [3u8; 32];
+        let data = encode_okcp(42, 7, root);
+        let rec = decode_okcp(&data).expect("decode okcp");
+        assert_eq!(rec.program_id, 42);
+        assert_eq!(rec.seq, 7);
+        assert_eq!(rec.root, root);
     }
 }
 

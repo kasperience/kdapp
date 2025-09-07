@@ -172,41 +172,40 @@ impl Episode for ReceiptEpisode {
                     return Err(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer));
                 }
 
-                // If proxy provided tx summary, require output to satisfy amount and script policy
-                if let Some(outs) = &metadata.tx_outputs {
-                    let mut amount_ok = false;
-                    let mut script_checked = false;
-                    let mut script_ok = false;
-                    // Precompute allowed scripts (standard P2PK for merchant keys)
-                    let allowed_scripts: Vec<Vec<u8>> = self
-                        .merchant_keys
-                        .iter()
-                        .map(|k| {
-                            let mut s = Vec::with_capacity(35);
-                            s.push(33); // OP_DATA_33
-                            s.extend_from_slice(&k.0.serialize());
-                            s.push(0xac); // OP_CHECKSIG
-                            s
-                        })
-                        .collect();
-                    for o in outs {
-                        if o.value >= inv.amount {
-                            amount_ok = true;
-                            if let Some(sb) = &o.script_bytes {
-                                script_checked = true;
-                                if allowed_scripts.iter().any(|s| s == sb) {
-                                    script_ok = true;
-                                    break;
-                                }
-                            }
+                // Require proxy-provided tx summary and enforce output amount and script policy
+                let outs = metadata
+                    .tx_outputs
+                    .as_ref()
+                    .ok_or(EpisodeError::InvalidCommand(MerchantError::InvalidScript))?;
+                let mut amount_ok = false;
+                let mut script_ok = false;
+                // Precompute allowed scripts (standard P2PK for merchant keys)
+                let allowed_scripts: Vec<Vec<u8>> = self
+                    .merchant_keys
+                    .iter()
+                    .map(|k| {
+                        let mut s = Vec::with_capacity(35);
+                        s.push(33); // OP_DATA_33
+                        s.extend_from_slice(&k.0.serialize());
+                        s.push(0xac); // OP_CHECKSIG
+                        s
+                    })
+                    .collect();
+                for o in outs {
+                    if o.value >= inv.amount {
+                        amount_ok = true;
+                    }
+                    if let Some(sb) = &o.script_bytes {
+                        if allowed_scripts.iter().any(|s| s == sb) {
+                            script_ok = true;
                         }
                     }
-                    if script_checked && !script_ok {
-                        return Err(EpisodeError::InvalidCommand(MerchantError::InvalidScript));
-                    }
-                    if !amount_ok {
-                        return Err(EpisodeError::InvalidCommand(MerchantError::InvalidAmount));
-                    }
+                }
+                if !script_ok {
+                    return Err(EpisodeError::InvalidCommand(MerchantError::InvalidScript));
+                }
+                if !amount_ok {
+                    return Err(EpisodeError::InvalidCommand(MerchantError::InvalidAmount));
                 }
 
                 inv.status = InvoiceStatus::Paid;
@@ -509,6 +508,23 @@ mod tests {
         wrong.push(0xac);
         md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 20, script_version: 0, script_bytes: Some(wrong) }]);
         let err = ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid).unwrap_err();
+        match err {
+            EpisodeError::InvalidCommand(MerchantError::InvalidScript) => {}
+            _ => panic!("expected invalid script"),
+        }
+    }
+
+    #[test]
+    fn missing_outputs_rejected() {
+        let ((_sk_m, pk_m), (_sk_p, pk_p)) = (generate_keypair(), generate_keypair());
+        let metadata = md();
+        storage::init();
+        storage::put_customer(&pk_p, &CustomerInfo::default());
+        let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
+        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None }, Some(pk_m), &metadata)
+            .unwrap();
+        let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p };
+        let err = ep.execute(&cmd, Some(pk_p), &metadata).unwrap_err();
         match err {
             EpisodeError::InvalidCommand(MerchantError::InvalidScript) => {}
             _ => panic!("expected invalid script"),
