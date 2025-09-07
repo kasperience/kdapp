@@ -1,0 +1,18 @@
+[package]
+name = "kdapp-customer"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+kdapp = { path = "../../kdapp" }
+borsh = { workspace = true }
+secp256k1 = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["rt", "macros", "rt-multi-thread"] }
+env_logger = { workspace = true }
+log = { workspace = true }
+blake2 = "0.10"
+faster-hex = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { workspace = true, features = ["derive"] }
