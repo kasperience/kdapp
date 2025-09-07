@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::UdpSocket;
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -10,7 +10,7 @@ use log::{info, warn};
 
 use crate::{
     sim_router::EngineChannel,
-    tlv::{MsgType, TlvMsg, TLV_VERSION, DEMO_HMAC_KEY},
+    tlv::{MsgType, TlvMsg, TLV_VERSION},
 };
 
 /// Minimal UDP TLV router for off-chain delivery.
@@ -24,12 +24,13 @@ struct AckState {
 
 pub struct UdpRouter {
     last_seq: Arc<Mutex<HashMap<u64, AckState>>>,
+    keys: Arc<Mutex<HashMap<SocketAddr, Vec<u8>>>>,
     sender: EngineChannel,
 }
 
 impl UdpRouter {
     pub fn new(sender: EngineChannel) -> Self {
-        Self { last_seq: Arc::new(Mutex::new(HashMap::new())), sender }
+        Self { last_seq: Arc::new(Mutex::new(HashMap::new())), keys: Arc::new(Mutex::new(HashMap::new())), sender }
     }
 
     pub fn run(&self, bind: &str) {
@@ -57,8 +58,33 @@ impl UdpRouter {
                 warn!("router: bad msg type from {src}");
                 continue;
             };
-
-            if !msg.verify(DEMO_HMAC_KEY) {
+            if matches!(mt, MsgType::Handshake) {
+                let key = msg.payload.clone();
+                {
+                    let mut kmap = self.keys.lock().unwrap();
+                    kmap.insert(src, key.clone());
+                }
+                let mut ack = TlvMsg {
+                    version: TLV_VERSION,
+                    msg_type: MsgType::Ack as u8,
+                    episode_id: msg.episode_id,
+                    seq: msg.seq,
+                    state_hash: msg.state_hash,
+                    payload: vec![],
+                    auth: [0u8; 32],
+                };
+                ack.sign(&key);
+                let _ = sock.send_to(&ack.encode(), src);
+                continue;
+            }
+            let Some(key) = {
+                let kmap = self.keys.lock().unwrap();
+                kmap.get(&src).cloned()
+            } else {
+                warn!("router: message from {src} without handshake");
+                continue;
+            };
+            if !msg.verify(&key) {
                 warn!("router: bad auth from {src}");
                 continue;
             }
@@ -131,7 +157,7 @@ impl UdpRouter {
                 payload: vec![],
                 auth: [0u8; 32],
             };
-            ack.sign(DEMO_HMAC_KEY);
+            ack.sign(&key);
             let ack_bytes = ack.encode();
             let _ = sock.send_to(&ack_bytes, src);
 

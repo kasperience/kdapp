@@ -15,6 +15,7 @@ pub enum MsgType {
     Close = 3,
     AckClose = 4,
     Checkpoint = 5,
+    Handshake = 6,
 }
 
 impl MsgType {
@@ -26,6 +27,7 @@ impl MsgType {
             3 => Some(MsgType::Close),
             4 => Some(MsgType::AckClose),
             5 => Some(MsgType::Checkpoint),
+            6 => Some(MsgType::Handshake),
             _ => None,
         }
     }

@@ -11,7 +11,7 @@ use log::{info, warn};
 
 use crate::{
     sim_router::EngineChannel,
-    tlv::{MsgType, TlvMsg, TLV_VERSION, DEMO_HMAC_KEY},
+    tlv::{MsgType, TlvMsg, TLV_VERSION},
 };
 
 #[derive(Clone)]
@@ -47,6 +47,7 @@ impl TcpRouter {
 
     fn handle_stream(&self, stream: &mut TcpStream) -> std::io::Result<()> {
         let mut header = [0u8; 52];
+        let mut key: Option<Vec<u8>> = None;
         loop {
             if stream.read_exact(&mut header).is_err() {
                 break;
@@ -73,7 +74,27 @@ impl TcpRouter {
                 warn!("router: bad msg type from tcp peer");
                 continue;
             };
-            if !msg.verify(DEMO_HMAC_KEY) {
+            if matches!(mt, MsgType::Handshake) {
+                let k = msg.payload.clone();
+                key = Some(k.clone());
+                let mut ack = TlvMsg {
+                    version: TLV_VERSION,
+                    msg_type: MsgType::Ack as u8,
+                    episode_id: msg.episode_id,
+                    seq: msg.seq,
+                    state_hash: msg.state_hash,
+                    payload: vec![],
+                    auth: [0u8; 32],
+                };
+                ack.sign(&k);
+                let _ = stream.write_all(&ack.encode());
+                continue;
+            }
+            let Some(ref k) = key else {
+                warn!("router: message before handshake from tcp peer");
+                continue;
+            };
+            if !msg.verify(k) {
                 warn!("router: bad auth from tcp peer");
                 continue;
             }
@@ -130,7 +151,9 @@ impl TcpRouter {
                 payload: vec![],
                 auth: [0u8; 32],
             };
-            ack.sign(DEMO_HMAC_KEY);
+            if let Some(ref k) = key {
+                ack.sign(k);
+            }
             let ack_bytes = ack.encode();
             let _ = stream.write_all(&ack_bytes);
             map.insert(msg.episode_id, AckState { seq: msg.seq, ack: ack_bytes });
