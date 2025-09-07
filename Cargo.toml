@@ -11,6 +11,7 @@ members = [
     "examples/kdapp-indexer",
     "examples/kas-draw",
     "examples/kdapp-merchant",
+    "examples/kdapp-customer",
 ]
 
 
