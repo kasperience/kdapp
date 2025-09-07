@@ -8,7 +8,7 @@ use kdapp::pki::PubKey;
 use crate::client_sender;
 use crate::episode::{MerchantCommand, ReceiptEpisode};
 use crate::storage;
-use crate::tlv::{hash_state, MsgType, TlvMsg, TLV_VERSION, DEMO_HMAC_KEY};
+use crate::tlv::{hash_state, MsgType, TlvMsg, DEMO_HMAC_KEY, TLV_VERSION};
 
 pub struct MerchantEventHandler;
 
@@ -20,10 +20,7 @@ static LAST_CKPT: OnceLock<Mutex<HashMap<EpisodeId, u64>>> = OnceLock::new();
 static DID_HANDSHAKE: OnceLock<()> = OnceLock::new();
 
 fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
 fn emit_checkpoint(episode_id: EpisodeId, episode: &ReceiptEpisode, force: bool) {
@@ -45,7 +42,7 @@ fn emit_checkpoint(episode_id: EpisodeId, episode: &ReceiptEpisode, force: bool)
         let mut seqs = SEQS.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap();
         let seq = seqs.entry(episode_id).or_insert(0);
         *seq += 1;
-        let mut msg = TlvMsg {
+        let msg = TlvMsg {
             version: TLV_VERSION,
             msg_type: MsgType::Checkpoint as u8,
             episode_id: episode_id as u64,
