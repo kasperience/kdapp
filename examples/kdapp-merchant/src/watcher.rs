@@ -1,5 +1,6 @@
 use std::net::UdpSocket;
 
+#[cfg(feature = "okcp_relay")]
 use crate::sim_router::EngineChannel;
 use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
 use kaspa_consensus_core::{
@@ -8,7 +9,9 @@ use kaspa_consensus_core::{
 };
 use kaspa_rpc_core::api::rpc::RpcApi;
 use kaspa_wrpc_client::client::KaspaRpcClient;
+#[cfg(feature = "okcp_relay")]
 use kdapp::engine::EngineMsg;
+#[cfg(feature = "okcp_relay")]
 use kdapp::episode::TxOutputInfo;
 use kdapp::{
     generator::{PatternType, PrefixType, TransactionGenerator},
@@ -43,6 +46,7 @@ pub struct OkcpRecord {
     pub root: [u8; 32],
 }
 
+#[cfg(any(test, feature = "okcp_relay"))]
 pub fn decode_okcp(bytes: &[u8]) -> Option<OkcpRecord> {
     // Format: b"OKCP" (4) | version (1) | program_id (u64 LE) | seq (u64 LE) | root ([u8;32])
     const MIN_LEN: usize = 4 + 1 + 8 + 8 + 32;
@@ -164,21 +168,6 @@ async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx:
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn okcp_roundtrip() {
-        let root = [3u8; 32];
-        let data = encode_okcp(42, 7, root);
-        let rec = decode_okcp(&data).expect("decode okcp");
-        assert_eq!(rec.program_id, 42);
-        assert_eq!(rec.seq, 7);
-        assert_eq!(rec.root, root);
-    }
-}
-
 pub fn run(bind: &str, kaspa_private_key: String, mainnet: bool, wrpc_url: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let sock = UdpSocket::bind(bind)?;
     info!("watcher listening on {bind}");
@@ -205,5 +194,20 @@ pub fn run(bind: &str, kaspa_private_key: String, mainnet: bool, wrpc_url: Optio
         } else {
             info!("anchor submitted for ep={ep} seq={seq}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn okcp_roundtrip() {
+        let root = [3u8; 32];
+        let data = encode_okcp(42, 7, root);
+        let rec = decode_okcp(&data).expect("decode okcp");
+        assert_eq!(rec.program_id, 42);
+        assert_eq!(rec.seq, 7);
+        assert_eq!(rec.root, root);
     }
 }
