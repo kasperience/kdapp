@@ -24,7 +24,6 @@ use secp256k1::Keypair;
 use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
 
 const MIN_FEE: u64 = 5_000;
-const CONGESTION_THRESHOLD: f64 = 0.7;
 const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KMCP");
 
 fn pattern() -> PatternType {
@@ -193,7 +192,14 @@ async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx:
     }
 }
 
-pub fn run(bind: &str, kaspa_private_key: String, mainnet: bool, wrpc_url: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(
+    bind: &str,
+    kaspa_private_key: String,
+    mainnet: bool,
+    wrpc_url: Option<String>,
+    max_fee: u64,
+    congestion_threshold: f64,
+) -> Result<(), Box<dyn std::error::Error>> {
     let sock = UdpSocket::bind(bind)?;
     info!("watcher listening on {bind}");
     let rt = tokio::runtime::Runtime::new()?;
@@ -258,16 +264,20 @@ pub fn run(bind: &str, kaspa_private_key: String, mainnet: bool, wrpc_url: Optio
             }
         };
         info!("mempool congestion: {congestion:.2}");
-        if congestion > CONGESTION_THRESHOLD {
+        if congestion > congestion_threshold {
             info!("anchoring deferred: congestion above threshold");
+            continue;
+        }
+        let mut fee = ((base_fee as f64) * (1.0 + congestion)).ceil() as u64;
+        if fee < MIN_FEE {
+            fee = MIN_FEE;
+        }
+        if fee > max_fee {
+            info!("anchoring deferred: fee {fee} exceeds max {max_fee}");
             continue;
         }
         info!("processing {} queued checkpoints", pending.len());
         while let Some((ep, seq, root)) = pending.pop_front() {
-            let mut fee = ((base_fee as f64) * (1.0 + congestion)).ceil() as u64;
-            if fee < MIN_FEE {
-                fee = MIN_FEE;
-            }
             if let Err(e) = rt.block_on(submit_checkpoint_tx(ep, seq, root, &key, mainnet, url.clone(), fee)) {
                 warn!("anchor failed: {e}");
             } else {
