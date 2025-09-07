@@ -4,11 +4,13 @@ use std::time::Duration;
 use kdapp::engine::EpisodeMessage;
 
 use crate::episode::ReceiptEpisode;
-use crate::tlv::{MsgType, TlvMsg, TLV_VERSION, DEMO_HMAC_KEY};
+use crate::tlv::{MsgType, TlvMsg, TLV_VERSION};
 
 /// Send a TLV message over UDP and retry if no acknowledgement is received.
-pub fn send_with_retry(dest: &str, mut tlv: TlvMsg, expect_close_ack: bool) {
-    tlv.sign(DEMO_HMAC_KEY);
+pub fn send_with_retry(dest: &str, mut tlv: TlvMsg, expect_close_ack: bool, key: &[u8], sign: bool) {
+    if sign {
+        tlv.sign(key);
+    }
     let sock = UdpSocket::bind("0.0.0.0:0").expect("bind sender");
     let expected = if expect_close_ack { MsgType::AckClose as u8 } else { MsgType::Ack as u8 };
     let bytes = tlv.encode();
@@ -20,7 +22,7 @@ pub fn send_with_retry(dest: &str, mut tlv: TlvMsg, expect_close_ack: bool) {
         if let Ok((n, _)) = sock.recv_from(&mut buf) {
             if let Some(ack) = TlvMsg::decode(&buf[..n]) {
                 if ack.msg_type == expected && ack.episode_id == tlv.episode_id && ack.seq == tlv.seq
-                    && ack.verify(DEMO_HMAC_KEY)
+                    && ack.verify(key)
                 {
                     println!("ack received for ep {} seq {}", tlv.episode_id, tlv.seq);
                     return;
@@ -36,7 +38,21 @@ pub fn send_with_retry(dest: &str, mut tlv: TlvMsg, expect_close_ack: bool) {
 }
 
 #[allow(dead_code)]
-pub fn send_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>) {
+pub fn handshake(dest: &str, key: &[u8]) {
+    let tlv = TlvMsg {
+        version: TLV_VERSION,
+        msg_type: MsgType::Handshake as u8,
+        episode_id: 0,
+        seq: 0,
+        state_hash: [0u8; 32],
+        payload: key.to_vec(),
+        auth: [0u8; 32],
+    };
+    send_with_retry(dest, tlv, false, key, false);
+}
+
+#[allow(dead_code)]
+pub fn send_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>, key: &[u8]) {
     let payload = borsh::to_vec(&msg).expect("serialize cmd");
     let tlv = TlvMsg {
         version: TLV_VERSION,
@@ -47,11 +63,11 @@ pub fn send_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<Recei
         payload,
         auth: [0u8; 32],
     };
-    send_with_retry(dest, tlv, false);
+    send_with_retry(dest, tlv, false, key, true);
 }
 
 #[allow(dead_code)]
-pub fn send_new(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>) {
+pub fn send_new(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>, key: &[u8]) {
     let payload = borsh::to_vec(&msg).expect("serialize new");
     let tlv = TlvMsg {
         version: TLV_VERSION,
@@ -62,11 +78,11 @@ pub fn send_new(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<Recei
         payload,
         auth: [0u8; 32],
     };
-    send_with_retry(dest, tlv, false);
+    send_with_retry(dest, tlv, false, key, true);
 }
 
 #[allow(dead_code)]
-pub fn send_close(dest: &str, episode_id: u64, seq: u64) {
+pub fn send_close(dest: &str, episode_id: u64, seq: u64, key: &[u8]) {
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Close as u8,
@@ -76,6 +92,6 @@ pub fn send_close(dest: &str, episode_id: u64, seq: u64) {
         payload: vec![],
         auth: [0u8; 32],
     };
-    send_with_retry(dest, tlv, true);
+    send_with_retry(dest, tlv, true, key, true);
 }
 
