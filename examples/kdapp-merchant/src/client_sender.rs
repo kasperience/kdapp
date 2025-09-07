@@ -21,9 +21,7 @@ pub fn send_with_retry(dest: &str, mut tlv: TlvMsg, expect_close_ack: bool, key:
         let mut buf = [0u8; 1024];
         if let Ok((n, _)) = sock.recv_from(&mut buf) {
             if let Some(ack) = TlvMsg::decode(&buf[..n]) {
-                if ack.msg_type == expected && ack.episode_id == tlv.episode_id && ack.seq == tlv.seq
-                    && ack.verify(key)
-                {
+                if ack.msg_type == expected && ack.episode_id == tlv.episode_id && ack.seq == tlv.seq && ack.verify(key) {
                     println!("ack received for ep {} seq {}", tlv.episode_id, tlv.seq);
                     return;
                 }
@@ -94,4 +92,3 @@ pub fn send_close(dest: &str, episode_id: u64, seq: u64, key: &[u8]) {
     };
     send_with_retry(dest, tlv, true, key, true);
 }
-

@@ -85,18 +85,12 @@ async fn main() {
             match req.send().await {
                 Ok(resp) => match resp.json::<Vec<InvoiceOut>>().await {
                     Ok(invoices) => {
-                    for inv in invoices {
-                        println!(
-                            "invoice {} amount {} status {} memo {:?} payer {:?} created_at {} updated {}",
-                            inv.id,
-                            inv.amount,
-                            inv.status,
-                            inv.memo,
-                            inv.payer,
-                            inv.created_at,
-                            inv.last_update
-                        );
-                    }
+                        for inv in invoices {
+                            println!(
+                                "invoice {} amount {} status {} memo {:?} payer {:?} created_at {} updated {}",
+                                inv.id, inv.amount, inv.status, inv.memo, inv.payer, inv.created_at, inv.last_update
+                            );
+                        }
                     }
                     Err(e) => eprintln!("list failed (decode): {e}"),
                 },

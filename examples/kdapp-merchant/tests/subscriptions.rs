@@ -1,7 +1,11 @@
 mod fixtures;
-use fixtures::{create_subscription, episode::{MerchantCommand, MerchantError}, setup};
-use kdapp::episode::EpisodeError;
+use fixtures::{
+    create_subscription,
+    episode::{MerchantCommand, MerchantError},
+    setup,
+};
 use kdapp::episode::Episode;
+use kdapp::episode::EpisodeError;
 
 #[test]
 fn subscription_creation_and_recurring_charges() {
@@ -13,17 +17,11 @@ fn subscription_creation_and_recurring_charges() {
     // process twice to simulate recurring charges
     let mut md = ctx.metadata.clone();
     md.accepting_time = next;
-    ctx
-        .episode
-        .execute(&MerchantCommand::ProcessSubscription { subscription_id: 1 }, None, &md)
-        .expect("process once");
+    ctx.episode.execute(&MerchantCommand::ProcessSubscription { subscription_id: 1 }, None, &md).expect("process once");
     assert_eq!(ctx.episode.subscriptions.get(&1).unwrap().next_run, next + 10);
 
     md.accepting_time = next + 10;
-    ctx
-        .episode
-        .execute(&MerchantCommand::ProcessSubscription { subscription_id: 1 }, None, &md)
-        .expect("process twice");
+    ctx.episode.execute(&MerchantCommand::ProcessSubscription { subscription_id: 1 }, None, &md).expect("process twice");
     assert_eq!(ctx.episode.subscriptions.get(&1).unwrap().next_run, next + 20);
 }
 
@@ -36,12 +34,7 @@ fn subscription_failure_paths() {
     let err = ctx
         .episode
         .execute(
-            &MerchantCommand::CreateSubscription {
-                subscription_id: 2,
-                customer: ctx.customer,
-                amount: 50,
-                interval: 5,
-            },
+            &MerchantCommand::CreateSubscription { subscription_id: 2, customer: ctx.customer, amount: 50, interval: 5 },
             Some(ctx.merchant),
             &ctx.metadata,
         )
@@ -52,14 +45,7 @@ fn subscription_failure_paths() {
     }
 
     // processing a non-existent subscription should fail
-    let err = ctx
-        .episode
-        .execute(
-            &MerchantCommand::ProcessSubscription { subscription_id: 999 },
-            None,
-            &ctx.metadata,
-        )
-        .unwrap_err();
+    let err = ctx.episode.execute(&MerchantCommand::ProcessSubscription { subscription_id: 999 }, None, &ctx.metadata).unwrap_err();
     match err {
         EpisodeError::InvalidCommand(MerchantError::SubscriptionNotFound) => {}
         _ => panic!("expected missing subscription error"),

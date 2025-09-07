@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{State, Json},
+    extract::{Json, State},
     http::{HeaderMap, StatusCode},
     routing::{get, post},
     Router,
@@ -25,13 +25,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(
-        router: Arc<SimRouter>,
-        episode_id: u32,
-        merchant_sk: SecretKey,
-        merchant_pk: PubKey,
-        api_key: String,
-    ) -> Self {
+    pub fn new(router: Arc<SimRouter>, episode_id: u32, merchant_sk: SecretKey, merchant_pk: PubKey, api_key: String) -> Self {
         Self { router, episode_id, merchant_sk, merchant_pk, api_key }
     }
 }
@@ -71,11 +65,7 @@ async fn create_invoice(
     Json(req): Json<CreateInvoiceReq>,
 ) -> Result<StatusCode, StatusCode> {
     authorize(&headers, &state)?;
-    let cmd = MerchantCommand::CreateInvoice {
-        invoice_id: req.invoice_id,
-        amount: req.amount,
-        memo: req.memo,
-    };
+    let cmd = MerchantCommand::CreateInvoice { invoice_id: req.invoice_id, amount: req.amount, memo: req.memo };
     let msg = EpisodeMessage::new_signed_command(state.episode_id, cmd, state.merchant_sk, state.merchant_pk);
     state.router.forward::<ReceiptEpisode>(msg);
     Ok(StatusCode::ACCEPTED)
@@ -94,14 +84,8 @@ async fn pay_invoice(
 ) -> Result<StatusCode, StatusCode> {
     authorize(&headers, &state)?;
     let payer = parse_public_key(&req.payer_public_key).ok_or(StatusCode::BAD_REQUEST)?;
-    let cmd = MerchantCommand::MarkPaid {
-        invoice_id: req.invoice_id,
-        payer,
-    };
-    let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand {
-        episode_id: state.episode_id,
-        cmd,
-    };
+    let cmd = MerchantCommand::MarkPaid { invoice_id: req.invoice_id, payer };
+    let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id: state.episode_id, cmd };
     state.router.forward::<ReceiptEpisode>(msg);
     Ok(StatusCode::ACCEPTED)
 }
@@ -152,10 +136,7 @@ struct SubscriptionOut {
     next_run: u64,
 }
 
-async fn list_invoices(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<Vec<InvoiceOut>>, StatusCode> {
+async fn list_invoices(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Vec<InvoiceOut>>, StatusCode> {
     authorize(&headers, &state)?;
     let invoices = storage::load_invoices();
     let out = invoices
@@ -173,10 +154,7 @@ async fn list_invoices(
     Ok(Json(out))
 }
 
-async fn list_subscriptions(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<Vec<SubscriptionOut>>, StatusCode> {
+async fn list_subscriptions(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Vec<SubscriptionOut>>, StatusCode> {
     authorize(&headers, &state)?;
     let subs = storage::load_subscriptions();
     let out = subs
@@ -209,4 +187,3 @@ fn pk_to_hex(pk: &PubKey) -> String {
     faster_hex::hex_encode(&bytes, &mut out).expect("hex encode");
     String::from_utf8(out).expect("utf8")
 }
-

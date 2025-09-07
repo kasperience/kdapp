@@ -152,4 +152,3 @@ pub enum Commands {
         state_root: Option<String>,
     },
 }
-

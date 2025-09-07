@@ -1,14 +1,12 @@
-use std::collections::BTreeMap;
 use once_cell::sync::Lazy;
 use sled::Db;
+use std::collections::BTreeMap;
 
 use super::episode::{CustomerInfo, Invoice, Subscription};
 use kdapp::pki::PubKey;
 use secp256k1::PublicKey as SecpPublicKey;
 
-pub static DB: Lazy<Db> = Lazy::new(|| {
-    sled::open("merchant.db").expect("failed to open merchant.db")
-});
+pub static DB: Lazy<Db> = Lazy::new(|| sled::open("merchant.db").expect("failed to open merchant.db"));
 
 pub fn init() {
     Lazy::force(&DB);

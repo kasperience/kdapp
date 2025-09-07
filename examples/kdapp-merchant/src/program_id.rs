@@ -1,4 +1,7 @@
-use kdapp::{generator::{PatternType, PrefixType}, pki::PubKey};
+use kdapp::{
+    generator::{PatternType, PrefixType},
+    pki::PubKey,
+};
 use sha2::{Digest, Sha256};
 
 /// Derive a deterministic 32-byte label for this merchant program.
@@ -36,4 +39,3 @@ pub fn derive_routing_ids(merchant: &PubKey) -> (PrefixType, PatternType) {
 
     (prefix, pattern)
 }
-

@@ -17,39 +17,18 @@ pub fn auto_seq(episode_id: u64, typ: &str) -> u64 {
 
 pub fn send_tlv_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<LotteryEpisode>, wait_ack: bool) {
     let payload = borsh::to_vec(&msg).unwrap();
-    let tlv = TlvMsg {
-        version: TLV_VERSION,
-        msg_type: MsgType::Cmd as u8,
-        episode_id,
-        seq,
-        state_hash: [0u8; 32],
-        payload,
-    };
+    let tlv = TlvMsg { version: TLV_VERSION, msg_type: MsgType::Cmd as u8, episode_id, seq, state_hash: [0u8; 32], payload };
     send_with_ack(dest, tlv, false, wait_ack);
 }
 
 pub fn send_tlv_new(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<LotteryEpisode>, wait_ack: bool) {
     let payload = borsh::to_vec(&msg).unwrap();
-    let tlv = TlvMsg {
-        version: TLV_VERSION,
-        msg_type: MsgType::New as u8,
-        episode_id,
-        seq,
-        state_hash: [0u8; 32],
-        payload,
-    };
+    let tlv = TlvMsg { version: TLV_VERSION, msg_type: MsgType::New as u8, episode_id, seq, state_hash: [0u8; 32], payload };
     send_with_ack(dest, tlv, false, wait_ack);
 }
 
 pub fn send_tlv_close(dest: &str, episode_id: u64, seq: u64, wait_ack: bool) {
-    let tlv = TlvMsg {
-        version: TLV_VERSION,
-        msg_type: MsgType::Close as u8,
-        episode_id,
-        seq,
-        state_hash: [0u8; 32],
-        payload: vec![],
-    };
+    let tlv = TlvMsg { version: TLV_VERSION, msg_type: MsgType::Close as u8, episode_id, seq, state_hash: [0u8; 32], payload: vec![] };
     send_with_ack(dest, tlv, true, wait_ack);
 }
 
@@ -127,4 +106,3 @@ fn seq_store_path() -> std::path::PathBuf {
     p.push("kas_draw_offchain_seq.txt");
     p
 }
-

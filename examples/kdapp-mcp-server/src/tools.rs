@@ -1,3 +1,4 @@
+use crate::routing::{PATTERN, PREFIX};
 use crate::state::{ServerState, TicTacToeEpisode, TttCommand};
 use anyhow::Result;
 use kaspa_addresses::Address;
@@ -11,7 +12,6 @@ use kdapp::pki::PubKey;
 use secp256k1::PublicKey;
 use serde_json::Value;
 use std::sync::Arc;
-use crate::routing::{PATTERN, PREFIX};
 
 // Tool: kdapp_start_episode
 pub async fn start_episode(state: Arc<ServerState>, participants: Vec<String>) -> Result<String> {
@@ -265,12 +265,7 @@ pub async fn generate_transaction(state: Arc<ServerState>, command: Value) -> Re
 }
 
 // Tool: kdapp_submit_command_tx — build and submit a transaction for a signed command
-pub async fn submit_command_tx(
-    state: Arc<ServerState>,
-    episode_id: String,
-    command: Value,
-    signer: Option<String>,
-) -> Result<Value> {
+pub async fn submit_command_tx(state: Arc<ServerState>, episode_id: String, command: Value, signer: Option<String>) -> Result<Value> {
     // Parse episode and command
     let episode_id: EpisodeId = episode_id.parse().map_err(|e| anyhow::anyhow!("Invalid episode ID: {}", e))?;
     let cmd = match command.get("type").and_then(|v| v.as_str()) {
@@ -311,7 +306,9 @@ pub async fn submit_command_tx(
         &keypair.public_key().serialize()[1..],
     );
     let utxos = client.get_utxos_by_addresses(vec![addr.clone()]).await?;
-    if utxos.is_empty() { return Err(anyhow::anyhow!("no UTXOs for signer address")); }
+    if utxos.is_empty() {
+        return Err(anyhow::anyhow!("no UTXOs for signer address"));
+    }
     let outpoint = TransactionOutpoint::from(utxos[0].outpoint);
     let entry = UtxoEntry::from(utxos[0].utxo_entry.clone());
     let generator = kdapp::generator::TransactionGenerator::new(keypair, PATTERN, PREFIX);

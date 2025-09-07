@@ -28,7 +28,9 @@ pub struct SimRouter {
 }
 
 impl SimRouter {
-    pub fn new(sender: EngineChannel) -> Self { Self { sender } }
+    pub fn new(sender: EngineChannel) -> Self {
+        Self { sender }
+    }
 
     pub fn forward<G: kdapp::episode::Episode>(&self, msg: EpisodeMessage<G>) {
         let payload = borsh::to_vec(&msg).expect("serialize episode msg");

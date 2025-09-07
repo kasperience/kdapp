@@ -8,19 +8,19 @@ use std::sync::{atomic::AtomicBool, mpsc, Arc};
 use std::thread;
 use tokio::signal;
 
+mod cli;
 mod episode;
 mod handler;
 mod offchain;
+mod offchain_client;
+mod routing;
+mod submit;
 mod tlv;
 mod watchtower;
-mod routing;
-mod cli;
-mod submit;
-mod offchain_client;
 
 use cli::{Cli, Commands};
 use episode::{LotteryCommand, LotteryEpisode};
-use offchain_client::{auto_seq, send_tlv_cmd, send_tlv_close, send_tlv_new, send_with_ack};
+use offchain_client::{auto_seq, send_tlv_close, send_tlv_cmd, send_tlv_new, send_with_ack};
 use submit::{get_wrpc_url, resolve_dev_key_hex, submit_checkpoint_tx, submit_tx_flow, SubmitKind};
 
 #[tokio::main]
@@ -73,12 +73,8 @@ async fn main() {
             let exit = Arc::new(AtomicBool::new(false));
             let exit2 = exit.clone();
             let listener = tokio::spawn(async move {
-                kdapp::proxy::run_listener(
-                    kaspad,
-                    std::iter::once((routing::PREFIX, (routing::pattern(), sender))).collect(),
-                    exit2,
-                )
-                .await;
+                kdapp::proxy::run_listener(kaspad, std::iter::once((routing::PREFIX, (routing::pattern(), sender))).collect(), exit2)
+                    .await;
             });
             info!("engine running; press Ctrl+C to exit");
             let _ = signal::ctrl_c().await;
@@ -91,25 +87,13 @@ async fn main() {
         }
         Commands::SubmitBuy { episode_id, kaspa_private_key, mainnet, wrpc_url, amount, numbers } => {
             let nums = [numbers[0], numbers[1], numbers[2], numbers[3], numbers[4]];
-            submit_tx_flow(
-                SubmitKind::Buy { episode_id, amount, numbers: nums },
-                kaspa_private_key,
-                mainnet,
-                wrpc_url,
-            )
-            .await;
+            submit_tx_flow(SubmitKind::Buy { episode_id, amount, numbers: nums }, kaspa_private_key, mainnet, wrpc_url).await;
         }
         Commands::SubmitDraw { episode_id, kaspa_private_key, mainnet, wrpc_url, entropy } => {
             submit_tx_flow(SubmitKind::Draw { episode_id, entropy }, kaspa_private_key, mainnet, wrpc_url).await;
         }
         Commands::SubmitClaim { episode_id, kaspa_private_key, mainnet, wrpc_url, ticket_id, round } => {
-            submit_tx_flow(
-                SubmitKind::Claim { episode_id, ticket_id, round },
-                kaspa_private_key,
-                mainnet,
-                wrpc_url,
-            )
-            .await;
+            submit_tx_flow(SubmitKind::Claim { episode_id, ticket_id, round }, kaspa_private_key, mainnet, wrpc_url).await;
         }
         Commands::SubmitCheckpoint { episode_id, seq, state_root, kaspa_private_key, mainnet, wrpc_url } => {
             let mut root = [0u8; 32];
@@ -189,8 +173,7 @@ async fn main() {
                         eprintln!("invalid private key hex (dev key/env/flag)");
                         return;
                     }
-                    let keypair =
-                        Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).expect("invalid sk");
+                    let keypair = Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).expect("invalid sk");
                     vec![kdapp::pki::PubKey(keypair.public_key())]
                 } else {
                     vec![]
@@ -212,8 +195,7 @@ async fn main() {
                         eprintln!("invalid private key hex (dev key/env/flag)");
                         return;
                     }
-                    let keypair =
-                        Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).expect("invalid sk");
+                    let keypair = Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).expect("invalid sk");
                     let pk = kdapp::pki::PubKey(keypair.public_key());
                     EpisodeMessage::<LotteryEpisode>::new_signed_command(episode_id, cmd, keypair.secret_key(), pk)
                 } else {
@@ -233,4 +215,3 @@ async fn main() {
         }
     }
 }
-

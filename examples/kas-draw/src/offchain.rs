@@ -72,7 +72,12 @@ impl OffchainRouter {
                     }
                     Some(prev) => {
                         warn!("router: stale/out-of-order CMD ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
-                        eprintln!("offchain-router: stale/out-of-order CMD ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
+                        eprintln!(
+                            "offchain-router: stale/out-of-order CMD ep {} (got {}, want {})",
+                            msg.episode_id,
+                            msg.seq,
+                            prev + 1
+                        );
                         (false, false)
                     }
                     None => {
@@ -99,12 +104,20 @@ impl OffchainRouter {
                             }
                             Some(prev) => {
                                 warn!("router: stale/out-of-order CLOSE ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
-                                eprintln!("offchain-router: stale/out-of-order CLOSE ep {} (got {}, want {})", msg.episode_id, msg.seq, prev + 1);
+                                eprintln!(
+                                    "offchain-router: stale/out-of-order CLOSE ep {} (got {}, want {})",
+                                    msg.episode_id,
+                                    msg.seq,
+                                    prev + 1
+                                );
                                 (false, true)
                             }
                             None => {
                                 warn!("router: CLOSE before NEW for ep {} (got seq {} but no state)", msg.episode_id, msg.seq);
-                                eprintln!("offchain-router: CLOSE before NEW for ep {} (got seq {} but no state)", msg.episode_id, msg.seq);
+                                eprintln!(
+                                    "offchain-router: CLOSE before NEW for ep {} (got seq {} but no state)",
+                                    msg.episode_id, msg.seq
+                                );
                                 (false, true)
                             }
                         }

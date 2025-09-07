@@ -1,14 +1,14 @@
+mod client_sender;
 mod episode;
 mod handler;
 mod program_id;
-mod sim_router;
-mod udp_router;
-mod tcp_router;
-mod client_sender;
-mod tlv;
-mod storage;
 mod scheduler;
 mod server;
+mod sim_router;
+mod storage;
+mod tcp_router;
+mod tlv;
+mod udp_router;
 mod watcher;
 
 use clap::{Parser, Subcommand};
@@ -16,12 +16,12 @@ use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
 use kaspa_rpc_core::api::rpc::RpcApi;
+use kaspa_wrpc_client::client::KaspaRpcClient;
 use kdapp::engine::{Engine, EngineMsg, EpisodeMessage};
 use kdapp::generator::{PatternType, PrefixType};
 use kdapp::pki::generate_keypair;
 use kdapp::pki::PubKey;
 use kdapp::proxy;
-use kaspa_wrpc_client::client::KaspaRpcClient;
 use secp256k1::Keypair;
 use secp256k1::SecretKey;
 use std::sync::{atomic::AtomicBool, Arc};
@@ -55,79 +55,155 @@ enum CliCmd {
     /// Run the original demo flow in-process
     Demo,
     /// Start a UDP TLV router that forwards TLV payloads to the engine
-    RouterUdp { #[arg(long, default_value = "127.0.0.1:9530")] bind: String, #[arg(long, default_value_t = false)] proxy: bool },
+    RouterUdp {
+        #[arg(long, default_value = "127.0.0.1:9530")]
+        bind: String,
+        #[arg(long, default_value_t = false)]
+        proxy: bool,
+    },
     /// Start a TCP TLV router that forwards TLV payloads to the engine
-    RouterTcp { #[arg(long, default_value = "127.0.0.1:9531")] bind: String, #[arg(long, default_value_t = false)] proxy: bool },
+    RouterTcp {
+        #[arg(long, default_value = "127.0.0.1:9531")]
+        bind: String,
+        #[arg(long, default_value_t = false)]
+        proxy: bool,
+    },
     /// Connect to a Kaspa node and forward accepted txs via kdapp proxy
-    Proxy { #[arg(long)] merchant_private_key: Option<String> },
+    Proxy {
+        #[arg(long)]
+        merchant_private_key: Option<String>,
+    },
     /// Create a new episode with the merchant public key as a participant
-    New { #[arg(long)] episode_id: u32, #[arg(long)] merchant_private_key: Option<String> },
+    New {
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        merchant_private_key: Option<String>,
+    },
     /// Create an invoice (signed by merchant)
     Create {
-        #[arg(long)] episode_id: u32,
-        #[arg(long)] invoice_id: u64,
-        #[arg(long)] amount: u64,
-        #[arg(long)] memo: Option<String>,
-        #[arg(long)] merchant_private_key: Option<String>,
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        invoice_id: u64,
+        #[arg(long)]
+        amount: u64,
+        #[arg(long)]
+        memo: Option<String>,
+        #[arg(long)]
+        merchant_private_key: Option<String>,
     },
     /// Mark an invoice as paid (unsigned for demo)
-    Pay { #[arg(long)] episode_id: u32, #[arg(long)] invoice_id: u64, #[arg(long)] payer_public_key: String },
+    Pay {
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        invoice_id: u64,
+        #[arg(long)]
+        payer_public_key: String,
+    },
     /// Acknowledge a paid invoice (signed by merchant)
-    Ack { #[arg(long)] episode_id: u32, #[arg(long)] invoice_id: u64, #[arg(long)] merchant_private_key: Option<String> },
+    Ack {
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        invoice_id: u64,
+        #[arg(long)]
+        merchant_private_key: Option<String>,
+    },
     /// Cancel an open invoice (unsigned demo)
-    Cancel { #[arg(long)] episode_id: u32, #[arg(long)] invoice_id: u64 },
+    Cancel {
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        invoice_id: u64,
+    },
     /// Create a subscription plan for a customer (signed by merchant)
     CreateSubscription {
-        #[arg(long)] episode_id: u32,
-        #[arg(long)] subscription_id: u64,
-        #[arg(long)] customer_public_key: String,
-        #[arg(long)] amount: u64,
-        #[arg(long)] interval: u64,
-        #[arg(long)] merchant_private_key: Option<String>,
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        subscription_id: u64,
+        #[arg(long)]
+        customer_public_key: String,
+        #[arg(long)]
+        amount: u64,
+        #[arg(long)]
+        interval: u64,
+        #[arg(long)]
+        merchant_private_key: Option<String>,
     },
     /// Cancel an existing subscription
-    CancelSubscription { #[arg(long)] episode_id: u32, #[arg(long)] subscription_id: u64 },
+    CancelSubscription {
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        subscription_id: u64,
+    },
     /// Run an HTTP server exposing merchant commands
     Serve {
-        #[arg(long, default_value = "127.0.0.1:3000")] bind: String,
-        #[arg(long)] episode_id: u32,
-        #[arg(long)] api_key: String,
-        #[arg(long)] merchant_private_key: Option<String>,
+        #[arg(long, default_value = "127.0.0.1:3000")]
+        bind: String,
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        api_key: String,
+        #[arg(long)]
+        merchant_private_key: Option<String>,
     },
     /// Build and broadcast an on-chain transaction carrying a command
     OnchainCreate {
-        #[arg(long)] episode_id: u32,
-        #[arg(long)] invoice_id: u64,
-        #[arg(long)] amount: u64,
-        #[arg(long)] memo: Option<String>,
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        invoice_id: u64,
+        #[arg(long)]
+        amount: u64,
+        #[arg(long)]
+        memo: Option<String>,
         /// Merchant private key (signs the EpisodeMessage)
-        #[arg(long)] merchant_private_key: Option<String>,
+        #[arg(long)]
+        merchant_private_key: Option<String>,
         /// Kaspa funding private key (signs and funds the transaction)
-        #[arg(long)] kaspa_private_key: String,
+        #[arg(long)]
+        kaspa_private_key: String,
         /// Fee in sompis (default 5_000)
-        #[arg(long)] fee: Option<u64>,
+        #[arg(long)]
+        fee: Option<u64>,
     },
     /// Build and broadcast an on-chain transaction acknowledging a paid invoice
     OnchainAck {
-        #[arg(long)] episode_id: u32,
-        #[arg(long)] invoice_id: u64,
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        invoice_id: u64,
         /// Merchant private key (signs the EpisodeMessage)
-        #[arg(long)] merchant_private_key: Option<String>,
+        #[arg(long)]
+        merchant_private_key: Option<String>,
         /// Kaspa funding private key (signs and funds the transaction)
-        #[arg(long)] kaspa_private_key: String,
+        #[arg(long)]
+        kaspa_private_key: String,
         /// Fee in sompis (default 5_000)
-        #[arg(long)] fee: Option<u64>,
+        #[arg(long)]
+        fee: Option<u64>,
     },
     /// Register a customer and optionally supply a private key
-    RegisterCustomer { #[arg(long)] customer_private_key: Option<String> },
+    RegisterCustomer {
+        #[arg(long)]
+        customer_private_key: Option<String>,
+    },
     /// List registered customers
     ListCustomers,
     /// Run a checkpoint watcher that anchors hashes on-chain
     Watch {
-        #[arg(long, default_value = "127.0.0.1:9590")] bind: String,
-        #[arg(long)] kaspa_private_key: String,
-        #[arg(long, default_value_t = false)] mainnet: bool,
-        #[arg(long)] wrpc_url: Option<String>,
+        #[arg(long, default_value = "127.0.0.1:9590")]
+        bind: String,
+        #[arg(long)]
+        kaspa_private_key: String,
+        #[arg(long, default_value_t = false)]
+        mainnet: bool,
+        #[arg(long)]
+        wrpc_url: Option<String>,
     },
 }
 
@@ -272,18 +348,13 @@ fn main() {
             let (prefix, pattern) = ids;
             log::info!("prefix=0x{prefix:08x}, pattern={pattern:?}");
 
-            let network = if args.mainnet {
-                NetworkId::new(NetworkType::Mainnet)
-            } else {
-                NetworkId::with_suffix(NetworkType::Testnet, 10)
-            };
+            let network =
+                if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let rt = Runtime::new().expect("runtime");
             let exit = Arc::new(AtomicBool::new(false));
             let engines = std::iter::once((prefix, (pattern, tx.clone()))).collect();
             rt.block_on(async {
-                let kaspad = proxy::connect_client(network, args.wrpc_url.clone())
-                    .await
-                    .expect("kaspad connect");
+                let kaspad = proxy::connect_client(network, args.wrpc_url.clone()).await.expect("kaspad connect");
                 proxy::run_listener(kaspad, engines, exit).await;
             });
         }
@@ -407,7 +478,8 @@ fn main() {
             let cmd = MerchantCommand::CreateInvoice { invoice_id, amount, memo };
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, m_sk, m_pk);
 
-            let network = if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+            let network =
+                if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let rt = Runtime::new().expect("runtime");
             rt.block_on(async {
                 let kaspad = proxy::connect_client(network, args.wrpc_url.clone()).await.expect("kaspad connect");
@@ -418,7 +490,9 @@ fn main() {
                 let Some((op, entry)) = utxos.into_iter().max_by_key(|(_, e)| e.amount) else {
                     panic!("no UTXOs for address {addr:?}");
                 };
-                if entry.amount <= fee { panic!("selected UTXO too small: {}", entry.amount); }
+                if entry.amount <= fee {
+                    panic!("selected UTXO too small: {}", entry.amount);
+                }
                 let gen = kdapp::generator::TransactionGenerator::new(keypair, pattern, prefix);
                 let tx = gen.build_command_transaction::<ReceiptEpisode>((op, entry), &addr, &msg, fee);
                 let tx_id = tx.id();
@@ -443,7 +517,8 @@ fn main() {
             let cmd = MerchantCommand::AckReceipt { invoice_id };
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, m_sk, m_pk);
 
-            let network = if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+            let network =
+                if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let rt = Runtime::new().expect("runtime");
             rt.block_on(async {
                 let kaspad = proxy::connect_client(network, args.wrpc_url.clone()).await.expect("kaspad connect");
@@ -454,7 +529,9 @@ fn main() {
                 let Some((op, entry)) = utxos.into_iter().max_by_key(|(_, e)| e.amount) else {
                     panic!("no UTXOs for address {addr:?}");
                 };
-                if entry.amount <= fee { panic!("selected UTXO too small: {}", entry.amount); }
+                if entry.amount <= fee {
+                    panic!("selected UTXO too small: {}", entry.amount);
+                }
                 let gen = kdapp::generator::TransactionGenerator::new(keypair, pattern, prefix);
                 let tx = gen.build_command_transaction::<ReceiptEpisode>((op, entry), &addr, &msg, fee);
                 let tx_id = tx.id();

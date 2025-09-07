@@ -4,8 +4,8 @@ use kdapp::{
     episode::{Episode, EpisodeError, PayloadMetadata},
     pki::PubKey,
 };
-use sha2::{Digest, Sha256};
 use log::{info, warn};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
 use crate::episode::{
@@ -68,18 +68,12 @@ impl Episode for ContractCommentBoard {
             // as a real account. For real rooms, the creator is taken from
             // the participants list in the normal initialization path below.
             let seed = Sha256::digest(b"comment-board-dev-stub:room_creator");
-            let dev_sk = secp256k1::SecretKey::from_slice(&seed)
-                .unwrap_or_else(|_| secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap());
+            let dev_sk =
+                secp256k1::SecretKey::from_slice(&seed).unwrap_or_else(|_| secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap());
             let dev_pk = secp256k1::PublicKey::from_secret_key(secp256k1::SECP256K1, &dev_sk);
 
             return Self {
-                contract: CommentRoomContract::new(
-                    PubKey(dev_pk),
-                    RoomRules::default(),
-                    vec![],
-                    0,
-                    Some(7776000),
-                ),
+                contract: CommentRoomContract::new(PubKey(dev_pk), RoomRules::default(), vec![], 0, Some(7776000)),
                 locked_utxos: HashMap::new(),
                 user_bonds: HashMap::new(),
                 next_comment_id: 1,

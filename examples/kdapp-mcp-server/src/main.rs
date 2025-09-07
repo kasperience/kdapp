@@ -1,11 +1,11 @@
 mod app;
 mod jsonrpc;
 mod node_connector;
+mod routing;
 mod rpc_handlers;
 mod state;
 mod tools;
 mod wallet;
-mod routing;
 use anyhow::Result;
 
 #[tokio::main]

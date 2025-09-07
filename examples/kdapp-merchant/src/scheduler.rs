@@ -4,14 +4,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use kdapp::engine::EpisodeMessage;
 
 use crate::episode::{MerchantCommand, ReceiptEpisode};
-use crate::storage;
 use crate::sim_router::SimRouter;
+use crate::storage;
 
 fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_else(|_| Duration::from_secs(0))
-        .as_secs()
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_else(|_| Duration::from_secs(0)).as_secs()
 }
 
 pub fn start(router: SimRouter, episode_id: u32) {

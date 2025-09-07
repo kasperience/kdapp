@@ -292,8 +292,7 @@ impl ServerState {
 
         use crate::routing;
         let keypair = agent1_wallet.keypair;
-        let transaction_generator =
-            kdapp::generator::TransactionGenerator::new(keypair, routing::PATTERN, routing::PREFIX);
+        let transaction_generator = kdapp::generator::TransactionGenerator::new(keypair, routing::PATTERN, routing::PREFIX);
 
         Self {
             sender,

@@ -19,12 +19,7 @@ pub enum SubmitKind {
     Claim { episode_id: u32, ticket_id: u64, round: u64 },
 }
 
-pub async fn submit_tx_flow(
-    kind: SubmitKind,
-    sk_hex_opt: Option<String>,
-    mainnet: bool,
-    wrpc_url: Option<String>,
-) {
+pub async fn submit_tx_flow(kind: SubmitKind, sk_hex_opt: Option<String>, mainnet: bool, wrpc_url: Option<String>) {
     // Build signer + address
     let Some(sk_hex) = resolve_dev_key_hex(&sk_hex_opt) else {
         eprintln!("no private key provided: pass --kaspa-private-key, set KASPA_PRIVATE_KEY, KAS_DRAW_DEV_SK, or put dev key hex in examples/kas-draw/dev.key");
@@ -50,10 +45,7 @@ pub async fn submit_tx_flow(
         .expect("get utxos")
         .into_iter()
         .map(|u| {
-            (
-                kaspa_consensus_core::tx::TransactionOutpoint::from(u.outpoint),
-                kaspa_consensus_core::tx::UtxoEntry::from(u.utxo_entry),
-            )
+            (kaspa_consensus_core::tx::TransactionOutpoint::from(u.outpoint), kaspa_consensus_core::tx::UtxoEntry::from(u.utxo_entry))
         })
         .collect::<Vec<_>>();
     if utxos.is_empty() {
@@ -70,15 +62,8 @@ pub async fn submit_tx_flow(
     // Build command payload
     let pk = PubKey(keypair.public_key());
     let msg = match kind {
-        SubmitKind::New { episode_id } => EpisodeMessage::<LotteryEpisode>::NewEpisode {
-            episode_id,
-            participants: vec![pk],
-        },
-        SubmitKind::Buy {
-            episode_id,
-            amount,
-            numbers,
-        } => {
+        SubmitKind::New { episode_id } => EpisodeMessage::<LotteryEpisode>::NewEpisode { episode_id, participants: vec![pk] },
+        SubmitKind::Buy { episode_id, amount, numbers } => {
             let cmd = LotteryCommand::BuyTicket { numbers, entry_amount: amount };
             EpisodeMessage::<LotteryEpisode>::new_signed_command(episode_id, cmd, keypair.secret_key(), pk)
         }
@@ -86,11 +71,7 @@ pub async fn submit_tx_flow(
             let cmd = LotteryCommand::ExecuteDraw { entropy_source: entropy };
             EpisodeMessage::<LotteryEpisode>::UnsignedCommand { episode_id, cmd }
         }
-        SubmitKind::Claim {
-            episode_id,
-            ticket_id,
-            round,
-        } => {
+        SubmitKind::Claim { episode_id, ticket_id, round } => {
             let cmd = LotteryCommand::ClaimPrize { ticket_id, round };
             EpisodeMessage::<LotteryEpisode>::UnsignedCommand { episode_id, cmd }
         }
@@ -114,11 +95,7 @@ pub fn get_wrpc_url(flag: Option<String>) -> Option<String> {
     std::env::var("WRPC_URL").ok()
 }
 
-async fn submit_tx_retry(
-    kaspad: &KaspaRpcClient,
-    tx: &kaspa_consensus_core::tx::Transaction,
-    attempts: usize,
-) -> Result<(), String> {
+async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx::Transaction, attempts: usize) -> Result<(), String> {
     let mut tries = 0usize;
     loop {
         match kaspad.submit_transaction(tx.into(), false).await {
@@ -129,10 +106,7 @@ async fn submit_tx_retry(
                 if tries >= attempts {
                     return Err(format!("submit failed after {tries} attempts: {msg}"));
                 }
-                if msg.contains("WebSocket")
-                    || msg.contains("not connected")
-                    || msg.contains("disconnected")
-                {
+                if msg.contains("WebSocket") || msg.contains("not connected") || msg.contains("disconnected") {
                     let _ = kaspad.connect(Some(kdapp::proxy::connect_options())).await;
                     continue;
                 } else if msg.contains("orphan") {
@@ -168,28 +142,21 @@ pub async fn submit_checkpoint_tx(
 ) -> Result<(), String> {
     let sk_hex = resolve_dev_key_hex(&sk_hex_opt).ok_or_else(|| "no private key provided (flag/env/file)".to_string())?;
     let mut private_key_bytes = [0u8; 32];
-    faster_hex::hex_decode(sk_hex.trim().as_bytes(), &mut private_key_bytes)
-        .map_err(|_| "invalid private key hex".to_string())?;
-    let keypair =
-        Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).map_err(|_| "invalid sk".to_string())?;
+    faster_hex::hex_decode(sk_hex.trim().as_bytes(), &mut private_key_bytes).map_err(|_| "invalid private key hex".to_string())?;
+    let keypair = Keypair::from_seckey_slice(secp256k1::SECP256K1, &private_key_bytes).map_err(|_| "invalid sk".to_string())?;
     let network = if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
     let addr_prefix = if mainnet { AddrPrefix::Mainnet } else { AddrPrefix::Testnet };
     let addr = Address::new(addr_prefix, AddrVersion::PubKey, &keypair.x_only_public_key().0.serialize());
 
     let url_opt = get_wrpc_url(wrpc_url);
-    let kaspad = kdapp::proxy::connect_client(network, url_opt)
-        .await
-        .map_err(|e| e.to_string())?;
+    let kaspad = kdapp::proxy::connect_client(network, url_opt).await.map_err(|e| e.to_string())?;
     let utxos = kaspad
         .get_utxos_by_addresses(vec![addr.clone()])
         .await
         .map_err(|e| e.to_string())?
         .into_iter()
         .map(|u| {
-            (
-                kaspa_consensus_core::tx::TransactionOutpoint::from(u.outpoint),
-                kaspa_consensus_core::tx::UtxoEntry::from(u.utxo_entry),
-            )
+            (kaspa_consensus_core::tx::TransactionOutpoint::from(u.outpoint), kaspa_consensus_core::tx::UtxoEntry::from(u.utxo_entry))
         })
         .collect::<Vec<_>>();
     if utxos.is_empty() {
@@ -221,12 +188,7 @@ pub fn resolve_dev_key_hex(cli_opt: &Option<String>) -> Option<String> {
             return Some(s);
         }
     }
-    let candidates = [
-        "examples/kas-draw/dev.key",
-        "examples/comment-board/dev.key",
-        "dev.key",
-        ".dev.key",
-    ];
+    let candidates = ["examples/kas-draw/dev.key", "examples/comment-board/dev.key", "dev.key", ".dev.key"];
     for path in candidates {
         if let Ok(s) = std::fs::read_to_string(path) {
             let t = s.trim().to_string();
@@ -240,4 +202,3 @@ pub fn resolve_dev_key_hex(cli_opt: &Option<String>) -> Option<String> {
     }
     None
 }
-

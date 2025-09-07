@@ -41,7 +41,7 @@ pub struct TlvMsg {
     pub seq: u64,
     pub state_hash: [u8; 32],
     pub payload: Vec<u8>, // serialized EpisodeMessage
-    pub auth: [u8; 32],  // HMAC over header+payload
+    pub auth: [u8; 32],   // HMAC over header+payload
 }
 
 impl TlvMsg {
@@ -118,4 +118,3 @@ pub fn hash_state(bytes: &[u8]) -> [u8; 32] {
     arr.copy_from_slice(&out[..32]);
     arr
 }
-

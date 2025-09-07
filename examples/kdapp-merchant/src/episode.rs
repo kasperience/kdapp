@@ -2,9 +2,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use kaspa_consensus_core::Hash;
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
-use kaspa_consensus_core::Hash;
 // Use a relative path so this module works when compiled
 // as part of the crate and when included from tests/fixtures.rs
 use super::storage;
@@ -110,10 +110,7 @@ impl Episode for ReceiptEpisode {
         let invoices = storage::load_invoices();
         let subscriptions = storage::load_subscriptions();
         let customers = storage::load_customers();
-        let used_carrier_txs = invoices
-            .values()
-            .filter_map(|inv| inv.carrier_tx)
-            .collect::<BTreeSet<Hash>>();
+        let used_carrier_txs = invoices.values().filter_map(|inv| inv.carrier_tx).collect::<BTreeSet<Hash>>();
         Self { merchant_keys: participants, invoices, subscriptions, customers, used_carrier_txs }
     }
 
@@ -164,10 +161,7 @@ impl Episode for ReceiptEpisode {
                     return Err(EpisodeError::InvalidCommand(MerchantError::DuplicatePayment));
                 }
 
-                let inv = self
-                    .invoices
-                    .get_mut(invoice_id)
-                    .ok_or(EpisodeError::InvalidCommand(MerchantError::NotFound))?;
+                let inv = self.invoices.get_mut(invoice_id).ok_or(EpisodeError::InvalidCommand(MerchantError::NotFound))?;
                 if inv.status == InvoiceStatus::Canceled {
                     return Err(EpisodeError::InvalidCommand(MerchantError::AlreadyCanceled));
                 }
@@ -229,10 +223,7 @@ impl Episode for ReceiptEpisode {
                 Ok(MerchantRollback::UndoPaid { invoice_id: *invoice_id })
             }
             MerchantCommand::AckReceipt { invoice_id } => {
-                let inv = self
-                    .invoices
-                    .get_mut(invoice_id)
-                    .ok_or(EpisodeError::InvalidCommand(MerchantError::NotFound))?;
+                let inv = self.invoices.get_mut(invoice_id).ok_or(EpisodeError::InvalidCommand(MerchantError::NotFound))?;
                 if inv.status == InvoiceStatus::Canceled {
                     return Err(EpisodeError::InvalidCommand(MerchantError::AlreadyCanceled));
                 }
@@ -248,10 +239,7 @@ impl Episode for ReceiptEpisode {
                 Ok(MerchantRollback::UndoAck { invoice_id: *invoice_id })
             }
             MerchantCommand::CancelInvoice { invoice_id } => {
-                let inv = self
-                    .invoices
-                    .get_mut(invoice_id)
-                    .ok_or(EpisodeError::InvalidCommand(MerchantError::NotFound))?;
+                let inv = self.invoices.get_mut(invoice_id).ok_or(EpisodeError::InvalidCommand(MerchantError::NotFound))?;
                 if inv.status == InvoiceStatus::Canceled {
                     return Err(EpisodeError::InvalidCommand(MerchantError::AlreadyCanceled));
                 }
@@ -278,10 +266,7 @@ impl Episode for ReceiptEpisode {
                 } else {
                     return Err(EpisodeError::Unauthorized);
                 }
-                let info = self
-                    .customers
-                    .get_mut(customer)
-                    .ok_or(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer))?;
+                let info = self.customers.get_mut(customer).ok_or(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer))?;
                 let sub = Subscription {
                     id: *subscription_id,
                     customer: *customer,
@@ -404,11 +389,11 @@ impl Episode for ReceiptEpisode {
 
 #[cfg(test)]
 mod tests {
+    use super::super::storage;
     use super::*;
     use kaspa_consensus_core::Hash;
     use kdapp::episode::{PayloadMetadata, TxOutputInfo};
     use kdapp::pki::generate_keypair;
-    use super::super::storage;
 
     fn md() -> PayloadMetadata {
         PayloadMetadata {
@@ -487,18 +472,8 @@ mod tests {
         storage::put_customer(&pk, &CustomerInfo::default());
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
         // Create two invoices
-        ep.execute(
-            &MerchantCommand::CreateInvoice { invoice_id: 1, amount: 10, memo: None },
-            Some(pk),
-            &metadata,
-        )
-        .unwrap();
-        ep.execute(
-            &MerchantCommand::CreateInvoice { invoice_id: 2, amount: 10, memo: None },
-            Some(pk),
-            &metadata,
-        )
-        .unwrap();
+        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 10, memo: None }, Some(pk), &metadata).unwrap();
+        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 2, amount: 10, memo: None }, Some(pk), &metadata).unwrap();
         // Pay first invoice
         let mut md_paid = metadata.clone();
         let script = {
@@ -509,12 +484,9 @@ mod tests {
             s
         };
         md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 10, script_version: 0, script_bytes: Some(script.clone()) }]);
-        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk }, Some(pk), &md_paid)
-            .unwrap();
+        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk }, Some(pk), &md_paid).unwrap();
         // Attempt to reuse same tx for second invoice
-        let err = ep
-            .execute(&MerchantCommand::MarkPaid { invoice_id: 2, payer: pk }, Some(pk), &md_paid)
-            .unwrap_err();
+        let err = ep.execute(&MerchantCommand::MarkPaid { invoice_id: 2, payer: pk }, Some(pk), &md_paid).unwrap_err();
         match err {
             EpisodeError::InvalidCommand(MerchantError::DuplicatePayment) => {}
             _ => panic!("expected duplicate payment"),
@@ -528,12 +500,7 @@ mod tests {
         storage::init();
         storage::put_customer(&pk_p, &CustomerInfo::default());
         let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
-        ep.execute(
-            &MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None },
-            Some(pk_m),
-            &metadata,
-        )
-        .unwrap();
+        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None }, Some(pk_m), &metadata).unwrap();
         let mut md_paid = metadata.clone();
         // Build script for wrong pubkey (payer instead of merchant)
         let mut wrong = Vec::with_capacity(35);
@@ -541,9 +508,7 @@ mod tests {
         wrong.extend_from_slice(&pk_p.0.serialize());
         wrong.push(0xac);
         md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 20, script_version: 0, script_bytes: Some(wrong) }]);
-        let err = ep
-            .execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid)
-            .unwrap_err();
+        let err = ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid).unwrap_err();
         match err {
             EpisodeError::InvalidCommand(MerchantError::InvalidScript) => {}
             _ => panic!("expected invalid script"),

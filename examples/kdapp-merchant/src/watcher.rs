@@ -5,8 +5,8 @@ use kaspa_consensus_core::{
     network::{NetworkId, NetworkType},
     tx::{TransactionOutpoint, UtxoEntry},
 };
-use kaspa_wrpc_client::client::KaspaRpcClient;
 use kaspa_rpc_core::api::rpc::RpcApi;
+use kaspa_wrpc_client::client::KaspaRpcClient;
 use kdapp::{
     generator::{PatternType, PrefixType, TransactionGenerator},
     proxy,
@@ -19,16 +19,18 @@ use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
 const FEE: u64 = 5_000;
 const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KMCP");
 
-fn pattern() -> PatternType { [(0u8, 0u8); 10] }
+fn pattern() -> PatternType {
+    [(0u8, 0u8); 10]
+}
 
 fn encode_okcp(episode_id: u64, seq: u64, root: [u8; 32]) -> Vec<u8> {
-let mut rec = Vec::with_capacity(4 + 1 + 8 + 8 + 32);
-rec.extend_from_slice(b"OKCP");
-rec.push(1u8);
-rec.extend_from_slice(&episode_id.to_le_bytes());
-rec.extend_from_slice(&seq.to_le_bytes());
-rec.extend_from_slice(&root);
-rec
+    let mut rec = Vec::with_capacity(4 + 1 + 8 + 8 + 32);
+    rec.extend_from_slice(b"OKCP");
+    rec.push(1u8);
+    rec.extend_from_slice(&episode_id.to_le_bytes());
+    rec.extend_from_slice(&seq.to_le_bytes());
+    rec.extend_from_slice(&root);
+    rec
 }
 
 async fn submit_checkpoint_tx(
@@ -40,29 +42,19 @@ async fn submit_checkpoint_tx(
     wrpc_url: Option<String>,
 ) -> Result<(), String> {
     let mut sk_bytes = [0u8; 32];
-    faster_hex::hex_decode(sk_hex.trim().as_bytes(), &mut sk_bytes)
-        .map_err(|_| "invalid private key hex".to_string())?;
-    let keypair =
-        Keypair::from_seckey_slice(secp256k1::SECP256K1, &sk_bytes).map_err(|_| "invalid sk".to_string())?;
-    let network =
-        if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+    faster_hex::hex_decode(sk_hex.trim().as_bytes(), &mut sk_bytes).map_err(|_| "invalid private key hex".to_string())?;
+    let keypair = Keypair::from_seckey_slice(secp256k1::SECP256K1, &sk_bytes).map_err(|_| "invalid sk".to_string())?;
+    let network = if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
     let addr_prefix = if mainnet { AddrPrefix::Mainnet } else { AddrPrefix::Testnet };
     let addr = Address::new(addr_prefix, AddrVersion::PubKey, &keypair.x_only_public_key().0.serialize());
 
-    let kaspad = proxy::connect_client(network, wrpc_url)
-        .await
-        .map_err(|e| e.to_string())?;
+    let kaspad = proxy::connect_client(network, wrpc_url).await.map_err(|e| e.to_string())?;
     let utxos = kaspad
         .get_utxos_by_addresses(vec![addr.clone()])
         .await
         .map_err(|e| e.to_string())?
         .into_iter()
-        .map(|u| {
-            (
-                TransactionOutpoint::from(u.outpoint),
-                UtxoEntry::from(u.utxo_entry),
-            )
-        })
+        .map(|u| (TransactionOutpoint::from(u.outpoint), UtxoEntry::from(u.utxo_entry)))
         .collect::<Vec<_>>();
     if utxos.is_empty() {
         return Err(format!("no UTXOs for {addr}"));
@@ -79,11 +71,7 @@ async fn submit_checkpoint_tx(
     submit_tx_retry(&kaspad, &tx, 3).await
 }
 
-async fn submit_tx_retry(
-    kaspad: &KaspaRpcClient,
-    tx: &kaspa_consensus_core::tx::Transaction,
-    attempts: usize,
-) -> Result<(), String> {
+async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx::Transaction, attempts: usize) -> Result<(), String> {
     let mut tries = 0usize;
     loop {
         match kaspad.submit_transaction(tx.into(), false).await {
@@ -109,12 +97,7 @@ async fn submit_tx_retry(
     }
 }
 
-pub fn run(
-    bind: &str,
-    kaspa_private_key: String,
-    mainnet: bool,
-    wrpc_url: Option<String>,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(bind: &str, kaspa_private_key: String, mainnet: bool, wrpc_url: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let sock = UdpSocket::bind(bind)?;
     info!("watcher listening on {bind}");
     let rt = tokio::runtime::Runtime::new()?;
@@ -142,4 +125,3 @@ pub fn run(
         }
     }
 }
-
