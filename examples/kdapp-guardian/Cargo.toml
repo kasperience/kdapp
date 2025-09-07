@@ -1,0 +1,10 @@
+[package]
+name = "kdapp-guardian"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+kdapp = { path = "../../kdapp" }
+borsh = { version = "1.5.1", features = ["derive"] }
+log = "0.4"
+thiserror = "1.0"

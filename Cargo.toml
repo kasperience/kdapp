@@ -12,6 +12,7 @@ members = [
     "examples/kas-draw",
     "examples/kdapp-merchant",
     "examples/kdapp-customer",
+    "examples/kdapp-guardian",
 ]
 
 
