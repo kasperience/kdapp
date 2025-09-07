@@ -121,6 +121,10 @@ impl TcpRouter {
                     None => warn!("router: {} before NEW for ep {} (seq {})", msg.msg_type, msg.episode_id, msg.seq),
                 },
                 MsgType::Ack | MsgType::AckClose => info!("router: ignoring ack-type from tcp peer"),
+                MsgType::Handshake => {
+                    // Already processed above; ignore here
+                    continue;
+                }
             }
 
             if !accepted {

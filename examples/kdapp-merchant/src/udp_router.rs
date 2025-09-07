@@ -77,10 +77,10 @@ impl UdpRouter {
                 let _ = sock.send_to(&ack.encode(), src);
                 continue;
             }
-            let Some(key) = {
+            let Some(key) = ({
                 let kmap = self.keys.lock().unwrap();
                 kmap.get(&src).cloned()
-            } else {
+            }) else {
                 warn!("router: message from {src} without handshake");
                 continue;
             };
@@ -123,6 +123,10 @@ impl UdpRouter {
                 },
                 MsgType::Ack | MsgType::AckClose => {
                     info!("router: ignoring ack-type from {src}");
+                }
+                MsgType::Handshake => {
+                    // Should have been handled earlier; ignore in data phase
+                    continue;
                 }
             }
 

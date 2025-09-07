@@ -17,6 +17,7 @@ const CHECKPOINT_INTERVAL_SECS: u64 = 60;
 
 static SEQS: OnceLock<Mutex<HashMap<EpisodeId, u64>>> = OnceLock::new();
 static LAST_CKPT: OnceLock<Mutex<HashMap<EpisodeId, u64>>> = OnceLock::new();
+static DID_HANDSHAKE: OnceLock<()> = OnceLock::new();
 
 fn now() -> u64 {
     SystemTime::now()
@@ -26,6 +27,10 @@ fn now() -> u64 {
 }
 
 fn emit_checkpoint(episode_id: EpisodeId, episode: &ReceiptEpisode, force: bool) {
+    // Ensure a handshake with the watcher before sending signed messages
+    DID_HANDSHAKE.get_or_init(|| {
+        client_sender::handshake(WATCHER_ADDR, DEMO_HMAC_KEY);
+    });
     let now = now();
     let mut last = LAST_CKPT.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap();
     let should = force || last.get(&episode_id).is_none_or(|t| now.saturating_sub(*t) >= CHECKPOINT_INTERVAL_SECS);
@@ -49,8 +54,8 @@ fn emit_checkpoint(episode_id: EpisodeId, episode: &ReceiptEpisode, force: bool)
             payload: vec![],
             auth: [0u8; 32],
         };
-        msg.sign(DEMO_HMAC_KEY);
-        client_sender::send_with_retry(WATCHER_ADDR, msg, false);
+        // Sign within the sender using the demo key for now
+        client_sender::send_with_retry(WATCHER_ADDR, msg, false, DEMO_HMAC_KEY, true);
         let mut hex = [0u8; 64];
         let _ = faster_hex::hex_encode(&state_hash, &mut hex);
         if let Ok(h) = std::str::from_utf8(&hex) {
