@@ -1,5 +1,6 @@
 use std::net::UdpSocket;
 
+use crate::sim_router::EngineChannel;
 use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
 use kaspa_consensus_core::{
     network::{NetworkId, NetworkType},
@@ -7,14 +8,13 @@ use kaspa_consensus_core::{
 };
 use kaspa_rpc_core::api::rpc::RpcApi;
 use kaspa_wrpc_client::client::KaspaRpcClient;
+use kdapp::engine::EngineMsg;
+use kdapp::episode::TxOutputInfo;
 use kdapp::{
     generator::{PatternType, PrefixType, TransactionGenerator},
     proxy,
 };
 use log::{info, warn};
-use crate::sim_router::EngineChannel;
-use kdapp::engine::EngineMsg;
-use kdapp::episode::TxOutputInfo;
 use secp256k1::Keypair;
 
 use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
@@ -44,21 +44,26 @@ pub struct OkcpRecord {
 }
 
 pub fn decode_okcp(bytes: &[u8]) -> Option<OkcpRecord> {
-    use byteorder::{LittleEndian, ReadBytesExt};
-    if bytes.len() < 4 + 1 + 8 + 8 + 32 {
+    // Format: b"OKCP" (4) | version (1) | program_id (u64 LE) | seq (u64 LE) | root ([u8;32])
+    const MIN_LEN: usize = 4 + 1 + 8 + 8 + 32;
+    if bytes.len() < MIN_LEN {
         return None;
     }
     if &bytes[0..4] != b"OKCP" || bytes[4] != 1 {
         return None;
     }
-    let mut rdr = &bytes[5..];
-    let program_id = rdr.read_u64::<LittleEndian>().ok()?;
-    let seq = rdr.read_u64::<LittleEndian>().ok()?;
+    let pid_start = 5;
+    let pid_end = pid_start + 8;
+    let seq_end = pid_end + 8;
+    let root_end = seq_end + 32;
+    let program_id = u64::from_le_bytes(bytes[pid_start..pid_end].try_into().ok()?);
+    let seq = u64::from_le_bytes(bytes[pid_end..seq_end].try_into().ok()?);
     let mut root = [0u8; 32];
-    root.copy_from_slice(&rdr[..32]);
+    root.copy_from_slice(&bytes[seq_end..root_end]);
     Some(OkcpRecord { program_id, seq, root })
 }
 
+#[cfg(feature = "okcp_relay")]
 pub async fn relay_checkpoints(
     client: &KaspaRpcClient,
     program_id: u64,
@@ -74,7 +79,7 @@ pub async fn relay_checkpoints(
             let accepting_hash = block.hash();
             let accepting_daa = block.header.daa_score;
             let accepting_time = block.header.timestamp;
-            for tx in block.transactions { 
+            for tx in block.transactions {
                 if let Some(payload) = tx.payload() {
                     if let Some(rec) = decode_okcp(payload) {
                         if rec.program_id == program_id {
