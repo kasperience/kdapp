@@ -5,10 +5,10 @@ use std::thread;
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kaspa_rpc_core::api::rpc::RpcApi;
 use kaspa_wrpc_client::client::KaspaRpcClient;
-use kdapp::proxy;
 use kdapp::pki::generate_keypair;
-use secp256k1::SecretKey;
+use kdapp::proxy;
 use log::{info, warn};
+use secp256k1::SecretKey;
 
 use crate::{receive, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
 
@@ -97,7 +97,7 @@ fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx
     if known {
         if let Some(tx) = refund_tx {
             if let Some(sk) = GUARDIAN_SK.get() {
-                let sig = {
+                let _sig = {
                     let mut s = state.lock().unwrap();
                     s.sign_refund(episode_id, &tx, sk)
                 };

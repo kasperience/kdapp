@@ -72,7 +72,14 @@ impl Episode for ReceiptEpisode {
                 if authorization.is_none() {
                     return Err(EpisodeError::InvalidSignature);
                 }
-                let inv = Invoice { id: *invoice_id, amount: *amount, memo: memo.clone(), status: InvoiceStatus::Open, payer: None, guardian_keys: guardian_keys.clone() };
+                let inv = Invoice {
+                    id: *invoice_id,
+                    amount: *amount,
+                    memo: memo.clone(),
+                    status: InvoiceStatus::Open,
+                    payer: None,
+                    guardian_keys: guardian_keys.clone(),
+                };
                 self.invoices.insert(*invoice_id, inv);
             }
             MerchantCommand::MarkPaid { invoice_id, payer } => {

@@ -2384,6 +2384,7 @@ dependencies = [
  "kaspa-wrpc-client",
  "kdapp",
  "log",
+ "secp256k1",
  "thiserror 1.0.69",
  "tokio",
 ]

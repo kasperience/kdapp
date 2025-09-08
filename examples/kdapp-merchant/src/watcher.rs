@@ -17,13 +17,13 @@ use kaspa_wrpc_client::client::KaspaRpcClient;
 use kdapp::engine::EngineMsg;
 #[cfg(feature = "okcp_relay")]
 use kdapp::episode::TxOutputInfo;
+use kdapp::pki::{to_message, verify_signature, PubKey, Sig};
 use kdapp::{
     generator::{PatternType, PrefixType, TransactionGenerator},
     proxy,
 };
 use log::{info, warn};
 use secp256k1::Keypair;
-use kdapp::pki::{to_message, verify_signature, PubKey, Sig};
 
 use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
 

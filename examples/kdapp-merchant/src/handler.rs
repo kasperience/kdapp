@@ -87,7 +87,13 @@ fn forward_dispute(episode_id: EpisodeId, episode: &ReceiptEpisode) {
         for (addr, gpk) in glist.lock().unwrap().clone() {
             if episode.guardian_keys.contains(&gpk) {
                 let refund_tx = b"demo refund".to_vec();
-                guardian::send_escalate(&addr, episode_id as u64, "payment dispute".into(), refund_tx.clone(), guardian::DEMO_HMAC_KEY);
+                guardian::send_escalate(
+                    &addr,
+                    episode_id as u64,
+                    "payment dispute".into(),
+                    refund_tx.clone(),
+                    guardian::DEMO_HMAC_KEY,
+                );
                 // In a real implementation the guardian's signature would be returned out of band
                 // and verified before broadcasting the refund transaction.
                 let dummy = secp256k1::ecdsa::Signature::from_compact(&[0u8; 64]);

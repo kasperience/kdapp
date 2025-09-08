@@ -13,3 +13,4 @@ tokio = { workspace = true, features = ["rt", "macros", "rt-multi-thread"] }
 kaspa-wrpc-client = { workspace = true }
 kaspa-rpc-core = { workspace = true }
 kaspa-consensus-core = { workspace = true }
+secp256k1 = { workspace = true }

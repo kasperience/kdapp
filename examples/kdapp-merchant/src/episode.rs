@@ -489,8 +489,18 @@ mod tests {
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
         ep.customers.insert(pk, CustomerInfo::default());
         // Create two invoices
-        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 10, memo: None, guardian_keys: vec![] }, Some(pk), &metadata).unwrap();
-        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 2, amount: 10, memo: None, guardian_keys: vec![] }, Some(pk), &metadata).unwrap();
+        ep.execute(
+            &MerchantCommand::CreateInvoice { invoice_id: 1, amount: 10, memo: None, guardian_keys: vec![] },
+            Some(pk),
+            &metadata,
+        )
+        .unwrap();
+        ep.execute(
+            &MerchantCommand::CreateInvoice { invoice_id: 2, amount: 10, memo: None, guardian_keys: vec![] },
+            Some(pk),
+            &metadata,
+        )
+        .unwrap();
         // Pay first invoice
         let mut md_paid = metadata.clone();
         let script = {
@@ -517,7 +527,12 @@ mod tests {
         storage::init();
         let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
         ep.customers.insert(pk_p, CustomerInfo::default());
-        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None, guardian_keys: vec![] }, Some(pk_m), &metadata).unwrap();
+        ep.execute(
+            &MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None, guardian_keys: vec![] },
+            Some(pk_m),
+            &metadata,
+        )
+        .unwrap();
         let mut md_paid = metadata.clone();
         // Build script for wrong pubkey (payer instead of merchant)
         let mut wrong = Vec::with_capacity(35);
@@ -539,7 +554,12 @@ mod tests {
         storage::init();
         let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
         ep.customers.insert(pk_p, CustomerInfo::default());
-        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None, guardian_keys: vec![] }, Some(pk_m), &metadata).unwrap();
+        ep.execute(
+            &MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None, guardian_keys: vec![] },
+            Some(pk_m),
+            &metadata,
+        )
+        .unwrap();
         let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p };
         let err = ep.execute(&cmd, Some(pk_p), &metadata).unwrap_err();
         match err {

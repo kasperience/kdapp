@@ -354,7 +354,12 @@ fn main() {
             scheduler::start(router.clone(), episode_id);
             let _label = program_id::derive_program_label(&merchant_pk, "merchant-pos");
             // Create
-            let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100_000_000, memo: Some("Latte".into()), guardian_keys: guardian_keys.clone() };
+            let cmd = MerchantCommand::CreateInvoice {
+                invoice_id: 1,
+                amount: 100_000_000,
+                memo: Some("Latte".into()),
+                guardian_keys: guardian_keys.clone(),
+            };
             let signed = EpisodeMessage::new_signed_command(episode_id, cmd, merchant_sk, merchant_pk);
             router.forward::<ReceiptEpisode>(signed);
             // Pay
