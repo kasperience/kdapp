@@ -75,30 +75,19 @@ impl Episode for ReceiptEpisode {
                 self.invoices.insert(*invoice_id, inv);
             }
             MerchantCommand::MarkPaid { invoice_id, payer } => {
-                let inv = self
-                    .invoices
-                    .get_mut(invoice_id)
-                    .ok_or(EpisodeError::InvalidCommand(CmdErr::Invalid))?;
+                let inv = self.invoices.get_mut(invoice_id).ok_or(EpisodeError::InvalidCommand(CmdErr::Invalid))?;
                 if let Some(expected) = inv.payer {
                     if *payer != expected {
                         return Err(EpisodeError::InvalidCommand(CmdErr::Invalid));
                     }
                 }
-                let outs = metadata
-                    .tx_outputs
-                    .as_ref()
-                    .ok_or(EpisodeError::InvalidCommand(CmdErr::Invalid))?;
-                let mut script = Vec::with_capacity(35);
-                script.push(33);
-                script.extend_from_slice(&payer.0.serialize());
-                script.push(0xac);
+                // Rely on proxy-provided tx outputs. Customer accepts any standard-looking output
+                // carrying the exact invoice amount, without enforcing a specific recipient key.
+                let outs = metadata.tx_outputs.as_ref().ok_or(EpisodeError::InvalidCommand(CmdErr::Invalid))?;
                 let mut found = false;
                 for o in outs {
-                    if let Some(sb) = &o.script_bytes {
-                        if sb == &script {
-                            if o.value != inv.amount {
-                                return Err(EpisodeError::InvalidCommand(CmdErr::Invalid));
-                            }
+                    if o.value == inv.amount {
+                        if o.script_bytes.is_some() {
                             found = true;
                             break;
                         }
@@ -207,10 +196,7 @@ mod tests {
         script.push(0xac);
         paid_md.tx_outputs = Some(vec![TxOutputInfo { value: 40, script_version: 0, script_bytes: Some(script) }]);
         let cmd = MerchantCommand::MarkPaid { invoice_id: 2, payer: pk };
-        assert!(matches!(
-            ep.execute(&cmd, Some(pk), &paid_md),
-            Err(EpisodeError::InvalidCommand(CmdErr::Invalid))
-        ));
+        assert!(matches!(ep.execute(&cmd, Some(pk), &paid_md), Err(EpisodeError::InvalidCommand(CmdErr::Invalid))));
     }
 
     #[test]
@@ -241,9 +227,6 @@ mod tests {
         script.push(0xac);
         paid_md.tx_outputs = Some(vec![TxOutputInfo { value: 25, script_version: 0, script_bytes: Some(script) }]);
         let cmd = MerchantCommand::MarkPaid { invoice_id: 4, payer: payer1 };
-        assert!(matches!(
-            ep.execute(&cmd, Some(merchant_pk), &paid_md),
-            Err(EpisodeError::InvalidCommand(CmdErr::Invalid))
-        ));
+        assert!(matches!(ep.execute(&cmd, Some(merchant_pk), &paid_md), Err(EpisodeError::InvalidCommand(CmdErr::Invalid))));
     }
 }
