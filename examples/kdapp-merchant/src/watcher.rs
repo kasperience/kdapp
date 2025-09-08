@@ -1,5 +1,8 @@
 use std::collections::VecDeque;
 use std::net::UdpSocket;
+use std::sync::RwLock;
+
+use once_cell::sync::Lazy;
 
 #[cfg(feature = "okcp_relay")]
 use crate::sim_router::EngineChannel;
@@ -25,6 +28,16 @@ use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
 
 const MIN_FEE: u64 = 5_000;
 const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KMCP");
+
+pub static MEMPOOL_METRICS: Lazy<RwLock<Option<(u64, f64)>>> = Lazy::new(|| RwLock::new(None));
+
+pub fn get_metrics() -> Option<(u64, f64)> {
+    *MEMPOOL_METRICS.read().expect("metrics lock")
+}
+
+fn store_metrics(base_fee: u64, congestion: f64) {
+    *MEMPOOL_METRICS.write().expect("metrics lock") = Some((base_fee, congestion));
+}
 
 fn pattern() -> PatternType {
     [(0u8, 0u8); 10]
@@ -122,6 +135,12 @@ async fn fetch_fee_and_congestion(client: &KaspaRpcClient) -> Result<(u64, f64),
         Err(_) => 0.0,
     };
 
+    Ok((base_fee, congestion))
+}
+
+pub async fn update_metrics(client: &KaspaRpcClient) -> Result<(u64, f64), String> {
+    let (base_fee, congestion) = fetch_fee_and_congestion(client).await?;
+    store_metrics(base_fee, congestion);
     Ok((base_fee, congestion))
 }
 
@@ -253,7 +272,7 @@ pub fn run(
                 let network =
                     if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
                 let client = proxy::connect_client(network, url_clone).await.map_err(|e| e.to_string())?;
-                fetch_fee_and_congestion(&client).await
+                update_metrics(&client).await
             }
         }) {
             Ok(v) => v,

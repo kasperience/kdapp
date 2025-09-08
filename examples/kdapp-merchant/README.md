@@ -11,11 +11,11 @@ The watcher fee and congestion behaviour can be tuned using two parameters:
 
 ### Via CLI
 
-Provide these options when starting either the `serve` or `watch` subcommands:
+Provide these options when starting either the `serve` or `watcher` subcommands:
 
 ```bash
 kdapp-merchant serve --max-fee 50000 --congestion-threshold 0.8
-kdapp-merchant watch --max-fee 50000 --congestion-threshold 0.8
+kdapp-merchant watcher --max-fee 50000 --congestion-threshold 0.8
 ```
 
 ### Via HTTP
@@ -34,3 +34,30 @@ x-api-key: <API_KEY>
 ```
 
 The provided values apply to the currently running watcher process.
+
+## Mempool Metrics
+
+The watcher tracks the most recent fee estimate and a simple mempool congestion ratio. These metrics help decide when to anchor
+checkpoints.
+
+### Via CLI
+
+```bash
+kdapp-merchant watcher --show-metrics
+```
+
+Outputs the current `base_fee` (sompis required for a small transaction) and `congestion` ratio.
+
+### Via HTTP
+
+```http
+GET /mempool-metrics
+
+{
+  "base_fee": 5000,
+  "congestion": 0.42
+}
+```
+
+- `base_fee` – conservative fee in sompis for anchoring transactions.
+- `congestion` – mempool size ratio (higher values indicate a busier mempool).

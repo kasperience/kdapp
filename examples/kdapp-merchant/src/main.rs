@@ -207,11 +207,12 @@ enum CliCmd {
     /// List registered customers
     ListCustomers,
     /// Run a checkpoint watcher that anchors hashes on-chain
-    Watch {
+    #[command(name = "watcher")]
+    Watcher {
         #[arg(long, default_value = "127.0.0.1:9590")]
         bind: String,
         #[arg(long)]
-        kaspa_private_key: String,
+        kaspa_private_key: Option<String>,
         #[arg(long, default_value_t = false)]
         mainnet: bool,
         #[arg(long)]
@@ -222,6 +223,9 @@ enum CliCmd {
         /// Defer anchoring when congestion ratio exceeds this value
         #[arg(long)]
         congestion_threshold: Option<f64>,
+        /// Show current mempool metrics and exit
+        #[arg(long, default_value_t = false)]
+        show_metrics: bool,
     },
     /// Derive a Kaspa address from a compressed secp256k1 public key (hex)
     Addr {
@@ -576,16 +580,33 @@ fn main() {
                 log::info!("on-chain ack submitted: tx_id={tx_id}");
             });
         }
-        CliCmd::Watch { bind, kaspa_private_key, mainnet, wrpc_url, max_fee, congestion_threshold } => {
-            watcher::run(
-                &bind,
-                kaspa_private_key,
-                mainnet,
-                wrpc_url,
-                max_fee.unwrap_or(u64::MAX),
-                congestion_threshold.unwrap_or(0.7),
-            )
-            .expect("watcher");
+        CliCmd::Watcher { bind, kaspa_private_key, mainnet, wrpc_url, max_fee, congestion_threshold, show_metrics } => {
+            if show_metrics {
+                let network =
+                    if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+                let rt = Runtime::new().expect("runtime");
+                match rt.block_on(async {
+                    let client = proxy::connect_client(network, wrpc_url).await.map_err(|e| e.to_string())?;
+                    watcher::update_metrics(&client).await
+                }) {
+                    Ok((base_fee, congestion)) => {
+                        println!("base_fee: {base_fee}, congestion: {congestion:.2}");
+                    }
+                    Err(e) => println!("failed to fetch metrics: {e}"),
+                }
+            } else {
+                let kaspa_private_key =
+                    kaspa_private_key.expect("kaspa_private_key required when not using --show-metrics");
+                watcher::run(
+                    &bind,
+                    kaspa_private_key,
+                    mainnet,
+                    wrpc_url,
+                    max_fee.unwrap_or(u64::MAX),
+                    congestion_threshold.unwrap_or(0.7),
+                )
+                .expect("watcher");
+            }
         }
         CliCmd::Addr { merchant_public_key } => {
             let pk = parse_public_key(&merchant_public_key).expect("invalid public key hex");
