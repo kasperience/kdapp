@@ -9,6 +9,7 @@ use crate::client_sender;
 use crate::episode::{MerchantCommand, ReceiptEpisode};
 use crate::storage;
 use crate::tlv::{hash_state, MsgType, TlvMsg, DEMO_HMAC_KEY, TLV_VERSION};
+use kdapp_guardian::{self as guardian};
 
 pub struct MerchantEventHandler;
 
@@ -18,9 +19,15 @@ const CHECKPOINT_INTERVAL_SECS: u64 = 60;
 static SEQS: OnceLock<Mutex<HashMap<EpisodeId, u64>>> = OnceLock::new();
 static LAST_CKPT: OnceLock<Mutex<HashMap<EpisodeId, u64>>> = OnceLock::new();
 static DID_HANDSHAKE: OnceLock<()> = OnceLock::new();
+static GUARDIAN: OnceLock<(String, PubKey)> = OnceLock::new();
+static GUARDIAN_HANDSHAKE: OnceLock<()> = OnceLock::new();
 
 fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+pub fn set_guardian(addr: String, pk: PubKey) {
+    let _ = GUARDIAN.set((addr, pk));
 }
 
 fn emit_checkpoint(episode_id: EpisodeId, episode: &ReceiptEpisode, force: bool) {
@@ -42,6 +49,14 @@ fn emit_checkpoint(episode_id: EpisodeId, episode: &ReceiptEpisode, force: bool)
         let mut seqs = SEQS.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap();
         let seq = seqs.entry(episode_id).or_insert(0);
         *seq += 1;
+        if let Some((addr, gpk)) = GUARDIAN.get() {
+            GUARDIAN_HANDSHAKE.get_or_init(|| {
+                if let Some(mpk) = episode.merchant_keys.first() {
+                    guardian::handshake(addr, *mpk, *gpk, guardian::DEMO_HMAC_KEY);
+                }
+            });
+            guardian::send_confirm(addr, episode_id as u64, *seq, guardian::DEMO_HMAC_KEY);
+        }
         let msg = TlvMsg {
             version: TLV_VERSION,
             msg_type: MsgType::Checkpoint as u8,
