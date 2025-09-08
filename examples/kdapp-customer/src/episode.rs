@@ -63,21 +63,52 @@ impl Episode for ReceiptEpisode {
     fn execute(
         &mut self,
         cmd: &Self::Command,
-        _authorization: Option<PubKey>,
-        _metadata: &PayloadMetadata,
+        authorization: Option<PubKey>,
+        metadata: &PayloadMetadata,
     ) -> Result<Self::CommandRollback, EpisodeError<Self::CommandError>> {
         match cmd {
             MerchantCommand::CreateInvoice { invoice_id, amount, memo } => {
+                if authorization.is_none() {
+                    return Err(EpisodeError::InvalidSignature);
+                }
                 let inv = Invoice { id: *invoice_id, amount: *amount, memo: memo.clone(), status: InvoiceStatus::Open, payer: None };
                 self.invoices.insert(*invoice_id, inv);
             }
             MerchantCommand::MarkPaid { invoice_id, payer } => {
-                if let Some(inv) = self.invoices.get_mut(invoice_id) {
-                    inv.status = InvoiceStatus::Paid;
-                    inv.payer = Some(*payer);
-                } else {
+                let inv = self
+                    .invoices
+                    .get_mut(invoice_id)
+                    .ok_or(EpisodeError::InvalidCommand(CmdErr::Invalid))?;
+                if let Some(expected) = inv.payer {
+                    if *payer != expected {
+                        return Err(EpisodeError::InvalidCommand(CmdErr::Invalid));
+                    }
+                }
+                let outs = metadata
+                    .tx_outputs
+                    .as_ref()
+                    .ok_or(EpisodeError::InvalidCommand(CmdErr::Invalid))?;
+                let mut script = Vec::with_capacity(35);
+                script.push(33);
+                script.extend_from_slice(&payer.0.serialize());
+                script.push(0xac);
+                let mut found = false;
+                for o in outs {
+                    if let Some(sb) = &o.script_bytes {
+                        if sb == &script {
+                            if o.value != inv.amount {
+                                return Err(EpisodeError::InvalidCommand(CmdErr::Invalid));
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if !found {
                     return Err(EpisodeError::InvalidCommand(CmdErr::Invalid));
                 }
+                inv.status = InvoiceStatus::Paid;
+                inv.payer = Some(*payer);
             }
             MerchantCommand::AckReceipt { invoice_id } => {
                 if let Some(inv) = self.invoices.get_mut(invoice_id) {
@@ -114,7 +145,7 @@ pub enum CmdErr {
 mod tests {
     use super::*;
     use kaspa_consensus_core::Hash;
-    use kdapp::episode::PayloadMetadata;
+    use kdapp::episode::{PayloadMetadata, TxOutputInfo};
     use kdapp::pki::generate_keypair;
 
     fn md() -> PayloadMetadata {
@@ -141,8 +172,14 @@ mod tests {
         assert!(matches!(inv.status, InvoiceStatus::Open));
 
         // Mark as paid
+        let mut paid_md = md();
+        let mut script = Vec::with_capacity(35);
+        script.push(33);
+        script.extend_from_slice(&pk.0.serialize());
+        script.push(0xac);
+        paid_md.tx_outputs = Some(vec![TxOutputInfo { value: 50, script_version: 0, script_bytes: Some(script) }]);
         let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: pk };
-        ep.execute(&cmd, Some(pk), &metadata).expect("paid");
+        ep.execute(&cmd, Some(pk), &paid_md).expect("paid");
         let inv = ep.invoice(1).unwrap();
         assert!(matches!(inv.status, InvoiceStatus::Paid));
         assert_eq!(inv.payer, Some(pk));
@@ -152,5 +189,61 @@ mod tests {
         ep.execute(&cmd, Some(pk), &metadata).expect("ack");
         let inv = ep.invoice(1).unwrap();
         assert!(matches!(inv.status, InvoiceStatus::Acked));
+    }
+
+    #[test]
+    fn mark_paid_mismatched_amount() {
+        let (_sk, pk) = generate_keypair();
+        let metadata = md();
+        let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
+
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 2, amount: 50, memo: None };
+        ep.execute(&cmd, Some(pk), &metadata).expect("create");
+
+        let mut paid_md = md();
+        let mut script = Vec::with_capacity(35);
+        script.push(33);
+        script.extend_from_slice(&pk.0.serialize());
+        script.push(0xac);
+        paid_md.tx_outputs = Some(vec![TxOutputInfo { value: 40, script_version: 0, script_bytes: Some(script) }]);
+        let cmd = MerchantCommand::MarkPaid { invoice_id: 2, payer: pk };
+        assert!(matches!(
+            ep.execute(&cmd, Some(pk), &paid_md),
+            Err(EpisodeError::InvalidCommand(CmdErr::Invalid))
+        ));
+    }
+
+    #[test]
+    fn create_invoice_invalid_signature() {
+        let (_sk, pk) = generate_keypair();
+        let metadata = md();
+        let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
+
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 3, amount: 10, memo: None };
+        assert!(matches!(ep.execute(&cmd, None, &metadata), Err(EpisodeError::InvalidSignature)));
+    }
+
+    #[test]
+    fn mark_paid_unknown_payer() {
+        let (_skm, merchant_pk) = generate_keypair();
+        let (_sk1, payer1) = generate_keypair();
+        let (_sk2, payer2) = generate_keypair();
+        let metadata = md();
+        let mut ep = ReceiptEpisode::initialize(vec![merchant_pk], &metadata);
+
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 4, amount: 25, memo: None };
+        ep.execute(&cmd, Some(merchant_pk), &metadata).expect("create");
+
+        let mut paid_md = md();
+        let mut script = Vec::with_capacity(35);
+        script.push(33);
+        script.extend_from_slice(&payer2.0.serialize());
+        script.push(0xac);
+        paid_md.tx_outputs = Some(vec![TxOutputInfo { value: 25, script_version: 0, script_bytes: Some(script) }]);
+        let cmd = MerchantCommand::MarkPaid { invoice_id: 4, payer: payer1 };
+        assert!(matches!(
+            ep.execute(&cmd, Some(merchant_pk), &paid_md),
+            Err(EpisodeError::InvalidCommand(CmdErr::Invalid))
+        ));
     }
 }
