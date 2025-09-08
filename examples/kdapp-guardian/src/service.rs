@@ -74,7 +74,8 @@ async fn watch_anchors(client: &KaspaRpcClient, state: Arc<Mutex<GuardianState>>
                     Err(_) => continue,
                 };
                 for tx in merged.transactions {
-                    if let Some(payload) = tx.payload() {
+                    let payload = &tx.payload;
+                    if !payload.is_empty() {
                         if let Some(rec) = decode_okcp(payload) {
                             let mut s = state.lock().unwrap();
                             s.record_checkpoint(rec.episode_id, rec.seq);
