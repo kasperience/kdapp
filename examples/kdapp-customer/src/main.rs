@@ -23,10 +23,10 @@ struct Args {
     server: String,
     #[arg(long)]
     api_key: Option<String>,
-    #[arg(long)]
-    guardian_addr: Option<String>,
-    #[arg(long)]
-    guardian_public_key: Option<String>,
+    #[arg(long = "guardian-addr")]
+    guardian_addr: Vec<String>,
+    #[arg(long = "guardian-key")]
+    guardian_public_key: Vec<String>,
     #[command(subcommand)]
     command: Command,
 }
@@ -105,11 +105,12 @@ fn parse_public_key(hex: &str) -> Option<PubKey> {
 async fn main() {
     env_logger::init();
     let args = Args::parse();
-    let guardian = if let (Some(addr), Some(pk_hex)) = (&args.guardian_addr, &args.guardian_public_key) {
-        parse_public_key(pk_hex).map(|pk| (addr.clone(), pk))
-    } else {
-        None
-    };
+    let guardians: Vec<(String, PubKey)> = args
+        .guardian_addr
+        .iter()
+        .zip(args.guardian_public_key.iter())
+        .filter_map(|(addr, pk_hex)| parse_public_key(pk_hex).map(|pk| (addr.clone(), pk)))
+        .collect();
     match args.command {
         Command::List => {
             let client = reqwest::Client::new();
@@ -138,15 +139,16 @@ async fn main() {
             let sk = parse_secret_key(&merchant_private_key).expect("invalid private key");
             let secp = Secp256k1::new();
             let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));
-            if let Some((addr, gpk)) = &guardian {
+            for (addr, gpk) in &guardians {
                 guardian::handshake(addr, pk, *gpk, guardian::DEMO_HMAC_KEY);
             }
             let new_msg = EpisodeMessage::<ReceiptEpisode>::NewEpisode { episode_id, participants: vec![pk] };
             send_new_on(&sock, &args.dest, episode_id as u64, 0, new_msg, DEMO_HMAC_KEY);
-            let cmd = MerchantCommand::CreateInvoice { invoice_id, amount, memo };
+            let gkeys = guardians.iter().map(|(_, pk)| *pk).collect();
+            let cmd = MerchantCommand::CreateInvoice { invoice_id, amount, memo, guardian_keys: gkeys };
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
             send_cmd_on(&sock, &args.dest, episode_id as u64, 1, msg, DEMO_HMAC_KEY);
-            if let Some((addr, _)) = &guardian {
+            for (addr, _) in &guardians {
                 guardian::send_confirm(addr, episode_id as u64, 1, guardian::DEMO_HMAC_KEY);
             }
         }
@@ -157,7 +159,7 @@ async fn main() {
             let sk = parse_secret_key(&payer_private_key).expect("invalid private key");
             let secp = Secp256k1::new();
             let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));
-            if let Some((addr, gpk)) = &guardian {
+            for (addr, gpk) in &guardians {
                 guardian::handshake(addr, pk, *gpk, guardian::DEMO_HMAC_KEY);
             }
             let new_msg = EpisodeMessage::<ReceiptEpisode>::NewEpisode { episode_id, participants: vec![pk] };
@@ -165,7 +167,7 @@ async fn main() {
             let cmd = MerchantCommand::MarkPaid { invoice_id, payer: pk };
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
             send_cmd_on(&sock, &args.dest, episode_id as u64, 1, msg, DEMO_HMAC_KEY);
-            if let Some((addr, _)) = &guardian {
+            for (addr, _) in &guardians {
                 guardian::send_confirm(addr, episode_id as u64, 1, guardian::DEMO_HMAC_KEY);
             }
         }
@@ -176,7 +178,7 @@ async fn main() {
             let sk = parse_secret_key(&merchant_private_key).expect("invalid private key");
             let secp = Secp256k1::new();
             let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));
-            if let Some((addr, gpk)) = &guardian {
+            for (addr, gpk) in &guardians {
                 guardian::handshake(addr, pk, *gpk, guardian::DEMO_HMAC_KEY);
             }
             let new_msg = EpisodeMessage::<ReceiptEpisode>::NewEpisode { episode_id, participants: vec![pk] };
@@ -184,7 +186,7 @@ async fn main() {
             let cmd = MerchantCommand::AckReceipt { invoice_id };
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
             send_cmd_on(&sock, &args.dest, episode_id as u64, 1, msg, DEMO_HMAC_KEY);
-            if let Some((addr, _)) = &guardian {
+            for (addr, _) in &guardians {
                 guardian::send_confirm(addr, episode_id as u64, 1, guardian::DEMO_HMAC_KEY);
             }
         }

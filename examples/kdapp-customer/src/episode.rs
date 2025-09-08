@@ -8,7 +8,7 @@ use thiserror::Error;
 // Must mirror the wire shape used by kdapp-merchant to ensure Borsh compatibility
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum MerchantCommand {
-    CreateInvoice { invoice_id: u64, amount: u64, memo: Option<String> },
+    CreateInvoice { invoice_id: u64, amount: u64, memo: Option<String>, guardian_keys: Vec<PubKey> },
     MarkPaid { invoice_id: u64, payer: PubKey },
     AckReceipt { invoice_id: u64 },
     CancelInvoice { invoice_id: u64 },
@@ -32,6 +32,7 @@ pub struct Invoice {
     pub memo: Option<String>,
     pub status: InvoiceStatus,
     pub payer: Option<PubKey>,
+    pub guardian_keys: Vec<PubKey>,
 }
 
 #[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize)]
@@ -67,11 +68,11 @@ impl Episode for ReceiptEpisode {
         metadata: &PayloadMetadata,
     ) -> Result<Self::CommandRollback, EpisodeError<Self::CommandError>> {
         match cmd {
-            MerchantCommand::CreateInvoice { invoice_id, amount, memo } => {
+            MerchantCommand::CreateInvoice { invoice_id, amount, memo, guardian_keys } => {
                 if authorization.is_none() {
                     return Err(EpisodeError::InvalidSignature);
                 }
-                let inv = Invoice { id: *invoice_id, amount: *amount, memo: memo.clone(), status: InvoiceStatus::Open, payer: None };
+                let inv = Invoice { id: *invoice_id, amount: *amount, memo: memo.clone(), status: InvoiceStatus::Open, payer: None, guardian_keys: guardian_keys.clone() };
                 self.invoices.insert(*invoice_id, inv);
             }
             MerchantCommand::MarkPaid { invoice_id, payer } => {
@@ -156,7 +157,7 @@ mod tests {
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
 
         // Receive invoice
-        let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 50, memo: Some("test".into()) };
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 50, memo: Some("test".into()), guardian_keys: vec![] };
         ep.execute(&cmd, Some(pk), &metadata).expect("create");
         let inv = ep.invoice(1).expect("stored");
         assert_eq!(inv.amount, 50);
@@ -188,7 +189,7 @@ mod tests {
         let metadata = md();
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
 
-        let cmd = MerchantCommand::CreateInvoice { invoice_id: 2, amount: 50, memo: None };
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 2, amount: 50, memo: None, guardian_keys: vec![] };
         ep.execute(&cmd, Some(pk), &metadata).expect("create");
 
         let mut paid_md = md();
@@ -207,7 +208,7 @@ mod tests {
         let metadata = md();
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
 
-        let cmd = MerchantCommand::CreateInvoice { invoice_id: 3, amount: 10, memo: None };
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 3, amount: 10, memo: None, guardian_keys: vec![] };
         assert!(matches!(ep.execute(&cmd, None, &metadata), Err(EpisodeError::InvalidSignature)));
     }
 
@@ -219,7 +220,7 @@ mod tests {
         let metadata = md();
         let mut ep = ReceiptEpisode::initialize(vec![merchant_pk], &metadata);
 
-        let cmd = MerchantCommand::CreateInvoice { invoice_id: 4, amount: 25, memo: None };
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 4, amount: 25, memo: None, guardian_keys: vec![] };
         ep.execute(&cmd, Some(merchant_pk), &metadata).expect("create");
 
         let mut paid_md = md();
