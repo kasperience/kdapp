@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use axum::{
     extract::{Json, State},
@@ -22,11 +23,29 @@ pub struct AppState {
     merchant_sk: SecretKey,
     merchant_pk: PubKey,
     api_key: String,
+    max_fee: Arc<Mutex<Option<u64>>>,
+    congestion_threshold: Arc<Mutex<Option<f64>>>,
 }
 
 impl AppState {
-    pub fn new(router: Arc<SimRouter>, episode_id: u32, merchant_sk: SecretKey, merchant_pk: PubKey, api_key: String) -> Self {
-        Self { router, episode_id, merchant_sk, merchant_pk, api_key }
+    pub fn new(
+        router: Arc<SimRouter>,
+        episode_id: u32,
+        merchant_sk: SecretKey,
+        merchant_pk: PubKey,
+        api_key: String,
+        max_fee: Option<u64>,
+        congestion_threshold: Option<f64>,
+    ) -> Self {
+        Self {
+            router,
+            episode_id,
+            merchant_sk,
+            merchant_pk,
+            api_key,
+            max_fee: Arc::new(Mutex::new(max_fee)),
+            congestion_threshold: Arc::new(Mutex::new(congestion_threshold)),
+        }
     }
 }
 
@@ -37,6 +56,7 @@ pub async fn serve(bind: String, state: AppState) -> Result<(), Box<dyn std::err
         .route("/subscribe", post(create_subscription))
         .route("/invoices", get(list_invoices))
         .route("/subscriptions", get(list_subscriptions))
+        .route("/watcher-config", post(set_watcher_config))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app).await?;
@@ -168,6 +188,27 @@ async fn list_subscriptions(State(state): State<AppState>, headers: HeaderMap) -
         })
         .collect();
     Ok(Json(out))
+}
+
+#[derive(Deserialize)]
+struct WatcherConfigReq {
+    max_fee: Option<u64>,
+    congestion_threshold: Option<f64>,
+}
+
+async fn set_watcher_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<WatcherConfigReq>,
+) -> Result<StatusCode, StatusCode> {
+    authorize(&headers, &state)?;
+    if let Some(fee) = req.max_fee {
+        *state.max_fee.lock().await = Some(fee);
+    }
+    if let Some(th) = req.congestion_threshold {
+        *state.congestion_threshold.lock().await = Some(th);
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn parse_public_key(hex: &str) -> Option<PubKey> {
