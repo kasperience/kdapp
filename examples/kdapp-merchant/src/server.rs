@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::episode::{MerchantCommand, ReceiptEpisode};
 use crate::sim_router::SimRouter;
 use crate::storage;
+use crate::watcher;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -57,6 +58,7 @@ pub async fn serve(bind: String, state: AppState) -> Result<(), Box<dyn std::err
         .route("/invoices", get(list_invoices))
         .route("/subscriptions", get(list_subscriptions))
         .route("/watcher-config", post(set_watcher_config))
+        .route("/mempool-metrics", get(mempool_metrics))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app).await?;
@@ -209,6 +211,20 @@ async fn set_watcher_config(
         *state.congestion_threshold.lock().await = Some(th);
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize)]
+struct MempoolMetrics {
+    base_fee: u64,
+    congestion: f64,
+}
+
+async fn mempool_metrics() -> Result<Json<MempoolMetrics>, StatusCode> {
+    if let Some((base_fee, congestion)) = watcher::get_metrics() {
+        Ok(Json(MempoolMetrics { base_fee, congestion }))
+    } else {
+        Err(StatusCode::SERVICE_UNAVAILABLE)
+    }
 }
 
 fn parse_public_key(hex: &str) -> Option<PubKey> {

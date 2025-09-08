@@ -27,7 +27,7 @@ Testing (TLV, handshake, checkpoints)
 - Start UDP router (handshake + signed TLV enforced):
   - `cargo run -p kdapp-merchant -- router-udp --bind 127.0.0.1:9530`
 - Start watcher to anchor checkpoints on-chain (optional):
-  - `cargo run -p kdapp-merchant -- watch --bind 127.0.0.1:9590 --kaspa-private-key <hex> [--wrpc-url wss://host:port] [--mainnet]`
+  - `cargo run -p kdapp-merchant -- watcher --bind 127.0.0.1:9590 --kaspa-private-key <hex> [--wrpc-url wss://host:port] [--mainnet]`
 - Use kdapp-customer to Pay/Ack via TLV (client handshakes automatically):
   - `cargo run -p kdapp-customer -- pay --episode-id 42 --invoice-id 1001 --payer-private-key <hex>`
   - `cargo run -p kdapp-customer -- ack --episode-id 42 --invoice-id 1001 --merchant-private-key <hex>`
@@ -55,7 +55,7 @@ CLI subcommands (M0)
 - `create-subscription --episode-id <u32> --subscription-id <u64> --customer-public-key <hex> --amount <u64> --interval <u64> [--merchant-private-key <hex>]` — signed.
 - `cancel-subscription --episode-id <u32> --subscription-id <u64>` — unsigned (demo).
 - `serve --episode-id <u32> --api-key <token> [--bind 127.0.0.1:3000] [--merchant-private-key <hex>]` — start an HTTP server.
-- `watch --kaspa-private-key <hex> [--bind 127.0.0.1:9590] [--wrpc-url wss://host:port] [--mainnet]` — anchor checkpoint hashes.
+- `watcher --kaspa-private-key <hex> [--bind 127.0.0.1:9590] [--wrpc-url wss://host:port] [--mainnet]` — anchor checkpoint hashes.
 - `register-customer [--customer-private-key <hex>]` — add customer keypair to storage.
 - `list-customers` — show registered customer pubkeys and invoice ids.
 
@@ -110,7 +110,7 @@ Routing
 ## Checkpoint Protocol
 - `MerchantEventHandler` emits `Checkpoint` TLV messages with `{episode_id, seq, state_root}` when invoices are acknowledged
   or at least once every 60 s.
-- A lightweight watcher (`watch` subcommand) listens on UDP, verifies the HMAC, and anchors the hash on-chain using an
+- A lightweight watcher (`watcher` subcommand) listens on UDP, verifies the HMAC, and anchors the hash on-chain using an
   `OKCP` record with prefix `KMCP`.
 - `seq` is strictly monotone; watchers ignore out‑of‑order checkpoints per `docs/PROGRAM_ID_AND_CHECKPOINTS.md`.
  - The on-chain relay subscription is feature-gated as `okcp_relay`. Enable when wiring to your Kaspa RPC version.
