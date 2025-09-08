@@ -5,6 +5,8 @@ use log::info;
 use std::net::UdpSocket;
 use std::time::Duration;
 
+pub mod service;
+
 pub const DEMO_HMAC_KEY: &[u8] = b"kdapp-demo-secret";
 pub const TLV_VERSION: u8 = 1;
 

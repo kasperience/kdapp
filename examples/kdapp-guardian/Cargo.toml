@@ -9,3 +9,7 @@ borsh = { version = "1.5.1", features = ["derive"] }
 log = "0.4"
 thiserror = "1.0"
 blake2 = "0.10"
+tokio = { workspace = true, features = ["rt", "macros", "rt-multi-thread"] }
+kaspa-wrpc-client = { workspace = true }
+kaspa-rpc-core = { workspace = true }
+kaspa-consensus-core = { workspace = true }

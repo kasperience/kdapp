@@ -17,6 +17,7 @@ faster-hex = { workspace = true }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
+kdapp-guardian = { path = "../kdapp-guardian" }
 
 [dev-dependencies]
 kaspa-consensus-core = { workspace = true }

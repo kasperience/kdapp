@@ -46,6 +46,12 @@ struct Args {
     /// Override routing pattern as "pos:bit,pos:bit,..."
     #[arg(long)]
     pattern: Option<String>,
+    /// Guardian UDP address
+    #[arg(long)]
+    guardian_addr: Option<String>,
+    /// Guardian public key (hex)
+    #[arg(long)]
+    guardian_public_key: Option<String>,
     #[command(subcommand)]
     command: Option<CliCmd>,
 }
@@ -314,6 +320,12 @@ fn main() {
     env_logger::init();
     storage::init();
     let args = Args::parse();
+
+    if let (Some(addr), Some(pk_hex)) = (&args.guardian_addr, &args.guardian_public_key) {
+        if let Some(pk) = parse_public_key(pk_hex) {
+            handler::set_guardian(addr.clone(), pk);
+        }
+    }
 
     // Engine channel wiring
     let (tx, rx) = std::sync::mpsc::channel();
