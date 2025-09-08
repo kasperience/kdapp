@@ -110,13 +110,13 @@ impl Episode for ReceiptEpisode {
         #[cfg(test)]
         {
             // In tests, avoid persistent state to prevent cross-test interference when running in parallel
-            return Self {
+            Self {
                 merchant_keys: participants,
                 invoices: BTreeMap::new(),
                 subscriptions: BTreeMap::new(),
                 customers: BTreeMap::new(),
                 used_carrier_txs: BTreeSet::new(),
-            };
+            }
         }
 
         #[cfg(not(test))]
@@ -435,8 +435,9 @@ mod tests {
         let (_sk, pk) = generate_keypair();
         let metadata = md();
         storage::init();
-        storage::put_customer(&pk, &CustomerInfo::default());
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
+        // In tests, initialize does not load persistent storage; register customer in-memory
+        ep.customers.insert(pk, CustomerInfo::default());
         // Create
         let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100, memo: Some("x".into()) };
         let _rb = ep.execute(&cmd, Some(pk), &metadata).expect("create ok");
@@ -480,8 +481,8 @@ mod tests {
         let (_sk, pk) = generate_keypair();
         let metadata = md();
         storage::init();
-        storage::put_customer(&pk, &CustomerInfo::default());
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
+        ep.customers.insert(pk, CustomerInfo::default());
         // Create two invoices
         ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 10, memo: None }, Some(pk), &metadata).unwrap();
         ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 2, amount: 10, memo: None }, Some(pk), &metadata).unwrap();
@@ -509,8 +510,8 @@ mod tests {
         let ((_sk_m, pk_m), (_sk_p, pk_p)) = (generate_keypair(), generate_keypair());
         let metadata = md();
         storage::init();
-        storage::put_customer(&pk_p, &CustomerInfo::default());
         let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
+        ep.customers.insert(pk_p, CustomerInfo::default());
         ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None }, Some(pk_m), &metadata).unwrap();
         let mut md_paid = metadata.clone();
         // Build script for wrong pubkey (payer instead of merchant)
@@ -531,8 +532,8 @@ mod tests {
         let ((_sk_m, pk_m), (_sk_p, pk_p)) = (generate_keypair(), generate_keypair());
         let metadata = md();
         storage::init();
-        storage::put_customer(&pk_p, &CustomerInfo::default());
         let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
+        ep.customers.insert(pk_p, CustomerInfo::default());
         ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None }, Some(pk_m), &metadata).unwrap();
         let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p };
         let err = ep.execute(&cmd, Some(pk_p), &metadata).unwrap_err();
@@ -547,8 +548,8 @@ mod tests {
         let (_sk, pk) = generate_keypair();
         let metadata = md();
         storage::init();
-        storage::put_customer(&pk, &CustomerInfo::default());
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
+        ep.customers.insert(pk, CustomerInfo::default());
         // Create subscription
         let cmd = MerchantCommand::CreateSubscription { subscription_id: 5, customer: pk, amount: 10, interval: 5 };
         let _rb = ep.execute(&cmd, Some(pk), &metadata).expect("create sub");

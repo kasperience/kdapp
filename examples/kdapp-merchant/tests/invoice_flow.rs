@@ -1,12 +1,14 @@
-mod fixtures;
 #[path = "../../kdapp-customer/src/episode.rs"]
 mod customer_episode;
+mod fixtures;
 
+use customer_episode::{
+    InvoiceStatus as CustomerInvoiceStatus, MerchantCommand as CustomerCommand, ReceiptEpisode as CustomerEpisode,
+};
 use fixtures::episode::{InvoiceStatus, MerchantCommand, MerchantError};
 use fixtures::setup;
-use customer_episode::{InvoiceStatus as CustomerInvoiceStatus, MerchantCommand as CustomerCommand, ReceiptEpisode as CustomerEpisode};
-use kdapp_guardian::{receive, send_confirm, send_escalate, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
 use kdapp::episode::{Episode, EpisodeError, TxOutputInfo};
+use kdapp_guardian::{receive, send_confirm, send_escalate, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
 use std::net::UdpSocket;
 use std::thread;
 
@@ -77,13 +79,9 @@ fn replay_attack_rejected() {
     };
     let mut md = ctx.metadata.clone();
     md.tx_outputs = Some(vec![TxOutputInfo { value: 50, script_version: 0, script_bytes: Some(script) }]);
-    ctx.episode
-        .execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: ctx.customer }, Some(ctx.customer), &md)
-        .unwrap();
-    let err = ctx
-        .episode
-        .execute(&MerchantCommand::MarkPaid { invoice_id: 2, payer: ctx.customer }, Some(ctx.customer), &md)
-        .unwrap_err();
+    ctx.episode.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: ctx.customer }, Some(ctx.customer), &md).unwrap();
+    let err =
+        ctx.episode.execute(&MerchantCommand::MarkPaid { invoice_id: 2, payer: ctx.customer }, Some(ctx.customer), &md).unwrap_err();
     match err {
         EpisodeError::InvalidCommand(MerchantError::DuplicatePayment) => {}
         _ => panic!("expected duplicate payment"),
@@ -107,10 +105,8 @@ fn incorrect_payment_amount_rejected() {
     };
     let mut md = ctx.metadata.clone();
     md.tx_outputs = Some(vec![TxOutputInfo { value: 90, script_version: 0, script_bytes: Some(script) }]);
-    let err = ctx
-        .episode
-        .execute(&MerchantCommand::MarkPaid { invoice_id: 3, payer: ctx.customer }, Some(ctx.customer), &md)
-        .unwrap_err();
+    let err =
+        ctx.episode.execute(&MerchantCommand::MarkPaid { invoice_id: 3, payer: ctx.customer }, Some(ctx.customer), &md).unwrap_err();
     match err {
         EpisodeError::InvalidCommand(MerchantError::InvalidAmount) => {}
         _ => panic!("expected invalid amount"),

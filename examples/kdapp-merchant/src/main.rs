@@ -477,8 +477,7 @@ fn main() {
             };
             log::info!("merchant pubkey: {pk}");
             scheduler::start(router.clone(), episode_id);
-            let state =
-                server::AppState::new(Arc::new(router), episode_id, sk, pk, api_key, max_fee, congestion_threshold);
+            let state = server::AppState::new(Arc::new(router), episode_id, sk, pk, api_key, max_fee, congestion_threshold);
             let rt = Runtime::new().expect("runtime");
             rt.block_on(async {
                 server::serve(bind, state).await.expect("server");
@@ -595,8 +594,7 @@ fn main() {
                     Err(e) => println!("failed to fetch metrics: {e}"),
                 }
             } else {
-                let kaspa_private_key =
-                    kaspa_private_key.expect("kaspa_private_key required when not using --show-metrics");
+                let kaspa_private_key = kaspa_private_key.expect("kaspa_private_key required when not using --show-metrics");
                 watcher::run(
                     &bind,
                     kaspa_private_key,

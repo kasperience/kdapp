@@ -1,6 +1,7 @@
 use once_cell::sync::Lazy;
 use sled::Db;
 use std::collections::BTreeMap;
+#[cfg(not(test))]
 use std::env;
 
 use super::episode::{CustomerInfo, Invoice, Subscription};
@@ -10,8 +11,16 @@ use secp256k1::PublicKey as SecpPublicKey;
 // Allows running multiple merchant processes concurrently by overriding the DB path.
 // Set MERCHANT_DB_PATH to a unique directory per process (e.g., merchant-udp.db, merchant-tcp.db).
 pub static DB: Lazy<Db> = Lazy::new(|| {
-    let path = env::var("MERCHANT_DB_PATH").unwrap_or_else(|_| "merchant.db".to_string());
-    sled::open(&path).unwrap_or_else(|e| panic!("failed to open {path}: {e}"))
+    #[cfg(test)]
+    {
+        // Use a temporary, in-memory database during tests to avoid filesystem issues
+        sled::Config::new().temporary(true).open().expect("open temp sled")
+    }
+    #[cfg(not(test))]
+    {
+        let path = env::var("MERCHANT_DB_PATH").unwrap_or_else(|_| "merchant.db".to_string());
+        sled::open(&path).unwrap_or_else(|e| panic!("failed to open {path}: {e}"))
+    }
 });
 
 pub fn init() {
@@ -28,6 +37,7 @@ pub fn init() {
     }
 }
 
+#[cfg_attr(test, allow(dead_code))]
 pub fn load_invoices() -> BTreeMap<u64, Invoice> {
     let tree = DB.open_tree("invoices").expect("invoices tree");
     tree.iter()
@@ -62,6 +72,7 @@ pub fn flush() {
     let _ = DB.flush();
 }
 
+#[cfg_attr(test, allow(dead_code))]
 pub fn load_customers() -> BTreeMap<PubKey, CustomerInfo> {
     let tree = DB.open_tree("customers").expect("customers tree");
     tree.iter()
@@ -88,6 +99,7 @@ pub fn put_customer(pk: &PubKey, info: &CustomerInfo) {
     let _ = tree.insert(key, val);
 }
 
+#[cfg_attr(test, allow(dead_code))]
 pub fn load_subscriptions() -> BTreeMap<u64, Subscription> {
     let tree = DB.open_tree("subscriptions").expect("subscriptions tree");
     tree.iter()

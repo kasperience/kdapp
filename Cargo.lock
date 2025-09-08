@@ -2364,6 +2364,7 @@ dependencies = [
  "faster-hex",
  "kaspa-consensus-core",
  "kdapp",
+ "kdapp-guardian",
  "log",
  "reqwest",
  "secp256k1",
@@ -2378,9 +2379,13 @@ version = "0.0.1"
 dependencies = [
  "blake2",
  "borsh",
+ "kaspa-consensus-core",
+ "kaspa-rpc-core",
+ "kaspa-wrpc-client",
  "kdapp",
  "log",
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -2446,6 +2451,7 @@ dependencies = [
  "kaspa-rpc-core",
  "kaspa-wrpc-client",
  "kdapp",
+ "kdapp-guardian",
  "log",
  "once_cell",
  "rand 0.8.5",

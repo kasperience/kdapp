@@ -31,6 +31,8 @@ web-root
 /rust-toolchain
 /.vscode/
 **/db-*
+# Example local sled database directories (avoid committing state)
+examples/kdapp-merchant/merchant.db/
 analyzer-target
 .DS_Store
 *.code-workspace

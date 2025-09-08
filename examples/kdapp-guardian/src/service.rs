@@ -43,6 +43,7 @@ async fn watch_anchors(client: &KaspaRpcClient, state: Arc<Mutex<GuardianState>>
             Ok(v) => v,
             Err(e) => {
                 // Try to reconnect and continue
+                warn!("guardian: failed to fetch virtual chain: {e}");
                 let _ = client.connect(Some(kdapp::proxy::connect_options())).await;
                 sleep(Duration::from_millis(500)).await;
                 continue;
@@ -113,11 +114,9 @@ pub fn run(bind: &str, wrpc_url: Option<String>) -> Arc<Mutex<GuardianState>> {
     let state_clone = state.clone();
     thread::spawn(move || loop {
         let mut st = state_clone.lock().unwrap();
-        if let Some(msg) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
-            if let GuardianMsg::Escalate { episode_id, .. } = msg {
-                drop(st);
-                handle_escalate(&state_clone, episode_id);
-            }
+        if let Some(GuardianMsg::Escalate { episode_id, .. }) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
+            drop(st);
+            handle_escalate(&state_clone, episode_id);
         }
     });
 

@@ -19,8 +19,7 @@ pub struct TestContext {
 
 /// Initialize sled storage and create a fresh episode with a merchant and customer.
 pub fn setup() -> TestContext {
-    // ensure a clean database for each test run
-    let _ = std::fs::remove_dir_all("merchant.db");
+    // Initialize in-memory storage for tests (no filesystem access under #[cfg(test)]).
     storage::init();
 
     let (_sk_m, merchant_pk) = generate_keypair();
@@ -35,12 +34,15 @@ pub fn setup() -> TestContext {
         tx_outputs: None,
     };
 
-    let episode = ReceiptEpisode::initialize(vec![merchant_pk], &metadata);
+    let mut episode = ReceiptEpisode::initialize(vec![merchant_pk], &metadata);
+    // For tests, the episode does not load persistent storage; register the customer in-memory
+    episode.customers.insert(customer_pk, CustomerInfo::default());
 
     TestContext { episode, merchant: merchant_pk, customer: customer_pk, metadata }
 }
 
 /// Helper for creating a subscription in tests.
+#[allow(dead_code)]
 pub fn create_subscription(ctx: &mut TestContext, id: u64, amount: u64, interval: u64) {
     let cmd = MerchantCommand::CreateSubscription { subscription_id: id, customer: ctx.customer, amount, interval };
     ctx.episode.execute(&cmd, Some(ctx.merchant), &ctx.metadata).expect("create subscription");
