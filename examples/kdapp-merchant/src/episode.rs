@@ -107,11 +107,26 @@ impl Episode for ReceiptEpisode {
     type CommandError = MerchantError;
 
     fn initialize(participants: Vec<PubKey>, _metadata: &PayloadMetadata) -> Self {
-        let invoices = storage::load_invoices();
-        let subscriptions = storage::load_subscriptions();
-        let customers = storage::load_customers();
-        let used_carrier_txs = invoices.values().filter_map(|inv| inv.carrier_tx).collect::<BTreeSet<Hash>>();
-        Self { merchant_keys: participants, invoices, subscriptions, customers, used_carrier_txs }
+        #[cfg(test)]
+        {
+            // In tests, avoid persistent state to prevent cross-test interference when running in parallel
+            return Self {
+                merchant_keys: participants,
+                invoices: BTreeMap::new(),
+                subscriptions: BTreeMap::new(),
+                customers: BTreeMap::new(),
+                used_carrier_txs: BTreeSet::new(),
+            };
+        }
+
+        #[cfg(not(test))]
+        {
+            let invoices = storage::load_invoices();
+            let subscriptions = storage::load_subscriptions();
+            let customers = storage::load_customers();
+            let used_carrier_txs = invoices.values().filter_map(|inv| inv.carrier_tx).collect::<BTreeSet<Hash>>();
+            Self { merchant_keys: participants, invoices, subscriptions, customers, used_carrier_txs }
+        }
     }
 
     fn execute(
