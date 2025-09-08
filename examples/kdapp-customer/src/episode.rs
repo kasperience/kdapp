@@ -86,11 +86,9 @@ impl Episode for ReceiptEpisode {
                 let outs = metadata.tx_outputs.as_ref().ok_or(EpisodeError::InvalidCommand(CmdErr::Invalid))?;
                 let mut found = false;
                 for o in outs {
-                    if o.value == inv.amount {
-                        if o.script_bytes.is_some() {
-                            found = true;
-                            break;
-                        }
+                    if o.value == inv.amount && o.script_bytes.is_some() {
+                        found = true;
+                        break;
                     }
                 }
                 if !found {
