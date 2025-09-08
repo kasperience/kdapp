@@ -1,12 +1,14 @@
 use blake2::{Blake2b512, Digest};
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::pki::{sign_message, to_message, PubKey, Sig};
-use secp256k1::SecretKey;
 use log::info;
+use secp256k1::SecretKey;
+use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::time::Duration;
 
 pub mod service;
+pub mod metrics;
 
 pub const DEMO_HMAC_KEY: &[u8] = b"kdapp-demo-secret";
 pub const TLV_VERSION: u8 = 1;
@@ -117,6 +119,7 @@ pub struct GuardianState {
     pub checkpoints: Vec<(u64, u64)>,
     pub disputes: Vec<u64>,
     pub refund_signatures: Vec<(u64, kdapp::pki::Sig)>,
+    pub last_seq: HashMap<u64, u64>,
 }
 
 impl GuardianState {
@@ -124,19 +127,38 @@ impl GuardianState {
         self.observed_payments.push(invoice_id);
     }
 
-    /// Record a checkpoint and return true if a discrepancy was observed
-    pub fn record_checkpoint(&mut self, episode_id: u64, seq: u64) -> bool {
-        let mut dispute = false;
-        if let Some((_, last)) = self.checkpoints.iter().rev().find(|(id, _)| *id == episode_id) {
-            if seq != *last + 1 {
-                dispute = true;
-                if !self.disputes.contains(&episode_id) {
-                    self.disputes.push(episode_id);
+    /// Track last seen seq per episode; return false if duplicate or out of order
+    pub fn observe_msg(&mut self, episode_id: u64, seq: u64) -> bool {
+        match self.last_seq.get(&episode_id) {
+            Some(last) => {
+                if seq == *last + 1 {
+                    self.last_seq.insert(episode_id, seq);
+                    true
+                } else {
+                    false
+                }
+            }
+            None => {
+                if seq == 0 {
+                    self.last_seq.insert(episode_id, seq);
+                    true
+                } else {
+                    false
                 }
             }
         }
+    }
+
+    /// Record a checkpoint and return true if a discrepancy was observed
+    pub fn record_checkpoint(&mut self, episode_id: u64, seq: u64) -> bool {
+        if !self.observe_msg(episode_id, seq) {
+            if !self.disputes.contains(&episode_id) {
+                self.disputes.push(episode_id);
+            }
+            return true;
+        }
         self.checkpoints.push((episode_id, seq));
-        dispute
+        false
     }
 
     pub fn sign_refund(&mut self, episode_id: u64, tx: &[u8], sk: &SecretKey) -> Sig {
@@ -178,6 +200,12 @@ fn send_msg(dest: &str, msg: GuardianMsg, key: &[u8]) {
         GuardianMsg::Escalate { episode_id, .. } => (MsgType::Escalate, *episode_id, 0),
         GuardianMsg::Confirm { episode_id, seq } => (MsgType::Confirm, *episode_id, *seq),
     };
+    match msg_type {
+        MsgType::Handshake => info!("sending handshake to {dest}"),
+        MsgType::Escalate => info!("sending escalate to {dest} episode {episode_id}"),
+        MsgType::Confirm => info!("sending confirm to {dest} episode {episode_id} seq {seq}"),
+        MsgType::Ack => {}
+    }
     let payload = borsh::to_vec(&msg).expect("serialize guardian msg");
     let tlv =
         TlvMsg { version: TLV_VERSION, msg_type: msg_type as u8, episode_id, seq, state_hash: [0u8; 32], payload, auth: [0u8; 32] };
@@ -200,22 +228,39 @@ pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Optio
     let mut buf = [0u8; 1024];
     let (n, addr) = sock.recv_from(&mut buf).ok()?;
     let tlv = TlvMsg::decode(&buf[..n])?;
+    let msg_type = MsgType::from_u8(tlv.msg_type)?;
     if !tlv.verify(key) {
+        metrics::inc_invalid();
+        info!("invalid hmac episode {} seq {}", tlv.episode_id, tlv.seq);
+        return None;
+    }
+    if msg_type != MsgType::Confirm && !state.observe_msg(tlv.episode_id, tlv.seq) {
+        metrics::inc_invalid();
+        info!("replay detected episode {} seq {}", tlv.episode_id, tlv.seq);
         return None;
     }
     let msg: GuardianMsg = borsh::from_slice(&tlv.payload).ok()?;
     match &msg {
-        GuardianMsg::Escalate { episode_id, .. } => {
+        GuardianMsg::Escalate { episode_id, reason, .. } => {
+            info!("escalation episode {} reason {}", episode_id, reason);
             state.observe_payment(*episode_id);
             if !state.disputes.contains(episode_id) {
                 state.disputes.push(*episode_id);
             }
         }
         GuardianMsg::Confirm { episode_id, seq } => {
-            let _ = state.record_checkpoint(*episode_id, *seq);
+            if state.record_checkpoint(*episode_id, *seq) {
+                metrics::inc_invalid();
+                info!("replay detected episode {} seq {}", episode_id, seq);
+                return None;
+            }
+            info!("confirmation episode {} seq {}", episode_id, seq);
         }
-        GuardianMsg::Handshake { .. } => {}
+        GuardianMsg::Handshake { merchant, guardian } => {
+            info!("handshake merchant {:?} guardian {:?}", merchant, guardian);
+        }
     }
+    metrics::inc_valid();
     let mut ack = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Ack as u8,
@@ -237,6 +282,7 @@ mod tests {
 
     #[test]
     fn handshake_roundtrip() {
+        metrics::reset();
         let (_sk_g, pk_g) = generate_keypair();
         let (_sk_m, pk_m) = generate_keypair();
         let server = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -248,10 +294,12 @@ mod tests {
         });
         handshake(&addr.to_string(), pk_m, pk_g, DEMO_HMAC_KEY);
         handle.join().unwrap();
+        assert_eq!(metrics::snapshot(), (1, 0));
     }
 
     #[test]
     fn escalation_roundtrip() {
+        metrics::reset();
         let server = UdpSocket::bind("127.0.0.1:0").unwrap();
         let addr = server.local_addr().unwrap();
         let handle = std::thread::spawn(move || {
@@ -263,9 +311,63 @@ mod tests {
             state
         });
         send_escalate(&addr.to_string(), 42, "late payment".to_string(), vec![], DEMO_HMAC_KEY);
-        send_confirm(&addr.to_string(), 42, 7, DEMO_HMAC_KEY);
+        send_confirm(&addr.to_string(), 42, 1, DEMO_HMAC_KEY);
         let state = handle.join().unwrap();
         assert_eq!(state.observed_payments, vec![42]);
-        assert_eq!(state.checkpoints, vec![(42, 7)]);
+        assert_eq!(state.checkpoints, vec![(42, 1)]);
+        assert_eq!(metrics::snapshot(), (2, 0));
+    }
+
+    #[test]
+    fn tampered_hmac_rejected() {
+        metrics::reset();
+        let server = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let addr = server.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let mut state = GuardianState::default();
+            assert!(receive(&server, &mut state, DEMO_HMAC_KEY).is_none());
+        });
+        let payload = borsh::to_vec(&GuardianMsg::Escalate { episode_id: 1, reason: "x".into(), refund_tx: vec![] }).unwrap();
+        let mut tlv = TlvMsg { version: TLV_VERSION, msg_type: MsgType::Escalate as u8, episode_id: 1, seq: 0, state_hash: [0u8; 32], payload, auth: [0u8; 32] };
+        tlv.sign(DEMO_HMAC_KEY);
+        tlv.auth[0] ^= 0xff;
+        let sock = UdpSocket::bind("127.0.0.1:0").unwrap();
+        sock.send_to(&tlv.encode(), addr).unwrap();
+        handle.join().unwrap();
+        assert_eq!(metrics::snapshot(), (0, 1));
+    }
+
+    #[test]
+    fn replayed_message_rejected() {
+        metrics::reset();
+        let server = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let addr = server.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let mut state = GuardianState::default();
+            assert!(receive(&server, &mut state, DEMO_HMAC_KEY).is_some());
+            assert!(receive(&server, &mut state, DEMO_HMAC_KEY).is_some());
+            assert!(receive(&server, &mut state, DEMO_HMAC_KEY).is_none());
+        });
+        send_escalate(&addr.to_string(), 9, "late".into(), vec![], DEMO_HMAC_KEY);
+        send_confirm(&addr.to_string(), 9, 1, DEMO_HMAC_KEY);
+        send_confirm(&addr.to_string(), 9, 1, DEMO_HMAC_KEY);
+        handle.join().unwrap();
+        assert_eq!(metrics::snapshot(), (2, 1));
+    }
+
+    #[test]
+    fn out_of_order_ack_rejected() {
+        metrics::reset();
+        let server = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let addr = server.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let mut state = GuardianState::default();
+            assert!(receive(&server, &mut state, DEMO_HMAC_KEY).is_some());
+            assert!(receive(&server, &mut state, DEMO_HMAC_KEY).is_none());
+        });
+        send_escalate(&addr.to_string(), 5, "oops".into(), vec![], DEMO_HMAC_KEY);
+        send_confirm(&addr.to_string(), 5, 2, DEMO_HMAC_KEY);
+        handle.join().unwrap();
+        assert_eq!(metrics::snapshot(), (1, 1));
     }
 }
