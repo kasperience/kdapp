@@ -7,13 +7,13 @@ use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::time::Duration;
 
-pub mod service;
 pub mod metrics;
+pub mod service;
 
 pub const DEMO_HMAC_KEY: &[u8] = b"kdapp-demo-secret";
 pub const TLV_VERSION: u8 = 1;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum MsgType {
     Handshake = 0,
@@ -242,7 +242,7 @@ pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Optio
     let msg: GuardianMsg = borsh::from_slice(&tlv.payload).ok()?;
     match &msg {
         GuardianMsg::Escalate { episode_id, reason, .. } => {
-            info!("escalation episode {} reason {}", episode_id, reason);
+            info!("escalation episode {episode_id} reason {reason}");
             state.observe_payment(*episode_id);
             if !state.disputes.contains(episode_id) {
                 state.disputes.push(*episode_id);
@@ -251,13 +251,13 @@ pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Optio
         GuardianMsg::Confirm { episode_id, seq } => {
             if state.record_checkpoint(*episode_id, *seq) {
                 metrics::inc_invalid();
-                info!("replay detected episode {} seq {}", episode_id, seq);
+                info!("replay detected episode {episode_id} seq {seq}");
                 return None;
             }
-            info!("confirmation episode {} seq {}", episode_id, seq);
+            info!("confirmation episode {episode_id} seq {seq}");
         }
         GuardianMsg::Handshake { merchant, guardian } => {
-            info!("handshake merchant {:?} guardian {:?}", merchant, guardian);
+            info!("handshake merchant {merchant:?} guardian {guardian:?}");
         }
     }
     metrics::inc_valid();
@@ -279,9 +279,17 @@ pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Optio
 mod tests {
     use super::*;
     use kdapp::pki::generate_keypair;
+    use std::sync::{Mutex, OnceLock};
+
+    // Serialize tests within this crate to avoid races on global metrics.
+    fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
 
     #[test]
     fn handshake_roundtrip() {
+        let _g = test_guard();
         metrics::reset();
         let (_sk_g, pk_g) = generate_keypair();
         let (_sk_m, pk_m) = generate_keypair();
@@ -299,6 +307,7 @@ mod tests {
 
     #[test]
     fn escalation_roundtrip() {
+        let _g = test_guard();
         metrics::reset();
         let server = UdpSocket::bind("127.0.0.1:0").unwrap();
         let addr = server.local_addr().unwrap();
@@ -320,6 +329,7 @@ mod tests {
 
     #[test]
     fn tampered_hmac_rejected() {
+        let _g = test_guard();
         metrics::reset();
         let server = UdpSocket::bind("127.0.0.1:0").unwrap();
         let addr = server.local_addr().unwrap();
@@ -328,7 +338,15 @@ mod tests {
             assert!(receive(&server, &mut state, DEMO_HMAC_KEY).is_none());
         });
         let payload = borsh::to_vec(&GuardianMsg::Escalate { episode_id: 1, reason: "x".into(), refund_tx: vec![] }).unwrap();
-        let mut tlv = TlvMsg { version: TLV_VERSION, msg_type: MsgType::Escalate as u8, episode_id: 1, seq: 0, state_hash: [0u8; 32], payload, auth: [0u8; 32] };
+        let mut tlv = TlvMsg {
+            version: TLV_VERSION,
+            msg_type: MsgType::Escalate as u8,
+            episode_id: 1,
+            seq: 0,
+            state_hash: [0u8; 32],
+            payload,
+            auth: [0u8; 32],
+        };
         tlv.sign(DEMO_HMAC_KEY);
         tlv.auth[0] ^= 0xff;
         let sock = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -339,6 +357,7 @@ mod tests {
 
     #[test]
     fn replayed_message_rejected() {
+        let _g = test_guard();
         metrics::reset();
         let server = UdpSocket::bind("127.0.0.1:0").unwrap();
         let addr = server.local_addr().unwrap();
@@ -357,6 +376,7 @@ mod tests {
 
     #[test]
     fn out_of_order_ack_rejected() {
+        let _g = test_guard();
         metrics::reset();
         let server = UdpSocket::bind("127.0.0.1:0").unwrap();
         let addr = server.local_addr().unwrap();
