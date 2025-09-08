@@ -158,15 +158,8 @@ fn send_msg(dest: &str, msg: GuardianMsg, key: &[u8]) {
         GuardianMsg::Confirm { episode_id, seq } => (MsgType::Confirm, *episode_id, *seq),
     };
     let payload = borsh::to_vec(&msg).expect("serialize guardian msg");
-    let tlv = TlvMsg {
-        version: TLV_VERSION,
-        msg_type: msg_type as u8,
-        episode_id,
-        seq,
-        state_hash: [0u8; 32],
-        payload,
-        auth: [0u8; 32],
-    };
+    let tlv =
+        TlvMsg { version: TLV_VERSION, msg_type: msg_type as u8, episode_id, seq, state_hash: [0u8; 32], payload, auth: [0u8; 32] };
     send_with_retry(dest, tlv, key);
 }
 
