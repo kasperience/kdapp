@@ -95,6 +95,8 @@ Notes
 - Routers enforce a per-connection key handshake. Clients must send `MsgType::Handshake` once and sign subsequent messages.
 - `router-tcp` provides a reliable TCP alternative for TLV transport with the same forwarding semantics.
 - Local state persists in a sled database `merchant.db` with trees for invoices, customers, and subscriptions. Remove the directory to reset or adjust the path in `storage.rs`.
+- Refund flow: `MsgType::Refund` is reserved for guardian-approved refunds and is validated/consumed by the `watcher`; the UDP/TCP routers explicitly ignore `Refund` messages and do not forward them to the engine.
+- PKI: `PubKey` now implements `Hash`, enabling use in `HashMap`/`HashSet` (used for guardian handshake tracking and other maps).
 
 Episode API
 - Commands:
@@ -122,6 +124,12 @@ Routing
   `OKCP` record with prefix `KMCP`.
 - `seq` is strictly monotone; watchers ignore out-of-order checkpoints per `docs/PROGRAM_ID_AND_CHECKPOINTS.md`.
  - The on-chain relay subscription is feature-gated as `okcp_relay`. Enable when wiring to your Kaspa RPC version.
+
+### Guardian Refunds (Out-of-band Cosign)
+- `MsgType::Refund` carries a payload `(refund_tx_bytes, guardian_sig, guardian_pubkey)` (borsh-encoded).
+- The watcher verifies the HMAC and then checks `verify_signature(guardian_pubkey, hash(refund_tx_bytes), guardian_sig)`.
+- On success, the watcher logs a verified refund event; integrating actual broadcast is left for future work.
+- Routers do not route `Refund` to the engine (ignored by design).
 
 Notes
 - This is a scaffold intended for extension: real receipt storage, richer invoice metadata, and actual off-chain transport are deferred to M1+.

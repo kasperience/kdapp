@@ -2,6 +2,12 @@
 
 This example demonstrates a simple merchant application built on kdapp. It includes an optional checkpoint watcher that anchors state hashes to the Kaspa network.
 
+Key protocol notes
+- TLV transport includes `Handshake`, `New`, `Cmd`, `Ack`, `Close`, `AckClose`, `Checkpoint`, and `Refund` types.
+- Routers (UDP/TCP) enforce a per-peer handshake and HMAC, forward `New/Cmd/Close/Checkpoint` to the engine, and ignore `Ack/AckClose/Refund`.
+- The watcher validates `Checkpoint` messages (HMAC) before anchoring and separately accepts `Refund` messages with guardian signatures, verifying `(tx, sig, gpk)`.
+- `PubKey` implements `Hash`, so it can be used in `HashMap`/`HashSet` (e.g., guardian handshake tracking).
+
 ## Watcher Configuration
 
 The watcher fee and congestion behaviour can be tuned using two parameters:

@@ -124,6 +124,11 @@ impl UdpRouter {
                 MsgType::Ack | MsgType::AckClose => {
                     info!("router: ignoring ack-type from {src}");
                 }
+                MsgType::Refund => {
+                    // Refund messages are not routed to the engine via UDP router
+                    info!("router: ignoring refund-type from {src}");
+                    continue;
+                }
                 MsgType::Handshake => {
                     // Should have been handled earlier; ignore in data phase
                     continue;

@@ -33,6 +33,13 @@ impl PartialOrd for PubKey {
     }
 }
 
+impl std::hash::Hash for PubKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Hash the stable compressed representation
+        state.write(&self.0.serialize());
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sig(pub Signature);
 impl BorshSerialize for PubKey {
