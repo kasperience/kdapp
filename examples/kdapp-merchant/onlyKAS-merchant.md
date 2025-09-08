@@ -35,6 +35,14 @@ Expected:
 - Router logs show handshake ack, then signed Cmd/Ack accepted and acknowledged.
 - Merchant handler logs show checkpoint emission (and watcher logs submission if enabled).
 
+Watcher fee policy and congestion
+- The `watcher` derives a base fee from `get_fee_estimate()` and applies a conservative floor (see `MIN_FEE` in code).
+- A simple congestion heuristic uses `get_metrics(... consensus_metrics = true ...)` and the network mempool size.
+- You can tune behavior:
+  - `--max-fee <sompi>`: skip anchoring if the computed fee exceeds this value.
+  - `--congestion-threshold <ratio>`: defer anchoring while congestion > threshold.
+- The HTTP server exposes `POST /watcher-config` to adjust `max_fee` and `congestion_threshold` at runtime.
+
 Running multiple processes on one machine (Windows)
 - sled holds an exclusive file lock per DB directory. To run multiple merchant binaries (e.g., router-udp and router-tcp) concurrently, set a unique DB path per process:
   - PowerShell:
@@ -112,7 +120,7 @@ Routing
   or at least once every 60 s.
 - A lightweight watcher (`watcher` subcommand) listens on UDP, verifies the HMAC, and anchors the hash on-chain using an
   `OKCP` record with prefix `KMCP`.
-- `seq` is strictly monotone; watchers ignore out‑of‑order checkpoints per `docs/PROGRAM_ID_AND_CHECKPOINTS.md`.
+- `seq` is strictly monotone; watchers ignore out-of-order checkpoints per `docs/PROGRAM_ID_AND_CHECKPOINTS.md`.
  - The on-chain relay subscription is feature-gated as `okcp_relay`. Enable when wiring to your Kaspa RPC version.
 
 Notes

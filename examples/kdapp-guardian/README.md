@@ -6,7 +6,7 @@ anchors and assists merchants and customers during disputes.
 ## Running the guardian
 
 The `service::run` helper starts a UDP listener for guardian messages
-and subscribes to Kaspa wRPC notifications for checkpoint anchors:
+and polls the Kaspa virtual chain via RPC to detect on‑chain checkpoint anchors:
 
 ```rust
 fn main() {
@@ -15,8 +15,11 @@ fn main() {
 }
 ```
 
+Under the hood the service uses `get_block_dag_info` +
+`get_virtual_chain_from_block` to follow accepted blocks and scans
+their merged blocks for compact OKCP records (program prefix `KMCP`).
 The returned `GuardianState` is shared and updated as anchors are
-observed on-chain.
+observed on‑chain.
 
 ## Using with merchant and customer
 

@@ -37,7 +37,7 @@ cargo run -p kdapp-merchant -- router-udp --bind 127.0.0.1:9530
 2) Optional: Start the watcher to anchor checkpoints on-chain:
 
 ```
-cargo run -p kdapp-merchant -- watch --bind 127.0.0.1:9590 --kaspa-private-key <hex> [--wrpc-url wss://host:port] [--mainnet]
+cargo run -p kdapp-merchant -- watcher --bind 127.0.0.1:9590 --kaspa-private-key <hex> [--wrpc-url wss://host:port] [--mainnet]
 ```
 
 3) Perform actions with kdapp-customer (the client performs a handshake automatically):
@@ -48,5 +48,6 @@ cargo run -p kdapp-customer -- ack --episode-id 42 --invoice-id 1001 --merchant-
 ```
 
 Expected:
-- The router logs a `Handshake` ack and then acknowledges signed messages with `Ack`/`AckClose`.
+- The router logs a `Handshake` ack and then acknowledges signed messages with `Ack`.
+- The client uses one UDP socket for handshake + signed messages to preserve source address.
 - The merchant emits periodic/signed checkpoints; the watcher (if running) submits OKCP anchors on-chain.
