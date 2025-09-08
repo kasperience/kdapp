@@ -46,12 +46,12 @@ struct Args {
     /// Override routing pattern as "pos:bit,pos:bit,..."
     #[arg(long)]
     pattern: Option<String>,
-    /// Guardian UDP address
-    #[arg(long)]
-    guardian_addr: Option<String>,
-    /// Guardian public key (hex)
-    #[arg(long)]
-    guardian_public_key: Option<String>,
+    /// Guardian UDP address (repeatable)
+    #[arg(long = "guardian-addr")]
+    guardian_addr: Vec<String>,
+    /// Guardian public key (hex, repeatable)
+    #[arg(long = "guardian-key")]
+    guardian_public_key: Vec<String>,
     #[command(subcommand)]
     command: Option<CliCmd>,
 }
@@ -324,12 +324,16 @@ fn main() {
     env_logger::init();
     storage::init();
     let args = Args::parse();
-
-    if let (Some(addr), Some(pk_hex)) = (&args.guardian_addr, &args.guardian_public_key) {
-        if let Some(pk) = parse_public_key(pk_hex) {
-            handler::set_guardian(addr.clone(), pk);
-        }
+    let guardians: Vec<(String, PubKey)> = args
+        .guardian_addr
+        .iter()
+        .zip(args.guardian_public_key.iter())
+        .filter_map(|(addr, pk_hex)| parse_public_key(pk_hex).map(|pk| (addr.clone(), pk)))
+        .collect();
+    for (addr, pk) in &guardians {
+        handler::add_guardian(addr.clone(), *pk);
     }
+    let guardian_keys: Vec<PubKey> = guardians.iter().map(|(_, pk)| *pk).collect();
 
     // Engine channel wiring
     let (tx, rx) = std::sync::mpsc::channel();
@@ -350,7 +354,7 @@ fn main() {
             scheduler::start(router.clone(), episode_id);
             let _label = program_id::derive_program_label(&merchant_pk, "merchant-pos");
             // Create
-            let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100_000_000, memo: Some("Latte".into()) };
+            let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100_000_000, memo: Some("Latte".into()), guardian_keys: guardian_keys.clone() };
             let signed = EpisodeMessage::new_signed_command(episode_id, cmd, merchant_sk, merchant_pk);
             router.forward::<ReceiptEpisode>(signed);
             // Pay
@@ -419,7 +423,7 @@ fn main() {
                 None => generate_keypair(),
             };
             log::info!("merchant pubkey: {pk}");
-            let cmd = MerchantCommand::CreateInvoice { invoice_id, amount, memo };
+            let cmd = MerchantCommand::CreateInvoice { invoice_id, amount, memo, guardian_keys: guardian_keys.clone() };
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
             router.forward::<ReceiptEpisode>(msg);
         }
@@ -515,7 +519,7 @@ fn main() {
             };
             let (prefix, pattern) = ids;
             let fee = fee.unwrap_or(5_000);
-            let cmd = MerchantCommand::CreateInvoice { invoice_id, amount, memo };
+            let cmd = MerchantCommand::CreateInvoice { invoice_id, amount, memo, guardian_keys: guardian_keys.clone() };
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, m_sk, m_pk);
 
             let network =

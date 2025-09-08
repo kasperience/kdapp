@@ -11,7 +11,7 @@ use super::storage;
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum MerchantCommand {
-    CreateInvoice { invoice_id: u64, amount: u64, memo: Option<String> },
+    CreateInvoice { invoice_id: u64, amount: u64, memo: Option<String>, guardian_keys: Vec<PubKey> },
     MarkPaid { invoice_id: u64, payer: PubKey },
     AckReceipt { invoice_id: u64 },
     CancelInvoice { invoice_id: u64 },
@@ -75,6 +75,7 @@ pub struct Invoice {
     pub status: InvoiceStatus,
     pub payer: Option<PubKey>,
     pub carrier_tx: Option<Hash>,
+    pub guardian_keys: Vec<PubKey>,
 }
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
@@ -95,6 +96,7 @@ pub struct CustomerInfo {
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub struct ReceiptEpisode {
     pub merchant_keys: Vec<PubKey>,
+    pub guardian_keys: Vec<PubKey>,
     pub invoices: BTreeMap<u64, Invoice>,
     pub subscriptions: BTreeMap<u64, Subscription>,
     pub customers: BTreeMap<PubKey, CustomerInfo>,
@@ -112,6 +114,7 @@ impl Episode for ReceiptEpisode {
             // In tests, avoid persistent state to prevent cross-test interference when running in parallel
             Self {
                 merchant_keys: participants,
+                guardian_keys: Vec::new(),
                 invoices: BTreeMap::new(),
                 subscriptions: BTreeMap::new(),
                 customers: BTreeMap::new(),
@@ -125,7 +128,7 @@ impl Episode for ReceiptEpisode {
             let subscriptions = storage::load_subscriptions();
             let customers = storage::load_customers();
             let used_carrier_txs = invoices.values().filter_map(|inv| inv.carrier_tx).collect::<BTreeSet<Hash>>();
-            Self { merchant_keys: participants, invoices, subscriptions, customers, used_carrier_txs }
+            Self { merchant_keys: participants, guardian_keys: Vec::new(), invoices, subscriptions, customers, used_carrier_txs }
         }
     }
 
@@ -136,7 +139,7 @@ impl Episode for ReceiptEpisode {
         metadata: &PayloadMetadata,
     ) -> Result<Self::CommandRollback, EpisodeError<Self::CommandError>> {
         match cmd {
-            MerchantCommand::CreateInvoice { invoice_id, amount, memo } => {
+            MerchantCommand::CreateInvoice { invoice_id, amount, memo, guardian_keys } => {
                 if self.invoices.contains_key(invoice_id) {
                     return Err(EpisodeError::InvalidCommand(MerchantError::Exists));
                 }
@@ -160,9 +163,11 @@ impl Episode for ReceiptEpisode {
                     status: InvoiceStatus::Open,
                     payer: None,
                     carrier_tx: None,
+                    guardian_keys: guardian_keys.clone(),
                 };
                 self.invoices.insert(*invoice_id, created.clone());
                 storage::put_invoice(&created);
+                self.guardian_keys = guardian_keys.clone();
                 Ok(MerchantRollback::UndoCreate { invoice_id: *invoice_id })
             }
             MerchantCommand::MarkPaid { invoice_id, payer } => {
@@ -422,7 +427,7 @@ mod tests {
         let metadata = md();
         storage::init();
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
-        let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 10, memo: None };
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 10, memo: None, guardian_keys: vec![] };
         let err = ep.execute(&cmd, None, &metadata).unwrap_err();
         match err {
             EpisodeError::Unauthorized => {}
@@ -439,7 +444,7 @@ mod tests {
         // In tests, initialize does not load persistent storage; register customer in-memory
         ep.customers.insert(pk, CustomerInfo::default());
         // Create
-        let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100, memo: Some("x".into()) };
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100, memo: Some("x".into()), guardian_keys: vec![] };
         let _rb = ep.execute(&cmd, Some(pk), &metadata).expect("create ok");
         // Pay with script verification
         let mut md_paid = metadata.clone();
@@ -467,7 +472,7 @@ mod tests {
         storage::init();
         storage::put_customer(&pk, &CustomerInfo::default());
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
-        let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 50, memo: None };
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 50, memo: None, guardian_keys: vec![] };
         ep.execute(&cmd, Some(pk), &metadata).expect("create");
         let mut md_paid = metadata.clone();
         md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 50, script_version: 0, script_bytes: None }]);
@@ -484,8 +489,8 @@ mod tests {
         let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
         ep.customers.insert(pk, CustomerInfo::default());
         // Create two invoices
-        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 10, memo: None }, Some(pk), &metadata).unwrap();
-        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 2, amount: 10, memo: None }, Some(pk), &metadata).unwrap();
+        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 10, memo: None, guardian_keys: vec![] }, Some(pk), &metadata).unwrap();
+        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 2, amount: 10, memo: None, guardian_keys: vec![] }, Some(pk), &metadata).unwrap();
         // Pay first invoice
         let mut md_paid = metadata.clone();
         let script = {
@@ -512,7 +517,7 @@ mod tests {
         storage::init();
         let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
         ep.customers.insert(pk_p, CustomerInfo::default());
-        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None }, Some(pk_m), &metadata).unwrap();
+        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None, guardian_keys: vec![] }, Some(pk_m), &metadata).unwrap();
         let mut md_paid = metadata.clone();
         // Build script for wrong pubkey (payer instead of merchant)
         let mut wrong = Vec::with_capacity(35);
@@ -534,7 +539,7 @@ mod tests {
         storage::init();
         let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
         ep.customers.insert(pk_p, CustomerInfo::default());
-        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None }, Some(pk_m), &metadata).unwrap();
+        ep.execute(&MerchantCommand::CreateInvoice { invoice_id: 1, amount: 20, memo: None, guardian_keys: vec![] }, Some(pk_m), &metadata).unwrap();
         let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p };
         let err = ep.execute(&cmd, Some(pk_p), &metadata).unwrap_err();
         match err {

@@ -79,6 +79,7 @@ struct CreateInvoiceReq {
     invoice_id: u64,
     amount: u64,
     memo: Option<String>,
+    guardian_public_keys: Option<Vec<String>>,
 }
 
 async fn create_invoice(
@@ -87,7 +88,13 @@ async fn create_invoice(
     Json(req): Json<CreateInvoiceReq>,
 ) -> Result<StatusCode, StatusCode> {
     authorize(&headers, &state)?;
-    let cmd = MerchantCommand::CreateInvoice { invoice_id: req.invoice_id, amount: req.amount, memo: req.memo };
+    let gkeys = req
+        .guardian_public_keys
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|h| parse_public_key(h))
+        .collect();
+    let cmd = MerchantCommand::CreateInvoice { invoice_id: req.invoice_id, amount: req.amount, memo: req.memo, guardian_keys: gkeys };
     let msg = EpisodeMessage::new_signed_command(state.episode_id, cmd, state.merchant_sk, state.merchant_pk);
     state.router.forward::<ReceiptEpisode>(msg);
     Ok(StatusCode::ACCEPTED)

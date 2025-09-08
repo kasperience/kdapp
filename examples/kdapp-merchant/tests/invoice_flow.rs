@@ -17,9 +17,9 @@ fn invoice_flow_with_guardian() {
     let mut ctx = setup();
     let mut customer = CustomerEpisode::initialize(vec![ctx.customer], &ctx.metadata);
 
-    let create = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100, memo: Some("coffee".into()) };
+    let create = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 100, memo: Some("coffee".into()), guardian_keys: vec![] };
     ctx.episode.execute(&create, Some(ctx.merchant), &ctx.metadata).expect("merchant create");
-    let c_create = CustomerCommand::CreateInvoice { invoice_id: 1, amount: 100, memo: Some("coffee".into()) };
+    let c_create = CustomerCommand::CreateInvoice { invoice_id: 1, amount: 100, memo: Some("coffee".into()), guardian_keys: vec![] };
     customer.execute(&c_create, Some(ctx.merchant), &ctx.metadata).expect("customer create");
 
     let script = {
@@ -65,9 +65,9 @@ fn replay_attack_rejected() {
     let mut ctx = setup();
     let mut customer = CustomerEpisode::initialize(vec![ctx.customer], &ctx.metadata);
     for id in [1, 2] {
-        let cmd = MerchantCommand::CreateInvoice { invoice_id: id, amount: 50, memo: None };
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: id, amount: 50, memo: None, guardian_keys: vec![] };
         ctx.episode.execute(&cmd, Some(ctx.merchant), &ctx.metadata).unwrap();
-        let c_cmd = CustomerCommand::CreateInvoice { invoice_id: id, amount: 50, memo: None };
+        let c_cmd = CustomerCommand::CreateInvoice { invoice_id: id, amount: 50, memo: None, guardian_keys: vec![] };
         customer.execute(&c_cmd, Some(ctx.merchant), &ctx.metadata).unwrap();
     }
     let script = {
@@ -92,9 +92,9 @@ fn replay_attack_rejected() {
 fn incorrect_payment_amount_rejected() {
     let mut ctx = setup();
     let mut customer = CustomerEpisode::initialize(vec![ctx.customer], &ctx.metadata);
-    let create = MerchantCommand::CreateInvoice { invoice_id: 3, amount: 100, memo: None };
+    let create = MerchantCommand::CreateInvoice { invoice_id: 3, amount: 100, memo: None, guardian_keys: vec![] };
     ctx.episode.execute(&create, Some(ctx.merchant), &ctx.metadata).unwrap();
-    let c_create = CustomerCommand::CreateInvoice { invoice_id: 3, amount: 100, memo: None };
+    let c_create = CustomerCommand::CreateInvoice { invoice_id: 3, amount: 100, memo: None, guardian_keys: vec![] };
     customer.execute(&c_create, Some(ctx.merchant), &ctx.metadata).unwrap();
     let script = {
         let mut s = Vec::with_capacity(35);
