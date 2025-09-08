@@ -50,14 +50,14 @@ fn invoice_flow_with_guardian() {
         let msg1 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
         assert!(matches!(msg1, GuardianMsg::Escalate { episode_id: 1, .. }));
         let msg2 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
-        assert!(matches!(msg2, GuardianMsg::Confirm { episode_id: 1, seq: 7 }));
+        assert!(matches!(msg2, GuardianMsg::Confirm { episode_id: 1, seq: 1 }));
         state
     });
     send_escalate(&addr.to_string(), 1, "late payment".into(), vec![], DEMO_HMAC_KEY);
-    send_confirm(&addr.to_string(), 1, 7, DEMO_HMAC_KEY);
+    send_confirm(&addr.to_string(), 1, 1, DEMO_HMAC_KEY);
     let state = handle.join().unwrap();
     assert_eq!(state.observed_payments, vec![1]);
-    assert_eq!(state.checkpoints, vec![(1, 7)]);
+    assert_eq!(state.checkpoints, vec![(1, 1)]);
 }
 
 #[test]
