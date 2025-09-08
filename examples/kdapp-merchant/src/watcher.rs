@@ -106,25 +106,23 @@ pub async fn relay_checkpoints(
 }
 
 async fn fetch_fee_and_congestion(client: &KaspaRpcClient) -> Result<(u64, f64), String> {
-    let metrics = client.get_mempool_metrics().await.map_err(|e| e.to_string())?;
-    let value = serde_json::to_value(metrics).map_err(|e| e.to_string())?;
-    let base_fee = value
-        .get("recommended_fee")
-        .or_else(|| value.get("recommendedFees").and_then(|v| v.get("normal")))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(MIN_FEE);
-    let size = value
-        .get("size")
-        .or_else(|| value.get("virtual_size"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-    let limit = value
-        .get("size_limit")
-        .or_else(|| value.get("virtual_size_limit"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(1);
-    let ratio = if limit > 0 { size as f64 / limit as f64 } else { 0.0 };
-    Ok((base_fee, ratio))
+    // Base fee: derive from fee estimate (sompi), with a conservative mass assumption and MIN_FEE floor
+    let estimate = client.get_fee_estimate().await.map_err(|e| e.to_string())?;
+    let feerate = estimate.normal_buckets.first().map(|b| b.feerate).unwrap_or(estimate.priority_bucket.feerate);
+    // Approximate small tx mass (1 in / 1 out with payload); adjust as needed
+    let approx_mass: f64 = 200.0;
+    let mut base_fee = (feerate * approx_mass).ceil() as u64;
+    if base_fee < MIN_FEE {
+        base_fee = MIN_FEE;
+    }
+
+    // Congestion: use consensus metrics' network_mempool_size as a simple heuristic
+    let congestion = match client.get_metrics(false, false, false, true, false, false).await {
+        Ok(m) => m.consensus_metrics.map(|cm| (cm.network_mempool_size as f64) / 10_000.0).unwrap_or(0.0),
+        Err(_) => 0.0,
+    };
+
+    Ok((base_fee, congestion))
 }
 
 async fn submit_checkpoint_tx(
@@ -252,7 +250,8 @@ pub fn run(
         let (base_fee, congestion) = match rt.block_on({
             let url_clone = url.clone();
             async move {
-                let network = if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+                let network =
+                    if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
                 let client = proxy::connect_client(network, url_clone).await.map_err(|e| e.to_string())?;
                 fetch_fee_and_congestion(&client).await
             }

@@ -40,10 +40,12 @@ pub struct ReceiptEpisode {
 }
 
 impl ReceiptEpisode {
+    #[allow(dead_code)]
     pub fn invoices(&self) -> &BTreeMap<u64, Invoice> {
         &self.invoices
     }
 
+    #[allow(dead_code)]
     pub fn invoice(&self, id: u64) -> Option<&Invoice> {
         self.invoices.get(&id)
     }
@@ -66,13 +68,7 @@ impl Episode for ReceiptEpisode {
     ) -> Result<Self::CommandRollback, EpisodeError<Self::CommandError>> {
         match cmd {
             MerchantCommand::CreateInvoice { invoice_id, amount, memo } => {
-                let inv = Invoice {
-                    id: *invoice_id,
-                    amount: *amount,
-                    memo: memo.clone(),
-                    status: InvoiceStatus::Open,
-                    payer: None,
-                };
+                let inv = Invoice { id: *invoice_id, amount: *amount, memo: memo.clone(), status: InvoiceStatus::Open, payer: None };
                 self.invoices.insert(*invoice_id, inv);
             }
             MerchantCommand::MarkPaid { invoice_id, payer } => {

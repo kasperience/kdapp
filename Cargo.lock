@@ -2362,6 +2362,7 @@ dependencies = [
  "clap",
  "env_logger",
  "faster-hex",
+ "kaspa-consensus-core",
  "kdapp",
  "log",
  "reqwest",
@@ -2375,6 +2376,7 @@ dependencies = [
 name = "kdapp-guardian"
 version = "0.0.1"
 dependencies = [
+ "blake2",
  "borsh",
  "kdapp",
  "log",

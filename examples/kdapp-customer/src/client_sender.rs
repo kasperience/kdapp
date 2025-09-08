@@ -31,11 +31,13 @@ pub fn send_with_retry_on(sock: &UdpSocket, dest: &str, mut tlv: TlvMsg, key: &[
     eprintln!("ack failed for ep {} seq {}", tlv.episode_id, tlv.seq);
 }
 
+#[allow(dead_code)]
 pub fn send_with_retry(dest: &str, tlv: TlvMsg, key: &[u8]) {
     let sock = UdpSocket::bind("0.0.0.0:0").expect("bind sender");
     send_with_retry_on(&sock, dest, tlv, key);
 }
 
+#[allow(dead_code)]
 pub fn send_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>, key: &[u8]) {
     let payload = borsh::to_vec(&msg).expect("serialize cmd");
     let tlv = TlvMsg {
@@ -50,6 +52,7 @@ pub fn send_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<Recei
     send_with_retry(dest, tlv, key);
 }
 
+#[allow(dead_code)]
 pub fn handshake(dest: &str, key: &[u8]) {
     let tlv = TlvMsg {
         version: TLV_VERSION,
@@ -77,6 +80,7 @@ pub fn handshake_on(sock: &UdpSocket, dest: &str, key: &[u8]) {
     send_with_retry_on(sock, dest, tlv, key);
 }
 
+#[allow(dead_code)]
 pub fn send_new(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>, key: &[u8]) {
     let payload = borsh::to_vec(&msg).expect("serialize new");
     let tlv = TlvMsg {
