@@ -6,6 +6,8 @@ use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kaspa_rpc_core::api::rpc::RpcApi;
 use kaspa_wrpc_client::client::KaspaRpcClient;
 use kdapp::proxy;
+use kdapp::pki::generate_keypair;
+use secp256k1::SecretKey;
 use log::{info, warn};
 
 use crate::{receive, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
@@ -75,7 +77,10 @@ async fn watch_anchors(client: &KaspaRpcClient, state: Arc<Mutex<GuardianState>>
                     if !payload.is_empty() {
                         if let Some(rec) = decode_okcp(payload) {
                             let mut s = state.lock().unwrap();
-                            s.record_checkpoint(rec.episode_id, rec.seq);
+                            if s.record_checkpoint(rec.episode_id, rec.seq) {
+                                drop(s);
+                                handle_escalate(&state, rec.episode_id, None);
+                            }
                         }
                     }
                 }
@@ -84,23 +89,34 @@ async fn watch_anchors(client: &KaspaRpcClient, state: Arc<Mutex<GuardianState>>
     }
 }
 
-fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64) {
+fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx: Option<Vec<u8>>) {
     let known = {
         let s = state.lock().unwrap();
         s.checkpoints.iter().any(|(id, _)| *id == episode_id)
     };
     if known {
-        info!("guardian: verified episode {episode_id}; co-signing transaction");
-        // Placeholder for co-signing refund/release transactions
+        if let Some(tx) = refund_tx {
+            if let Some(sk) = GUARDIAN_SK.get() {
+                let sig = {
+                    let mut s = state.lock().unwrap();
+                    s.sign_refund(episode_id, &tx, sk)
+                };
+                info!("guardian: co-signed refund for episode {episode_id}");
+            }
+        } else {
+            info!("guardian: discrepancy detected for episode {episode_id}");
+        }
     } else {
         warn!("guardian: escalation for unknown episode {episode_id}");
     }
 }
 
 static STARTED: OnceLock<()> = OnceLock::new();
+static GUARDIAN_SK: OnceLock<SecretKey> = OnceLock::new();
 
 pub fn run(bind: &str, wrpc_url: Option<String>) -> Arc<Mutex<GuardianState>> {
     STARTED.get_or_init(|| {});
+    let _ = GUARDIAN_SK.get_or_init(|| generate_keypair().0);
     let sock = UdpSocket::bind(bind).expect("bind guardian service");
     info!("guardian service listening on {bind}");
     let state = Arc::new(Mutex::new(GuardianState::default()));
@@ -110,9 +126,9 @@ pub fn run(bind: &str, wrpc_url: Option<String>) -> Arc<Mutex<GuardianState>> {
     let state_clone = state.clone();
     thread::spawn(move || loop {
         let mut st = state_clone.lock().unwrap();
-        if let Some(GuardianMsg::Escalate { episode_id, .. }) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
+        if let Some(GuardianMsg::Escalate { episode_id, refund_tx, .. }) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
             drop(st);
-            handle_escalate(&state_clone, episode_id);
+            handle_escalate(&state_clone, episode_id, Some(refund_tx));
         }
     });
 

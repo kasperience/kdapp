@@ -53,7 +53,7 @@ fn invoice_flow_with_guardian() {
         assert!(matches!(msg2, GuardianMsg::Confirm { episode_id: 1, seq: 7 }));
         state
     });
-    send_escalate(&addr.to_string(), 1, "late payment".into(), DEMO_HMAC_KEY);
+    send_escalate(&addr.to_string(), 1, "late payment".into(), vec![], DEMO_HMAC_KEY);
     send_confirm(&addr.to_string(), 1, 7, DEMO_HMAC_KEY);
     let state = handle.join().unwrap();
     assert_eq!(state.observed_payments, vec![1]);

@@ -39,3 +39,19 @@ guardian and periodically sends `Confirm` messages referencing the
 latest checkpoint sequence. If a customer detects a problem it may
 send an `Escalate` message which causes the guardian to verify the
 latest checkpoint and co‑sign a refund or release transaction.
+
+## Dispute flow example
+
+1. The merchant observes a conflicting payment and forwards a dispute:
+
+   ```rust
+   guardian::send_escalate("127.0.0.1:9650", 1, "payment dispute".into(), refund_tx.clone(), guardian::DEMO_HMAC_KEY);
+   ```
+
+2. The guardian's watcher detects the next `OKCP` anchor and notices a
+   gap in the sequence, recording an open dispute in `GuardianState`.
+
+3. When the `Escalate` message arrives the guardian verifies the
+   checkpoint and signs the provided refund transaction using the
+   demo keypair. The merchant can then broadcast the refund once the
+   signature is verified.
