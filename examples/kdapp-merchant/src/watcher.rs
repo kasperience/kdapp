@@ -23,6 +23,7 @@ use kdapp::{
 };
 use log::{info, warn};
 use secp256k1::Keypair;
+use kdapp::pki::{to_message, verify_signature, PubKey, Sig};
 
 use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
 
@@ -241,6 +242,21 @@ pub fn run(
             };
             ack.sign(DEMO_HMAC_KEY);
             let _ = sock.send_to(&ack.encode(), src);
+            continue;
+        }
+        if msg.msg_type == MsgType::Refund as u8 {
+            if !msg.verify(DEMO_HMAC_KEY) {
+                warn!("watcher: invalid refund from {src}");
+                continue;
+            }
+            if let Ok((tx, sig, gpk)) = borsh::from_slice::<(Vec<u8>, Sig, PubKey)>(&msg.payload) {
+                let m = to_message(&tx);
+                if verify_signature(&gpk, &m, &sig) {
+                    info!("refund verified for ep={} seq={}", msg.episode_id, msg.seq);
+                } else {
+                    warn!("watcher: invalid guardian signature on refund");
+                }
+            }
             continue;
         }
         if msg.msg_type != MsgType::Checkpoint as u8 || !msg.verify(DEMO_HMAC_KEY) {

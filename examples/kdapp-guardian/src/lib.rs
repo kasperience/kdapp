@@ -1,6 +1,7 @@
 use blake2::{Blake2b512, Digest};
 use borsh::{BorshDeserialize, BorshSerialize};
-use kdapp::pki::PubKey;
+use kdapp::pki::{sign_message, to_message, PubKey, Sig};
+use secp256k1::SecretKey;
 use log::info;
 use std::net::UdpSocket;
 use std::time::Duration;
@@ -106,7 +107,7 @@ impl TlvMsg {
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum GuardianMsg {
     Handshake { merchant: PubKey, guardian: PubKey },
-    Escalate { episode_id: u64, reason: String },
+    Escalate { episode_id: u64, reason: String, refund_tx: Vec<u8> },
     Confirm { episode_id: u64, seq: u64 },
 }
 
@@ -114,6 +115,8 @@ pub enum GuardianMsg {
 pub struct GuardianState {
     pub observed_payments: Vec<u64>,
     pub checkpoints: Vec<(u64, u64)>,
+    pub disputes: Vec<u64>,
+    pub refund_signatures: Vec<(u64, kdapp::pki::Sig)>,
 }
 
 impl GuardianState {
@@ -121,8 +124,26 @@ impl GuardianState {
         self.observed_payments.push(invoice_id);
     }
 
-    pub fn record_checkpoint(&mut self, episode_id: u64, seq: u64) {
+    /// Record a checkpoint and return true if a discrepancy was observed
+    pub fn record_checkpoint(&mut self, episode_id: u64, seq: u64) -> bool {
+        let mut dispute = false;
+        if let Some((_, last)) = self.checkpoints.iter().rev().find(|(id, _)| *id == episode_id) {
+            if seq != *last + 1 {
+                dispute = true;
+                if !self.disputes.contains(&episode_id) {
+                    self.disputes.push(episode_id);
+                }
+            }
+        }
         self.checkpoints.push((episode_id, seq));
+        dispute
+    }
+
+    pub fn sign_refund(&mut self, episode_id: u64, tx: &[u8], sk: &SecretKey) -> Sig {
+        let msg = to_message(&tx.to_vec());
+        let sig = sign_message(sk, &msg);
+        self.refund_signatures.push((episode_id, sig));
+        sig
     }
 }
 
@@ -167,8 +188,8 @@ pub fn handshake(dest: &str, merchant: PubKey, guardian: PubKey, key: &[u8]) {
     send_msg(dest, GuardianMsg::Handshake { merchant, guardian }, key);
 }
 
-pub fn send_escalate(dest: &str, episode_id: u64, reason: String, key: &[u8]) {
-    send_msg(dest, GuardianMsg::Escalate { episode_id, reason }, key);
+pub fn send_escalate(dest: &str, episode_id: u64, reason: String, refund_tx: Vec<u8>, key: &[u8]) {
+    send_msg(dest, GuardianMsg::Escalate { episode_id, reason, refund_tx }, key);
 }
 
 pub fn send_confirm(dest: &str, episode_id: u64, seq: u64, key: &[u8]) {
@@ -184,8 +205,15 @@ pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Optio
     }
     let msg: GuardianMsg = borsh::from_slice(&tlv.payload).ok()?;
     match &msg {
-        GuardianMsg::Escalate { episode_id, .. } => state.observe_payment(*episode_id),
-        GuardianMsg::Confirm { episode_id, seq } => state.record_checkpoint(*episode_id, *seq),
+        GuardianMsg::Escalate { episode_id, .. } => {
+            state.observe_payment(*episode_id);
+            if !state.disputes.contains(episode_id) {
+                state.disputes.push(*episode_id);
+            }
+        }
+        GuardianMsg::Confirm { episode_id, seq } => {
+            let _ = state.record_checkpoint(*episode_id, *seq);
+        }
         GuardianMsg::Handshake { .. } => {}
     }
     let mut ack = TlvMsg {
@@ -234,7 +262,7 @@ mod tests {
             assert!(matches!(msg2, GuardianMsg::Confirm { .. }));
             state
         });
-        send_escalate(&addr.to_string(), 42, "late payment".to_string(), DEMO_HMAC_KEY);
+        send_escalate(&addr.to_string(), 42, "late payment".to_string(), vec![], DEMO_HMAC_KEY);
         send_confirm(&addr.to_string(), 42, 7, DEMO_HMAC_KEY);
         let state = handle.join().unwrap();
         assert_eq!(state.observed_payments, vec![42]);

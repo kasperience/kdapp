@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use kdapp::episode::{EpisodeEventHandler, EpisodeId, PayloadMetadata};
-use kdapp::pki::PubKey;
+use kdapp::pki::{to_message, verify_signature, PubKey, Sig};
 
 use crate::client_sender;
 use crate::episode::{MerchantCommand, ReceiptEpisode};
@@ -76,6 +76,25 @@ fn emit_checkpoint(episode_id: EpisodeId, episode: &ReceiptEpisode, force: bool)
     }
 }
 
+fn forward_dispute(episode_id: EpisodeId) {
+    if let Some((addr, gpk)) = GUARDIAN.get() {
+        let refund_tx = b"demo refund".to_vec();
+        guardian::send_escalate(addr, episode_id as u64, "payment dispute".into(), refund_tx.clone(), guardian::DEMO_HMAC_KEY);
+        // In a real implementation the guardian's signature would be returned out of band
+        // and verified before broadcasting the refund transaction.
+        let dummy = secp256k1::ecdsa::Signature::from_compact(&[0u8; 64]);
+        if let Ok(sig) = dummy {
+            let sig = Sig(sig);
+            let _ = verify_guardian_cosign(&refund_tx, &sig, gpk);
+        }
+    }
+}
+
+fn verify_guardian_cosign(tx: &[u8], sig: &Sig, gpk: &PubKey) -> bool {
+    let msg = to_message(&tx.to_vec());
+    verify_signature(gpk, &msg, sig)
+}
+
 impl EpisodeEventHandler<ReceiptEpisode> for MerchantEventHandler {
     fn on_initialize(&self, episode_id: EpisodeId, episode: &ReceiptEpisode) {
         log::info!("episode {episode_id} initialized; merchant_keys={:?}", episode.merchant_keys);
@@ -101,6 +120,9 @@ impl EpisodeEventHandler<ReceiptEpisode> for MerchantEventHandler {
         storage::flush();
         let force = matches!(cmd, MerchantCommand::AckReceipt { .. });
         emit_checkpoint(episode_id, episode, force);
+        if matches!(cmd, MerchantCommand::CancelInvoice { .. }) {
+            forward_dispute(episode_id);
+        }
     }
 
     fn on_rollback(&self, episode_id: EpisodeId, _episode: &ReceiptEpisode) {
