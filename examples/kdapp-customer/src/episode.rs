@@ -76,6 +76,10 @@ impl Episode for ReceiptEpisode {
             }
             MerchantCommand::MarkPaid { invoice_id, payer } => {
                 let inv = self.invoices.get_mut(invoice_id).ok_or(EpisodeError::InvalidCommand(CmdErr::Invalid))?;
+                // Require the payer's signature for acceptance on the customer side
+                if authorization != Some(*payer) {
+                    return Err(EpisodeError::InvalidCommand(CmdErr::Invalid));
+                }
                 if let Some(expected) = inv.payer {
                     if *payer != expected {
                         return Err(EpisodeError::InvalidCommand(CmdErr::Invalid));
