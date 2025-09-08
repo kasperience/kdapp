@@ -65,11 +65,7 @@ async fn watch_anchors(client: &KaspaRpcClient, state: Arc<Mutex<GuardianState>>
             };
             let Some(verbose) = accepting_block.verbose_data else { continue };
             // Iterate merged blocks and inspect transactions for OKCP payloads
-            for merged_hash in verbose
-                .merge_set_blues_hashes
-                .into_iter()
-                .chain(verbose.merge_set_reds_hashes.into_iter())
-            {
+            for merged_hash in verbose.merge_set_blues_hashes.into_iter().chain(verbose.merge_set_reds_hashes.into_iter()) {
                 let merged = match client.get_block(merged_hash, true).await {
                     Ok(b) => b,
                     Err(_) => continue,
