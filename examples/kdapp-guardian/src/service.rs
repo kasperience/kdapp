@@ -32,31 +32,58 @@ fn decode_okcp(bytes: &[u8]) -> Option<OkcpRecord> {
     Some(OkcpRecord { episode_id, seq })
 }
 
-async fn watch_anchors(
-    client: &KaspaRpcClient,
-    state: Arc<Mutex<GuardianState>>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use kaspa_rpc_core::notify::virtual_chain_changed::{
-        VirtualChainChangedNotification, VirtualChainChangedNotificationType,
-    };
+async fn watch_anchors(client: &KaspaRpcClient, state: Arc<Mutex<GuardianState>>) -> Result<(), Box<dyn std::error::Error>> {
+    // Poll the virtual chain and scan merged blocks for OKCP payloads
+    use tokio::time::{sleep, Duration};
 
-    let mut stream = client.subscribe_virtual_chain_changed().await?;
-    while let Some(VirtualChainChangedNotification { ty, accepted_blocks, .. }) = stream.recv().await {
-        if !matches!(ty, VirtualChainChangedNotificationType::Accepted) {
+    let info = client.get_block_dag_info().await?;
+    let mut sink = info.sink;
+    loop {
+        let vcb = match client.get_virtual_chain_from_block(sink, true).await {
+            Ok(v) => v,
+            Err(e) => {
+                // Try to reconnect and continue
+                let _ = client.connect(Some(kdapp::proxy::connect_options())).await;
+                sleep(Duration::from_millis(500)).await;
+                continue;
+            }
+        };
+
+        if let Some(new_sink) = vcb.accepted_transaction_ids.last().map(|ncb| ncb.accepting_block_hash) {
+            sink = new_sink;
+        } else {
+            sleep(Duration::from_millis(500)).await;
             continue;
         }
-        for block in accepted_blocks {
-            for tx in block.transactions {
-                if let Some(payload) = tx.payload() {
-                    if let Some(rec) = decode_okcp(payload) {
-                        let mut s = state.lock().unwrap();
-                        s.record_checkpoint(rec.episode_id, rec.seq);
+
+        for ncb in vcb.accepted_transaction_ids {
+            let accepting_hash = ncb.accepting_block_hash;
+            let accepting_block = match client.get_block(accepting_hash, false).await {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let Some(verbose) = accepting_block.verbose_data else { continue };
+            // Iterate merged blocks and inspect transactions for OKCP payloads
+            for merged_hash in verbose
+                .merge_set_blues_hashes
+                .into_iter()
+                .chain(verbose.merge_set_reds_hashes.into_iter())
+            {
+                let merged = match client.get_block(merged_hash, true).await {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
+                for tx in merged.transactions {
+                    if let Some(payload) = tx.payload() {
+                        if let Some(rec) = decode_okcp(payload) {
+                            let mut s = state.lock().unwrap();
+                            s.record_checkpoint(rec.episode_id, rec.seq);
+                        }
                     }
                 }
             }
         }
     }
-    Ok(())
 }
 
 fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64) {
