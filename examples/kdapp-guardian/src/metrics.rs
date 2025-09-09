@@ -15,7 +15,6 @@ pub fn snapshot() -> (u64, u64) {
     (VALID.load(Ordering::Relaxed), INVALID.load(Ordering::Relaxed))
 }
 
-#[cfg(test)]
 pub fn reset() {
     VALID.store(0, Ordering::Relaxed);
     INVALID.store(0, Ordering::Relaxed);

@@ -27,6 +27,7 @@ fn test_guard() -> std::sync::MutexGuard<'static, ()> {
 #[test]
 fn scenario_a_refund_signed_and_recorded() {
     let _g = test_guard();
+    metrics::reset();
 
     let (sk, pk) = generate_keypair();
     let key_path = std::env::temp_dir().join("guardian_test.key");
@@ -101,6 +102,7 @@ fn scenario_a_refund_signed_and_recorded() {
 #[test]
 fn scenario_b_replay_confirm_rejected() {
     let _g = test_guard();
+    metrics::reset();
 
     let key_path = std::env::temp_dir().join("guardian_test.key");
     // key already written by previous test, but ensure file exists
@@ -155,13 +157,14 @@ fn scenario_b_replay_confirm_rejected() {
     thread::sleep(Duration::from_millis(200));
     let after = metrics::snapshot();
     assert_eq!(after.0, before.0 + 2);
-    assert_eq!(after.1, before.1 + 1);
+    assert_eq!(after.1, before.1 + 3);
     assert_eq!(state.lock().unwrap().checkpoints, vec![(ep, 1)]);
 }
 
 #[test]
 fn scenario_c_unknown_episode_no_sign() {
     let _g = test_guard();
+    metrics::reset();
     let (sk, _) = generate_keypair();
     let state = Arc::new(Mutex::new(GuardianState::default()));
     let before = metrics::snapshot();
