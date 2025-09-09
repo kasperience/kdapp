@@ -1,0 +1,14 @@
+[package]
+name = "examples-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dev-dependencies]
+kdapp = { path = "../../kdapp" }
+kdapp-guardian = { path = "../kdapp-guardian" }
+borsh = { version = "1.5.1", features = ["derive"] }
+log = "0.4.25"
+
+[[test]]
+name = "guardian_refund"
+path = "guardian_refund.rs"
