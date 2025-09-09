@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::net::UdpSocket;
 use std::sync::RwLock;
+use std::thread;
 
 use once_cell::sync::Lazy;
 
@@ -24,6 +25,9 @@ use kdapp::{
 };
 use log::{info, warn};
 use secp256k1::Keypair;
+use axum::{routing::get, Json, Router};
+use axum::http::StatusCode;
+use serde::Serialize;
 
 use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
 
@@ -38,6 +42,20 @@ pub fn get_metrics() -> Option<(u64, f64)> {
 
 fn store_metrics(base_fee: u64, congestion: f64) {
     *MEMPOOL_METRICS.write().expect("metrics lock") = Some((base_fee, congestion));
+}
+
+#[derive(Serialize)]
+struct MempoolMetrics {
+    base_fee: u64,
+    congestion: f64,
+}
+
+async fn get_mempool_metrics() -> Result<Json<MempoolMetrics>, StatusCode> {
+    if let Some((base_fee, congestion)) = get_metrics() {
+        Ok(Json(MempoolMetrics { base_fee, congestion }))
+    } else {
+        Err(StatusCode::SERVICE_UNAVAILABLE)
+    }
 }
 
 fn pattern() -> PatternType {
@@ -217,7 +235,22 @@ pub fn run(
     wrpc_url: Option<String>,
     max_fee: u64,
     congestion_threshold: f64,
+    http_port: Option<u16>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(port) = http_port {
+        thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("runtime");
+            rt.block_on(async move {
+                let addr = format!("0.0.0.0:{port}");
+                if let Ok(listener) = tokio::net::TcpListener::bind(&addr).await {
+                    info!("watcher http listening on {addr}");
+                    let app = Router::new().route("/mempool", get(get_mempool_metrics));
+                    let _ = axum::serve(listener, app).await;
+                }
+            });
+        });
+    }
+
     let sock = UdpSocket::bind(bind)?;
     info!("watcher listening on {bind}");
     let rt = tokio::runtime::Runtime::new()?;

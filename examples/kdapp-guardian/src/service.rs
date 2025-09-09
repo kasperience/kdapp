@@ -11,11 +11,12 @@ use kdapp::pki::generate_keypair;
 use kdapp::proxy;
 use log::{info, warn};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use clap::Parser;
 use faster_hex::{hex_decode, hex_encode};
+use axum::{extract::State, routing::get, Json, Router};
 
-use crate::{receive, send_escalate, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
+use crate::{metrics, receive, send_escalate, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
 
 const WATCHER_ADDR: &str = "127.0.0.1:9590";
 
@@ -107,6 +108,33 @@ fn decode_okcp(bytes: &[u8]) -> Option<OkcpRecord> {
     let episode_id = u64::from_le_bytes(bytes[pid_start..pid_end].try_into().ok()?);
     let seq = u64::from_le_bytes(bytes[pid_end..seq_end].try_into().ok()?);
     Some(OkcpRecord { episode_id, seq })
+}
+
+#[derive(Serialize)]
+struct HttpMetrics {
+    valid: u64,
+    invalid: u64,
+    disputes: usize,
+    observed_payments: usize,
+    guardian_refunds: usize,
+}
+
+async fn healthz() -> &'static str {
+    "ok"
+}
+
+async fn metrics_endpoint(
+    State(state): State<Arc<Mutex<GuardianState>>>,
+) -> Json<HttpMetrics> {
+    let (valid, invalid) = metrics::snapshot();
+    let st = state.lock().unwrap();
+    Json(HttpMetrics {
+        valid,
+        invalid,
+        disputes: st.disputes.len(),
+        observed_payments: st.observed_payments.len(),
+        guardian_refunds: st.refund_signatures.len(),
+    })
 }
 
 async fn watch_anchors(
@@ -284,6 +312,26 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
             };
             if let Ok(client) = proxy::connect_client(network, wrpc_url).await {
                 let _ = watch_anchors(&client, state_watch, path_watch).await;
+            }
+        });
+    });
+
+    // spawn HTTP server for health and metrics
+    let state_http = state.clone();
+    let http_addr = config
+        .listen_addr
+        .rsplit_once(':')
+        .and_then(|(host, port)| port.parse::<u16>().ok().map(|p| format!("{}:{}", host, p + 1)))
+        .unwrap_or_else(|| "127.0.0.1:9651".to_string());
+    thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        rt.block_on(async move {
+            let app = Router::new()
+                .route("/healthz", get(healthz))
+                .route("/metrics", get(metrics_endpoint))
+                .with_state(state_http);
+            if let Ok(listener) = tokio::net::TcpListener::bind(http_addr).await {
+                let _ = axum::serve(listener, app).await;
             }
         });
     });

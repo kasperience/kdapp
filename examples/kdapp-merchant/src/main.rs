@@ -226,6 +226,9 @@ enum CliCmd {
         /// Show current mempool metrics and exit
         #[arg(long, default_value_t = false)]
         show_metrics: bool,
+        /// Serve mempool metrics over HTTP on this port
+        #[arg(long)]
+        http_port: Option<u16>,
     },
     /// Derive a Kaspa address from a compressed secp256k1 public key (hex)
     Addr {
@@ -588,7 +591,7 @@ fn main() {
                 log::info!("on-chain ack submitted: tx_id={tx_id}");
             });
         }
-        CliCmd::Watcher { bind, kaspa_private_key, mainnet, wrpc_url, max_fee, congestion_threshold, show_metrics } => {
+        CliCmd::Watcher { bind, kaspa_private_key, mainnet, wrpc_url, max_fee, congestion_threshold, show_metrics, http_port } => {
             if show_metrics {
                 let network =
                     if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
@@ -611,6 +614,7 @@ fn main() {
                     wrpc_url,
                     max_fee.unwrap_or(u64::MAX),
                     congestion_threshold.unwrap_or(0.7),
+                    http_port,
                 )
                 .expect("watcher");
             }
