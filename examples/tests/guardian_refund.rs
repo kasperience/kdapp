@@ -49,7 +49,8 @@ fn scenario_a_refund_signed_and_recorded() {
         state_path: None,
         watcher_addr: Some(format!("127.0.0.1:{watcher_port}")),
     };
-    let state = run(&cfg);
+    let handle = run(&cfg);
+    let state = handle.state.clone();
 
     let state_watch = state.clone();
     let pk_watch = pk;
@@ -107,6 +108,8 @@ fn scenario_a_refund_signed_and_recorded() {
     let after = metrics::snapshot();
     assert_eq!(after.0, before.0 + 1);
     assert_eq!(after.1, before.1);
+
+    handle.shutdown();
 }
 
 #[test]
@@ -137,7 +140,8 @@ fn scenario_b_replay_confirm_rejected() {
         state_path: None,
         watcher_addr: Some(format!("127.0.0.1:{watcher_port}")),
     };
-    let state = run(&cfg);
+    let handle = run(&cfg);
+    let state = handle.state.clone();
     thread::spawn(move || {
         let sock = watcher;
         let mut buf = [0u8; 1024];
@@ -169,6 +173,8 @@ fn scenario_b_replay_confirm_rejected() {
     assert_eq!(after.0, before.0 + 2);
     assert_eq!(after.1, before.1 + 3);
     assert_eq!(state.lock().unwrap().checkpoints, vec![(ep, 1)]);
+
+    handle.shutdown();
 }
 
 #[test]
