@@ -15,7 +15,9 @@ use serde::Deserialize;
 use clap::Parser;
 use faster_hex::{hex_decode, hex_encode};
 
-use crate::{receive, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
+use crate::{receive, send_escalate, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
+
+const WATCHER_ADDR: &str = "127.0.0.1:9590";
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct GuardianConfig {
@@ -176,12 +178,9 @@ fn handle_escalate(
     refund_tx: Option<Vec<u8>>,
     state_path: &Option<PathBuf>,
 ) {
-    let known = {
-        let s = state.lock().unwrap();
-        s.checkpoints.iter().any(|(id, _)| *id == episode_id)
-    };
+    let known = { let s = state.lock().unwrap(); s.disputes.contains(&episode_id) };
     if known {
-        if let Some(tx) = refund_tx {
+        if let Some(mut tx) = refund_tx {
             if let Some(sk) = GUARDIAN_SK.get() {
                 let _sig = {
                     let mut s = state.lock().unwrap();
@@ -191,6 +190,7 @@ fn handle_escalate(
                     }
                     sig
                 };
+                send_escalate(WATCHER_ADDR, episode_id, "refund".into(), tx, DEMO_HMAC_KEY);
                 info!("guardian: co-signed refund for episode {episode_id}");
             }
         } else {
@@ -289,4 +289,38 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
     });
 
     state
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    #[test]
+    fn signs_and_persists_refund() {
+        let _g = test_guard();
+        let state = Arc::new(Mutex::new(GuardianState::default()));
+        state.lock().unwrap().disputes.push(42);
+        let (sk, _) = generate_keypair();
+        let _ = GUARDIAN_SK.get_or_init(|| sk);
+        let path = std::env::temp_dir().join("guardian_state_test.json");
+        handle_escalate(&state, 42, Some(vec![1, 2, 3]), &Some(path.clone()));
+        assert_eq!(state.lock().unwrap().refund_signatures.len(), 1);
+        assert!(path.exists());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn discrepancy_without_refund() {
+        let _g = test_guard();
+        let state = Arc::new(Mutex::new(GuardianState::default()));
+        state.lock().unwrap().disputes.push(7);
+        handle_escalate(&state, 7, None, &None);
+        assert!(state.lock().unwrap().refund_signatures.is_empty());
+    }
 }
