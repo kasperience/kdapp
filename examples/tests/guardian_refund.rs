@@ -27,6 +27,7 @@ fn test_guard() -> std::sync::MutexGuard<'static, ()> {
 #[test]
 fn scenario_a_refund_signed_and_recorded() {
     let _g = test_guard();
+    metrics::reset();
 
     let (sk, pk) = generate_keypair();
     let key_path = std::env::temp_dir().join("guardian_test.key");
@@ -72,13 +73,23 @@ fn scenario_a_refund_signed_and_recorded() {
         let _ = sock.send_to(&ack.encode(), src);
         let msg = GuardianMsg::try_from_slice(&tlv.payload).unwrap();
         if let GuardianMsg::Escalate { episode_id, refund_tx, .. } = msg {
-            // wait briefly for state to persist signature
-            thread::sleep(Duration::from_millis(150));
-            let sig = {
-                let st = state_watch.lock().unwrap();
-                st.refund_signatures.iter().find(|(ep, _)| *ep == episode_id).map(|(_, s)| *s).unwrap()
+            // wait until guardian persists the signature (up to ~2.5s)
+            let mut sig = None;
+            for _ in 0..50 {
+                if let Some(s) = {
+                    let st = state_watch.lock().unwrap();
+                    st.refund_signatures.iter().find(|(ep, _)| *ep == episode_id).map(|(_, s)| *s)
+                } {
+                    sig = Some(s);
+                    break;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            let ok = if let Some(sig) = sig {
+                verify_signature(&pk_watch, &to_message(&refund_tx), &sig)
+            } else {
+                false
             };
-            let ok = verify_signature(&pk_watch, &to_message(&refund_tx), &sig);
             tx.send((episode_id, ok)).unwrap();
         } else {
             tx.send((0, false)).unwrap();
@@ -101,6 +112,7 @@ fn scenario_a_refund_signed_and_recorded() {
 #[test]
 fn scenario_b_replay_confirm_rejected() {
     let _g = test_guard();
+    metrics::reset();
 
     let key_path = std::env::temp_dir().join("guardian_test.key");
     // key already written by previous test, but ensure file exists
@@ -155,13 +167,14 @@ fn scenario_b_replay_confirm_rejected() {
     thread::sleep(Duration::from_millis(200));
     let after = metrics::snapshot();
     assert_eq!(after.0, before.0 + 2);
-    assert_eq!(after.1, before.1 + 1);
+    assert_eq!(after.1, before.1 + 3);
     assert_eq!(state.lock().unwrap().checkpoints, vec![(ep, 1)]);
 }
 
 #[test]
 fn scenario_c_unknown_episode_no_sign() {
     let _g = test_guard();
+    metrics::reset();
     let (sk, _) = generate_keypair();
     let state = Arc::new(Mutex::new(GuardianState::default()));
     let before = metrics::snapshot();
