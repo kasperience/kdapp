@@ -1,0 +1,9 @@
+listen_addr = "127.0.0.1:9650"
+# Replace with your node URL
+wrpc_url = "wss://node:16110"
+# false = testnet-10, true = mainnet
+mainnet = false
+# Private key file for guardian's ECDSA key; created if missing
+key_path = "guardian.key"
+# Optional: persist guardian state (disputes, signatures)
+state_path = "guardian_state.json"

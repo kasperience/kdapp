@@ -4,6 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
+use axum::{extract::State, routing::get, Json, Router};
+use clap::Parser;
+use faster_hex::{hex_decode, hex_encode};
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kaspa_rpc_core::api::rpc::RpcApi;
 use kaspa_wrpc_client::client::KaspaRpcClient;
@@ -12,13 +15,12 @@ use kdapp::proxy;
 use log::{info, warn};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
-use clap::Parser;
-use faster_hex::{hex_decode, hex_encode};
-use axum::{extract::State, routing::get, Json, Router};
 
 use crate::{metrics, receive, send_escalate, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
 
-const WATCHER_ADDR: &str = "127.0.0.1:9590";
+fn watcher_addr() -> String {
+    std::env::var("KDAPP_GUARDIAN_WATCHER_ADDR").unwrap_or_else(|_| "127.0.0.1:9590".to_string())
+}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct GuardianConfig {
@@ -123,9 +125,7 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-async fn metrics_endpoint(
-    State(state): State<Arc<Mutex<GuardianState>>>,
-) -> Json<HttpMetrics> {
+async fn metrics_endpoint(State(state): State<Arc<Mutex<GuardianState>>>) -> Json<HttpMetrics> {
     let (valid, invalid) = metrics::snapshot();
     let st = state.lock().unwrap();
     Json(HttpMetrics {
@@ -200,16 +200,15 @@ async fn watch_anchors(
     }
 }
 
-fn handle_escalate(
-    state: &Arc<Mutex<GuardianState>>,
-    episode_id: u64,
-    refund_tx: Option<Vec<u8>>,
-    state_path: &Option<PathBuf>,
-) {
-    let known = { let s = state.lock().unwrap(); s.disputes.contains(&episode_id) };
+fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx: Option<Vec<u8>>, state_path: &Option<PathBuf>) {
+    let known = {
+        let s = state.lock().unwrap();
+        s.disputes.contains(&episode_id)
+    };
     if known {
-        if let Some(mut tx) = refund_tx {
+        if let Some(tx) = refund_tx {
             if let Some(sk) = GUARDIAN_SK.get() {
+                // Sign and persist first so tests can immediately observe the signature
                 let _sig = {
                     let mut s = state.lock().unwrap();
                     let sig = s.sign_refund(episode_id, &tx, sk);
@@ -218,7 +217,9 @@ fn handle_escalate(
                     }
                     sig
                 };
-                send_escalate(WATCHER_ADDR, episode_id, "refund".into(), tx, DEMO_HMAC_KEY);
+                // Then notify watcher with an Escalate message (expected by tests)
+                let watcher = watcher_addr();
+                send_escalate(&watcher, episode_id, "refund".into(), tx, DEMO_HMAC_KEY);
                 info!("guardian: co-signed refund for episode {episode_id}");
             }
         } else {
@@ -305,11 +306,8 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
     thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("runtime");
         rt.block_on(async move {
-            let network = if mainnet {
-                NetworkId::new(NetworkType::Mainnet)
-            } else {
-                NetworkId::with_suffix(NetworkType::Testnet, 10)
-            };
+            let network =
+                if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             if let Ok(client) = proxy::connect_client(network, wrpc_url).await {
                 let _ = watch_anchors(&client, state_watch, path_watch).await;
             }
@@ -326,10 +324,7 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
     thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("runtime");
         rt.block_on(async move {
-            let app = Router::new()
-                .route("/healthz", get(healthz))
-                .route("/metrics", get(metrics_endpoint))
-                .with_state(state_http);
+            let app = Router::new().route("/healthz", get(healthz)).route("/metrics", get(metrics_endpoint)).with_state(state_http);
             if let Ok(listener) = tokio::net::TcpListener::bind(http_addr).await {
                 let _ = axum::serve(listener, app).await;
             }

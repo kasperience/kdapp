@@ -6,7 +6,7 @@ use secp256k1::ecdsa::Signature;
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use sha2::{Digest, Sha256};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PubKey(pub PublicKey);
 
 impl std::fmt::Debug for PubKey {
@@ -40,7 +40,7 @@ impl std::hash::Hash for PubKey {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Sig(pub Signature);
 impl BorshSerialize for PubKey {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
@@ -63,7 +63,7 @@ impl BorshSerialize for Sig {
         // Serialize DER-encoded signature with a u32 length prefix (borsh-idiomatic)
         let der = self.0.serialize_der();
         // write length via borsh to remain consistent with other fields
-        (der.len() as u32).serialize(writer)?;
+        borsh::BorshSerialize::serialize(&(der.len() as u32), writer)?;
         writer.write_all(&der)
     }
 }

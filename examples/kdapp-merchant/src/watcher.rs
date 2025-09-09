@@ -7,6 +7,8 @@ use once_cell::sync::Lazy;
 
 #[cfg(feature = "okcp_relay")]
 use crate::sim_router::EngineChannel;
+use axum::http::StatusCode;
+use axum::{routing::get, Json, Router};
 use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
 use kaspa_consensus_core::{
     network::{NetworkId, NetworkType},
@@ -25,8 +27,6 @@ use kdapp::{
 };
 use log::{info, warn};
 use secp256k1::Keypair;
-use axum::{routing::get, Json, Router};
-use axum::http::StatusCode;
 use serde::Serialize;
 
 use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};

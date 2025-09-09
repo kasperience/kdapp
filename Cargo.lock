@@ -1087,6 +1087,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "examples-tests"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "kdapp",
+ "kdapp-guardian",
+ "log",
+ "secp256k1",
+]
+
+[[package]]
 name = "faster-hex"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2348,6 +2359,7 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "secp256k1",
+ "serde",
  "sha2",
  "thiserror 1.0.69",
  "tokio",
@@ -2377,16 +2389,23 @@ dependencies = [
 name = "kdapp-guardian"
 version = "0.0.1"
 dependencies = [
+ "axum",
  "blake2",
  "borsh",
+ "clap",
+ "env_logger",
+ "faster-hex",
  "kaspa-consensus-core",
  "kaspa-rpc-core",
  "kaspa-wrpc-client",
  "kdapp",
  "log",
  "secp256k1",
+ "serde",
+ "serde_json",
  "thiserror 1.0.69",
  "tokio",
+ "toml",
 ]
 
 [[package]]

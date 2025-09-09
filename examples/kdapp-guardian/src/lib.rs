@@ -255,7 +255,10 @@ pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Optio
         return None;
     }
     if msg_type != MsgType::Confirm && !state.observe_msg(tlv.episode_id, tlv.seq) {
-        metrics::inc_invalid();
+        // Treat duplicate seq=0 messages (e.g., idempotent Escalate/Handshake) as benign
+        if tlv.seq != 0 {
+            metrics::inc_invalid();
+        }
         info!("replay detected episode {} seq {}", tlv.episode_id, tlv.seq);
         return None;
     }
@@ -419,10 +422,8 @@ mod tests {
         metrics::reset();
         let server = UdpSocket::bind("127.0.0.1:0").unwrap();
         let addr = server.local_addr().unwrap();
-        let path = std::env::temp_dir().join(format!(
-            "guardian_state_test_{}.json",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
-        ));
+        let path = std::env::temp_dir()
+            .join(format!("guardian_state_test_{}.json", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
         let episode = 42u64;
         let handle = std::thread::spawn({
             let path = path.clone();

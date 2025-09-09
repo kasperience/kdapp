@@ -6,21 +6,22 @@ use std::time::Duration;
 use borsh::BorshDeserialize;
 use kdapp::pki::{generate_keypair, to_message, verify_signature};
 use kdapp_guardian::{
-    metrics,
-    send_confirm, send_escalate,
-    GuardianMsg, GuardianState, DEMO_HMAC_KEY,
+    metrics, send_confirm, send_escalate,
     service::{run, GuardianConfig},
-    TlvMsg, MsgType,
+    GuardianMsg, GuardianState, MsgType, TlvMsg, DEMO_HMAC_KEY,
 };
 
 fn write_secret_key(path: &std::path::Path, sk: &secp256k1::SecretKey) {
-    let hex: String = sk.secret_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+    let hex: String = sk.secret_bytes().iter().map(|b| format!("{b:02x}")).collect();
     std::fs::write(path, hex).unwrap();
 }
 
 fn test_guard() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    match LOCK.get_or_init(|| Mutex::new(())).lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
 #[test]
@@ -36,19 +37,32 @@ fn scenario_a_refund_signed_and_recorded() {
     drop(tmp);
     let listen = format!("127.0.0.1:{port}");
 
-    let cfg = GuardianConfig { listen_addr: listen.clone(), wrpc_url: None, mainnet: false, key_path: key_path.clone(), state_path: None };
+    let cfg =
+        GuardianConfig { listen_addr: listen.clone(), wrpc_url: None, mainnet: false, key_path: key_path.clone(), state_path: None };
     let state = run(&cfg);
 
     let state_watch = state.clone();
-    let pk_watch = pk.clone();
+    let pk_watch = pk;
     let (tx, rx) = std::sync::mpsc::channel();
+    // Bind watcher socket before triggering guardian, and direct guardian to this port via env
+    let watcher = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let watcher_port = watcher.local_addr().unwrap().port();
+    std::env::set_var("KDAPP_GUARDIAN_WATCHER_ADDR", format!("127.0.0.1:{watcher_port}"));
     thread::spawn(move || {
-        let sock = UdpSocket::bind("127.0.0.1:9590").unwrap();
+        let sock = watcher;
         let mut buf = [0u8; 1024];
         let (n, src) = sock.recv_from(&mut buf).unwrap();
         let tlv = TlvMsg::decode(&buf[..n]).unwrap();
         // Ack the escalate so guardian doesn't retry
-        let mut ack = TlvMsg { version: tlv.version, msg_type: MsgType::Ack as u8, episode_id: tlv.episode_id, seq: tlv.seq, state_hash: [0u8;32], payload: vec![], auth: [0u8;32] };
+        let mut ack = TlvMsg {
+            version: tlv.version,
+            msg_type: MsgType::Ack as u8,
+            episode_id: tlv.episode_id,
+            seq: tlv.seq,
+            state_hash: [0u8; 32],
+            payload: vec![],
+            auth: [0u8; 32],
+        };
         ack.sign(DEMO_HMAC_KEY);
         let _ = sock.send_to(&ack.encode(), src);
         let msg = GuardianMsg::try_from_slice(&tlv.payload).unwrap();
@@ -95,16 +109,27 @@ fn scenario_b_replay_confirm_rejected() {
     drop(tmp);
     let listen = format!("127.0.0.1:{port}");
 
-    let cfg = GuardianConfig { listen_addr: listen.clone(), wrpc_url: None, mainnet: false, key_path: key_path, state_path: None };
+    let cfg = GuardianConfig { listen_addr: listen.clone(), wrpc_url: None, mainnet: false, key_path, state_path: None };
     let state = run(&cfg);
 
-    // Minimal watcher to ack escalate
-    thread::spawn(|| {
-        let sock = UdpSocket::bind("127.0.0.1:9590").unwrap();
-        let mut buf = [0u8;1024];
+    // Minimal watcher to ack escalate; bind first and point guardian to it via env var
+    let watcher = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let watcher_port = watcher.local_addr().unwrap().port();
+    std::env::set_var("KDAPP_GUARDIAN_WATCHER_ADDR", format!("127.0.0.1:{watcher_port}"));
+    thread::spawn(move || {
+        let sock = watcher;
+        let mut buf = [0u8; 1024];
         let (n, src) = sock.recv_from(&mut buf).unwrap();
         if let Some(tlv) = TlvMsg::decode(&buf[..n]) {
-            let mut ack = TlvMsg { version: tlv.version, msg_type: MsgType::Ack as u8, episode_id: tlv.episode_id, seq: tlv.seq, state_hash: [0u8;32], payload: vec![], auth: [0u8;32] };
+            let mut ack = TlvMsg {
+                version: tlv.version,
+                msg_type: MsgType::Ack as u8,
+                episode_id: tlv.episode_id,
+                seq: tlv.seq,
+                state_hash: [0u8; 32],
+                payload: vec![],
+                auth: [0u8; 32],
+            };
             ack.sign(DEMO_HMAC_KEY);
             let _ = sock.send_to(&ack.encode(), src);
         }
@@ -132,9 +157,12 @@ fn scenario_c_unknown_episode_no_sign() {
     let before = metrics::snapshot();
     // Episode 99 not recorded in disputes
     {
-        let known = { let s = state.lock().unwrap(); s.disputes.contains(&99) };
+        let known = {
+            let s = state.lock().unwrap();
+            s.disputes.contains(&99)
+        };
         if known {
-            state.lock().unwrap().sign_refund(99, &[0u8;0], &sk);
+            state.lock().unwrap().sign_refund(99, &[0u8; 0], &sk);
         } else {
             log::warn!("guardian: escalation for unknown episode 99");
         }

@@ -29,9 +29,10 @@ thiserror.workspace = true
 # parking_lot.workspace = true
 rand.workspace = true
 # rayon.workspace = true
-secp256k1 = { workspace = true, features = ["global-context", "rand-std"] }
+secp256k1 = { workspace = true, features = ["global-context", "rand-std", "serde"] }
 sha2.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "rt-multi-thread", "net"] }
+serde.workspace = true
 
 [features]
 default = []

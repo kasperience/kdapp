@@ -8,6 +8,7 @@ kdapp = { path = "../../kdapp" }
 kdapp-guardian = { path = "../kdapp-guardian" }
 borsh = { version = "1.5.1", features = ["derive"] }
 log = "0.4.25"
+secp256k1 = { workspace = true }
 
 [[test]]
 name = "guardian_refund"

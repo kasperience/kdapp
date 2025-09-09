@@ -1,66 +1,93 @@
 # kdapp-guardian
 
-This example shows a minimal guardian service that observes checkpoint
-anchors and assists merchants and customers during disputes.
+Minimal guardian service that watches checkpoint anchors and helps resolve disputes by co-signing refunds.
 
-## Running the guardian
+## Quickstart
 
-The `guardian-service` binary reads a small TOML configuration file and
-starts a UDP listener for guardian messages while polling the Kaspa
-virtual chain for checkpoint anchors:
+- Create a config file (TOML):
 
-```bash
-guardian-service --config config.toml
+  ```toml
+  # config.toml
+  listen_addr = "127.0.0.1:9650"      # UDP for guardian TLV
+  wrpc_url = "wss://node:16110"       # Kaspa wRPC endpoint (testnet-10 or mainnet)
+  mainnet = false                      # false = testnet-10
+  key_path = "guardian.key"            # will be created if missing
+  state_path = "guardian_state.json"   # optional, persists disputes + signatures
+  ```
+
+- Run the service:
+
+  ```sh
+  cargo run -p kdapp-guardian --bin guardian-service -- --config config.toml
+  ```
+
+  On startup it prints the guardian public key (hex). Use this when configuring merchants/customers.
+
+## What it does
+
+- UDP TLV listener: accepts `Handshake`, `Escalate`, and `Confirm` messages signed with a shared HMAC key.
+- Anchor watcher (wRPC): connects to Kaspa and scans accepted virtual blocks for compact OKCP checkpoint records (prefix `KMCP`).
+  - Tracks per-episode sequences and marks an episode as disputed if a replay or gap is seen.
+- Refund co-sign: upon a valid `Escalate` that includes a refund transaction, the guardian signs the refund with its private key.
+- Watcher notification: after co-signing, it notifies the checkpoint watcher (UDP `127.0.0.1:9590`) with a `Refund` TLV so the watcher can verify and log the refund.
+- Optional persistence: when `state_path` is set, maintains disputes, last sequences and signed refunds across restarts.
+
+## HTTP endpoints
+
+- Health: `GET http://<host>:<listen_port+1>/healthz` → `ok`
+- Metrics: `GET http://<host>:<listen_port+1>/metrics`
+
+Example metrics JSON:
+
+```json
+{
+  "valid": 12,
+  "invalid": 1,
+  "disputes": 2,
+  "observed_payments": 3,
+  "guardian_refunds": 1
+}
 ```
 
-An example config:
+Fields:
+- valid/invalid: count of accepted vs rejected guardian TLV messages (HMAC/ordering).
+- disputes: number of open disputes (episodes with sequence discrepancies or escalations).
+- observed_payments: `Escalate` messages received that referenced an invoice/payment.
+- guardian_refunds: refunds the guardian has co-signed (size of the signature store).
 
-```toml
-listen_addr = "127.0.0.1:9650"
-wrpc_url = "wss://node:16110"
-mainnet = false
-key_path = "guardian.key"
-state_path = "guardian_state.json"
-```
+## End-to-end on testnet
 
-Under the hood the service uses `get_block_dag_info` +
-`get_virtual_chain_from_block` to follow accepted blocks and scans their
-merged blocks for compact OKCP records (program prefix `KMCP`). The
-returned `GuardianState` is shared and updated as anchors are observed
-on‑chain. When `state_path` is provided the guardian persists its state
-to disk, allowing disputes and sequence information to survive restarts.
+1) Start the guardian (see Quickstart). Note the printed guardian public key (hex).
 
-## Using with merchant and customer
+2) Start the kdapp-merchant watcher on the same machine so it listens on UDP `127.0.0.1:9590`:
 
-Both the merchant and customer binaries accept the guardian's UDP
-address and public key:
-
-```
-# merchant
-cargo run -p kdapp-merchant -- --guardian-addr 127.0.0.1:9650 --guardian-public-key <hex>
-
-# customer
-cargo run -p kdapp-customer -- --guardian-addr 127.0.0.1:9650 --guardian-public-key <hex> ...
-```
-
-During normal operation each side performs a `Handshake` with the
-guardian and periodically sends `Confirm` messages referencing the
-latest checkpoint sequence. If a customer detects a problem it may
-send an `Escalate` message which causes the guardian to verify the
-latest checkpoint and co‑sign a refund or release transaction.
-
-## Dispute flow example
-
-1. The merchant observes a conflicting payment and forwards a dispute:
-
-   ```rust
-   guardian::send_escalate("127.0.0.1:9650", 1, "payment dispute".into(), refund_tx.clone(), guardian::DEMO_HMAC_KEY);
+   ```sh
+   cargo run -p kdapp-merchant -- watcher --kaspa-private-key <hex> --wrpc-url wss://node:16110 --http-port 9591
    ```
 
-2. The guardian's watcher detects the next `OKCP` anchor and notices a
-   gap in the sequence, recording an open dispute in `GuardianState`.
+   The watcher anchors OKCP checkpoints on-chain and exposes `GET http://127.0.0.1:9591/mempool`.
 
-3. When the `Escalate` message arrives the guardian verifies the
-   checkpoint and signs the provided refund transaction using the
-   demo keypair. The merchant can then broadcast the refund once the
-   signature is verified.
+3) Run kdapp-merchant and include the guardian address/key so disputes are forwarded to the guardian:
+
+   ```sh
+   cargo run -p kdapp-merchant -- \
+     --guardian-addr 127.0.0.1:9650 \
+     --guardian-key <guardian_pubkey_hex> \
+     create --episode-id 42 --invoice-id 1 --amount 1000
+   # then open a dispute by canceling the invoice before it is paid
+   cargo run -p kdapp-merchant -- cancel --episode-id 42 --invoice-id 1
+   ```
+
+   After the cancel, the guardian signs the refund and notifies the watcher. In watcher logs you should see:
+
+   - `checkpoint received: ep=42 seq=...` (periodic)
+   - `refund verified for ep=42 seq=0`
+
+   In guardian logs: `guardian: co-signed refund and notified watcher for episode 42`.
+
+## Troubleshooting
+
+- wrpc connect errors: verify `wrpc_url` and network (`mainnet=false` uses testnet-10).
+- unknown episode warnings: a refund was escalated for an episode the guardian hasn’t observed yet; once checkpoints arrive (or another escalate occurs) the dispute will be tracked.
+- ack timeout when notifying watcher: the watcher does not ack `Refund`; this is expected. The guardian still sends the notification once.
+
