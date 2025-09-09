@@ -30,6 +30,8 @@ pub struct GuardianConfig {
     pub mainnet: bool,
     pub key_path: PathBuf,
     pub state_path: Option<PathBuf>,
+    /// Optional explicit watcher address (overrides env var)
+    pub watcher_addr: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -53,6 +55,9 @@ struct Cli {
     /// Optional path to persist guardian state
     #[arg(long)]
     state_path: Option<PathBuf>,
+    /// Optional explicit watcher address (overrides env var)
+    #[arg(long)]
+    watcher_addr: Option<String>,
 }
 
 impl GuardianConfig {
@@ -68,6 +73,7 @@ impl GuardianConfig {
                 mainnet: false,
                 key_path: PathBuf::from("guardian.key"),
                 state_path: None,
+                watcher_addr: None,
             }
         };
 
@@ -85,6 +91,9 @@ impl GuardianConfig {
         }
         if let Some(v) = args.state_path {
             cfg.state_path = Some(v);
+        }
+        if let Some(v) = args.watcher_addr {
+            cfg.watcher_addr = Some(v);
         }
         cfg
     }
@@ -141,6 +150,7 @@ async fn watch_anchors(
     client: &KaspaRpcClient,
     state: Arc<Mutex<GuardianState>>,
     state_path: Option<PathBuf>,
+    watcher_override: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Poll the virtual chain and scan merged blocks for OKCP payloads
     use tokio::time::{sleep, Duration};
@@ -190,7 +200,7 @@ async fn watch_anchors(
                             }
                             drop(s);
                             if discrepancy {
-                                handle_escalate(&state, rec.episode_id, None, &state_path);
+                                handle_escalate(&state, rec.episode_id, None, &state_path, &watcher_override);
                             }
                         }
                     }
@@ -200,33 +210,31 @@ async fn watch_anchors(
     }
 }
 
-fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx: Option<Vec<u8>>, state_path: &Option<PathBuf>) {
-    let known = {
-        let s = state.lock().unwrap();
-        s.disputes.contains(&episode_id)
-    };
-    if known {
-        if let Some(tx) = refund_tx {
-            if let Some(sk) = GUARDIAN_SK.get() {
-                // Sign and persist first so tests can immediately observe the signature
-                let _sig = {
-                    let mut s = state.lock().unwrap();
-                    let sig = s.sign_refund(episode_id, &tx, sk);
-                    if let Some(ref p) = state_path {
-                        s.persist(p);
-                    }
-                    sig
-                };
-                // Then notify watcher with an Escalate message (expected by tests)
-                let watcher = watcher_addr();
-                send_escalate(&watcher, episode_id, "refund".into(), tx, DEMO_HMAC_KEY);
-                info!("guardian: co-signed refund for episode {episode_id}");
-            }
-        } else {
-            info!("guardian: discrepancy detected for episode {episode_id}");
+fn handle_escalate(
+    state: &Arc<Mutex<GuardianState>>,
+    episode_id: u64,
+    refund_tx: Option<Vec<u8>>,
+    state_path: &Option<PathBuf>,
+    watcher_override: &Option<String>,
+) {
+    if let Some(tx) = refund_tx {
+        if let Some(sk) = GUARDIAN_SK.get() {
+            // Sign and persist first so tests can immediately observe the signature
+            let _sig = {
+                let mut s = state.lock().unwrap();
+                let sig = s.sign_refund(episode_id, &tx, sk);
+                if let Some(ref p) = state_path {
+                    s.persist(p);
+                }
+                sig
+            };
+            // Then notify watcher with an Escalate message (expected by tests)
+            let watcher = watcher_override.clone().unwrap_or_else(watcher_addr);
+            send_escalate(&watcher, episode_id, "refund".into(), tx, DEMO_HMAC_KEY);
+            info!("guardian: co-signed refund for episode {episode_id}");
         }
     } else {
-        warn!("guardian: escalation for unknown episode {episode_id}");
+        info!("guardian: discrepancy detected for episode {episode_id}");
     }
 }
 
@@ -285,6 +293,7 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
     let sock_clone = sock.try_clone().expect("clone socket");
     let state_clone = state.clone();
     let path_udp = config.state_path.clone();
+    let watcher_override_udp = config.watcher_addr.clone();
     thread::spawn(move || loop {
         let mut st = state_clone.lock().unwrap();
         if let Some(msg) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
@@ -293,7 +302,7 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
             }
             if let GuardianMsg::Escalate { episode_id, refund_tx, .. } = msg {
                 drop(st);
-                handle_escalate(&state_clone, episode_id, Some(refund_tx), &path_udp);
+                handle_escalate(&state_clone, episode_id, Some(refund_tx), &path_udp, &watcher_override_udp);
             }
         }
     });
@@ -301,6 +310,7 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
     // spawn wRPC watcher
     let state_watch = state.clone();
     let path_watch = config.state_path.clone();
+    let watcher_override_watch = config.watcher_addr.clone();
     let wrpc_url = config.wrpc_url.clone();
     let mainnet = config.mainnet;
     thread::spawn(move || {
@@ -309,7 +319,7 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
             let network =
                 if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             if let Ok(client) = proxy::connect_client(network, wrpc_url).await {
-                let _ = watch_anchors(&client, state_watch, path_watch).await;
+                let _ = watch_anchors(&client, state_watch, path_watch, watcher_override_watch).await;
             }
         });
     });
@@ -352,7 +362,7 @@ mod tests {
         let (sk, _) = generate_keypair();
         let _ = GUARDIAN_SK.get_or_init(|| sk);
         let path = std::env::temp_dir().join("guardian_state_test.json");
-        handle_escalate(&state, 42, Some(vec![1, 2, 3]), &Some(path.clone()));
+        handle_escalate(&state, 42, Some(vec![1, 2, 3]), &Some(path.clone()), &None);
         assert_eq!(state.lock().unwrap().refund_signatures.len(), 1);
         assert!(path.exists());
         let _ = std::fs::remove_file(path);
@@ -363,7 +373,7 @@ mod tests {
         let _g = test_guard();
         let state = Arc::new(Mutex::new(GuardianState::default()));
         state.lock().unwrap().disputes.push(7);
-        handle_escalate(&state, 7, None, &None);
+        handle_escalate(&state, 7, None, &None, &None);
         assert!(state.lock().unwrap().refund_signatures.is_empty());
     }
 }

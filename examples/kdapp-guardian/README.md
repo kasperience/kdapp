@@ -13,6 +13,7 @@ Minimal guardian service that watches checkpoint anchors and helps resolve dispu
   mainnet = false                      # false = testnet-10
   key_path = "guardian.key"            # will be created if missing
   state_path = "guardian_state.json"   # optional, persists disputes + signatures
+  watcher_addr = "127.0.0.1:9590"      # optional; overrides KDAPP_GUARDIAN_WATCHER_ADDR
   ```
 
 - Run the service:
@@ -29,7 +30,7 @@ Minimal guardian service that watches checkpoint anchors and helps resolve dispu
 - Anchor watcher (wRPC): connects to Kaspa and scans accepted virtual blocks for compact OKCP checkpoint records (prefix `KMCP`).
   - Tracks per-episode sequences and marks an episode as disputed if a replay or gap is seen.
 - Refund co-sign: upon a valid `Escalate` that includes a refund transaction, the guardian signs the refund with its private key.
-- Watcher notification: after co-signing, it notifies the checkpoint watcher (UDP `127.0.0.1:9590`) with a `Refund` TLV so the watcher can verify and log the refund.
+- Watcher notification: after co-signing, it notifies the checkpoint watcher (UDP `watcher_addr` or `KDAPP_GUARDIAN_WATCHER_ADDR`, default `127.0.0.1:9590`) with a `Refund` TLV so the watcher can verify and log the refund.
 - Optional persistence: when `state_path` is set, maintains disputes, last sequences and signed refunds across restarts.
 
 ## HTTP endpoints
@@ -90,4 +91,3 @@ Fields:
 - wrpc connect errors: verify `wrpc_url` and network (`mainnet=false` uses testnet-10).
 - unknown episode warnings: a refund was escalated for an episode the guardian hasn’t observed yet; once checkpoints arrive (or another escalate occurs) the dispute will be tracked.
 - ack timeout when notifying watcher: the watcher does not ack `Refund`; this is expected. The guardian still sends the notification once.
-

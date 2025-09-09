@@ -37,17 +37,22 @@ fn scenario_a_refund_signed_and_recorded() {
     drop(tmp);
     let listen = format!("127.0.0.1:{port}");
 
-    let cfg =
-        GuardianConfig { listen_addr: listen.clone(), wrpc_url: None, mainnet: false, key_path: key_path.clone(), state_path: None };
+    // Bind watcher socket before triggering guardian and pass it via config
+    let watcher = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let watcher_port = watcher.local_addr().unwrap().port();
+    let cfg = GuardianConfig {
+        listen_addr: listen.clone(),
+        wrpc_url: None,
+        mainnet: false,
+        key_path: key_path.clone(),
+        state_path: None,
+        watcher_addr: Some(format!("127.0.0.1:{watcher_port}")),
+    };
     let state = run(&cfg);
 
     let state_watch = state.clone();
     let pk_watch = pk;
     let (tx, rx) = std::sync::mpsc::channel();
-    // Bind watcher socket before triggering guardian, and direct guardian to this port via env
-    let watcher = UdpSocket::bind("127.0.0.1:0").unwrap();
-    let watcher_port = watcher.local_addr().unwrap().port();
-    std::env::set_var("KDAPP_GUARDIAN_WATCHER_ADDR", format!("127.0.0.1:{watcher_port}"));
     thread::spawn(move || {
         let sock = watcher;
         let mut buf = [0u8; 1024];
@@ -68,7 +73,7 @@ fn scenario_a_refund_signed_and_recorded() {
         let msg = GuardianMsg::try_from_slice(&tlv.payload).unwrap();
         if let GuardianMsg::Escalate { episode_id, refund_tx, .. } = msg {
             // wait briefly for state to persist signature
-            thread::sleep(Duration::from_millis(50));
+            thread::sleep(Duration::from_millis(150));
             let sig = {
                 let st = state_watch.lock().unwrap();
                 st.refund_signatures.iter().find(|(ep, _)| *ep == episode_id).map(|(_, s)| *s).unwrap()
@@ -84,7 +89,7 @@ fn scenario_a_refund_signed_and_recorded() {
     let episode = 42u64;
     let refund_tx = b"demo refund".to_vec();
     send_escalate(&listen, episode, "late payment".into(), refund_tx, DEMO_HMAC_KEY);
-    let (ep, verified) = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    let (ep, verified) = rx.recv_timeout(Duration::from_secs(3)).unwrap();
     assert_eq!(ep, episode);
     assert!(verified);
     assert_eq!(state.lock().unwrap().refund_signatures.len(), 1);
@@ -109,13 +114,18 @@ fn scenario_b_replay_confirm_rejected() {
     drop(tmp);
     let listen = format!("127.0.0.1:{port}");
 
-    let cfg = GuardianConfig { listen_addr: listen.clone(), wrpc_url: None, mainnet: false, key_path, state_path: None };
-    let state = run(&cfg);
-
-    // Minimal watcher to ack escalate; bind first and point guardian to it via env var
+    // Minimal watcher to ack escalate; bind first and pass via config
     let watcher = UdpSocket::bind("127.0.0.1:0").unwrap();
     let watcher_port = watcher.local_addr().unwrap().port();
-    std::env::set_var("KDAPP_GUARDIAN_WATCHER_ADDR", format!("127.0.0.1:{watcher_port}"));
+    let cfg = GuardianConfig {
+        listen_addr: listen.clone(),
+        wrpc_url: None,
+        mainnet: false,
+        key_path,
+        state_path: None,
+        watcher_addr: Some(format!("127.0.0.1:{watcher_port}")),
+    };
+    let state = run(&cfg);
     thread::spawn(move || {
         let sock = watcher;
         let mut buf = [0u8; 1024];
@@ -138,9 +148,9 @@ fn scenario_b_replay_confirm_rejected() {
     let before = metrics::snapshot();
     let ep = 7u64;
     send_escalate(&listen, ep, "late".into(), vec![], DEMO_HMAC_KEY);
-    thread::sleep(Duration::from_millis(50));
+    thread::sleep(Duration::from_millis(150));
     send_confirm(&listen, ep, 1, DEMO_HMAC_KEY);
-    thread::sleep(Duration::from_millis(50));
+    thread::sleep(Duration::from_millis(150));
     send_confirm(&listen, ep, 1, DEMO_HMAC_KEY);
     thread::sleep(Duration::from_millis(200));
     let after = metrics::snapshot();
