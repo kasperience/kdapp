@@ -24,6 +24,7 @@ pub struct GuardianConfig {
     #[serde(default)]
     pub mainnet: bool,
     pub key_path: PathBuf,
+    pub state_path: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
@@ -44,6 +45,9 @@ struct Cli {
     /// Path to guardian private key
     #[arg(long)]
     key_path: Option<PathBuf>,
+    /// Optional path to persist guardian state
+    #[arg(long)]
+    state_path: Option<PathBuf>,
 }
 
 impl GuardianConfig {
@@ -58,6 +62,7 @@ impl GuardianConfig {
                 wrpc_url: None,
                 mainnet: false,
                 key_path: PathBuf::from("guardian.key"),
+                state_path: None,
             }
         };
 
@@ -72,6 +77,9 @@ impl GuardianConfig {
         }
         if let Some(v) = args.key_path {
             cfg.key_path = v;
+        }
+        if let Some(v) = args.state_path {
+            cfg.state_path = Some(v);
         }
         cfg
     }
@@ -99,7 +107,11 @@ fn decode_okcp(bytes: &[u8]) -> Option<OkcpRecord> {
     Some(OkcpRecord { episode_id, seq })
 }
 
-async fn watch_anchors(client: &KaspaRpcClient, state: Arc<Mutex<GuardianState>>) -> Result<(), Box<dyn std::error::Error>> {
+async fn watch_anchors(
+    client: &KaspaRpcClient,
+    state: Arc<Mutex<GuardianState>>,
+    state_path: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Poll the virtual chain and scan merged blocks for OKCP payloads
     use tokio::time::{sleep, Duration};
 
@@ -142,9 +154,13 @@ async fn watch_anchors(client: &KaspaRpcClient, state: Arc<Mutex<GuardianState>>
                     if !payload.is_empty() {
                         if let Some(rec) = decode_okcp(payload) {
                             let mut s = state.lock().unwrap();
-                            if s.record_checkpoint(rec.episode_id, rec.seq) {
-                                drop(s);
-                                handle_escalate(&state, rec.episode_id, None);
+                            let discrepancy = s.record_checkpoint(rec.episode_id, rec.seq);
+                            if let Some(ref p) = state_path {
+                                s.persist(p);
+                            }
+                            drop(s);
+                            if discrepancy {
+                                handle_escalate(&state, rec.episode_id, None, &state_path);
                             }
                         }
                     }
@@ -154,7 +170,12 @@ async fn watch_anchors(client: &KaspaRpcClient, state: Arc<Mutex<GuardianState>>
     }
 }
 
-fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx: Option<Vec<u8>>) {
+fn handle_escalate(
+    state: &Arc<Mutex<GuardianState>>,
+    episode_id: u64,
+    refund_tx: Option<Vec<u8>>,
+    state_path: &Option<PathBuf>,
+) {
     let known = {
         let s = state.lock().unwrap();
         s.checkpoints.iter().any(|(id, _)| *id == episode_id)
@@ -164,7 +185,11 @@ fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx
             if let Some(sk) = GUARDIAN_SK.get() {
                 let _sig = {
                     let mut s = state.lock().unwrap();
-                    s.sign_refund(episode_id, &tx, sk)
+                    let sig = s.sign_refund(episode_id, &tx, sk);
+                    if let Some(ref p) = state_path {
+                        s.persist(p);
+                    }
+                    sig
                 };
                 info!("guardian: co-signed refund for episode {episode_id}");
             }
@@ -221,21 +246,32 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
     info!("guardian public key {}", String::from_utf8(pk_hex).expect("utf8"));
     let sock = UdpSocket::bind(&config.listen_addr).expect("bind guardian service");
     info!("guardian service listening on {}", config.listen_addr);
-    let state = Arc::new(Mutex::new(GuardianState::default()));
+    let state = if let Some(ref path) = config.state_path {
+        Arc::new(Mutex::new(GuardianState::load(path)))
+    } else {
+        Arc::new(Mutex::new(GuardianState::default()))
+    };
 
     // spawn UDP listener
     let sock_clone = sock.try_clone().expect("clone socket");
     let state_clone = state.clone();
+    let path_udp = config.state_path.clone();
     thread::spawn(move || loop {
         let mut st = state_clone.lock().unwrap();
-        if let Some(GuardianMsg::Escalate { episode_id, refund_tx, .. }) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
-            drop(st);
-            handle_escalate(&state_clone, episode_id, Some(refund_tx));
+        if let Some(msg) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
+            if let Some(ref p) = path_udp {
+                st.persist(p);
+            }
+            if let GuardianMsg::Escalate { episode_id, refund_tx, .. } = msg {
+                drop(st);
+                handle_escalate(&state_clone, episode_id, Some(refund_tx), &path_udp);
+            }
         }
     });
 
     // spawn wRPC watcher
     let state_watch = state.clone();
+    let path_watch = config.state_path.clone();
     let wrpc_url = config.wrpc_url.clone();
     let mainnet = config.mainnet;
     thread::spawn(move || {
@@ -247,7 +283,7 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
                 NetworkId::with_suffix(NetworkType::Testnet, 10)
             };
             if let Ok(client) = proxy::connect_client(network, wrpc_url).await {
-                let _ = watch_anchors(&client, state_watch).await;
+                let _ = watch_anchors(&client, state_watch, path_watch).await;
             }
         });
     });

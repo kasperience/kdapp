@@ -20,13 +20,15 @@ listen_addr = "127.0.0.1:9650"
 wrpc_url = "wss://node:16110"
 mainnet = false
 key_path = "guardian.key"
+state_path = "guardian_state.json"
 ```
 
 Under the hood the service uses `get_block_dag_info` +
 `get_virtual_chain_from_block` to follow accepted blocks and scans their
 merged blocks for compact OKCP records (program prefix `KMCP`). The
 returned `GuardianState` is shared and updated as anchors are observed
-on‑chain.
+on‑chain. When `state_path` is provided the guardian persists its state
+to disk, allowing disputes and sequence information to survive restarts.
 
 ## Using with merchant and customer
 

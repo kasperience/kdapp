@@ -3,9 +3,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::pki::{sign_message, to_message, PubKey, Sig};
 use log::info;
 use secp256k1::SecretKey;
-use std::collections::HashMap;
-use std::net::UdpSocket;
-use std::time::Duration;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, fs, net::UdpSocket, path::Path, time::Duration};
 
 pub mod metrics;
 pub mod service;
@@ -113,7 +112,7 @@ pub enum GuardianMsg {
     Confirm { episode_id: u64, seq: u64 },
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct GuardianState {
     pub observed_payments: Vec<u64>,
     pub checkpoints: Vec<(u64, u64)>,
@@ -123,6 +122,27 @@ pub struct GuardianState {
 }
 
 impl GuardianState {
+    pub fn load(path: &Path) -> Self {
+        if let Ok(bytes) = fs::read(path) {
+            if let Ok(state) = serde_json::from_slice(&bytes) {
+                return state;
+            }
+        }
+        Self::default()
+    }
+
+    pub fn persist(&self, path: &Path) {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(data) = serde_json::to_vec(self) {
+            let tmp = path.with_extension("tmp");
+            if fs::write(&tmp, &data).is_ok() {
+                let _ = fs::rename(&tmp, path);
+            }
+        }
+    }
+
     pub fn observe_payment(&mut self, invoice_id: u64) {
         self.observed_payments.push(invoice_id);
     }
@@ -389,5 +409,38 @@ mod tests {
         send_confirm(&addr.to_string(), 5, 2, DEMO_HMAC_KEY);
         handle.join().unwrap();
         assert_eq!(metrics::snapshot(), (1, 1));
+    }
+
+    #[test]
+    fn state_persists_across_restarts() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let _g = test_guard();
+        metrics::reset();
+        let server = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let addr = server.local_addr().unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "guardian_state_test_{}.json",
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let episode = 42u64;
+        let handle = std::thread::spawn({
+            let path = path.clone();
+            move || {
+                let mut state = GuardianState::load(&path);
+                let m1 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
+                assert!(matches!(m1, GuardianMsg::Escalate { .. }));
+                state.persist(&path);
+                let m2 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
+                assert!(matches!(m2, GuardianMsg::Confirm { .. }));
+                state.persist(&path);
+            }
+        });
+        send_escalate(&addr.to_string(), episode, "late".into(), vec![], DEMO_HMAC_KEY);
+        send_confirm(&addr.to_string(), episode, 1, DEMO_HMAC_KEY);
+        handle.join().unwrap();
+        let state = GuardianState::load(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(state.disputes, vec![episode]);
     }
 }
