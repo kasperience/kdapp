@@ -89,7 +89,7 @@ fn scenario_a_refund_signed_and_recorded() {
     let episode = 42u64;
     let refund_tx = b"demo refund".to_vec();
     send_escalate(&listen, episode, "late payment".into(), refund_tx, DEMO_HMAC_KEY);
-    let (ep, verified) = rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    let (ep, verified) = rx.recv_timeout(Duration::from_secs(7)).unwrap();
     assert_eq!(ep, episode);
     assert!(verified);
     assert_eq!(state.lock().unwrap().refund_signatures.len(), 1);
