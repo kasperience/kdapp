@@ -15,7 +15,8 @@ use serde::Deserialize;
 use clap::Parser;
 use faster_hex::{hex_decode, hex_encode};
 
-use crate::{receive, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
+use crate::{receive, GuardianMsg, GuardianState, DEMO_HMAC_KEY, TlvMsg, TLV_VERSION};
+use kdapp::pki::PubKey;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct GuardianConfig {
@@ -154,25 +155,27 @@ async fn watch_anchors(client: &KaspaRpcClient, state: Arc<Mutex<GuardianState>>
     }
 }
 
+const REFUND_TYPE: u8 = 7;
+const WATCHER_ADDR: &str = "127.0.0.1:9590";
+
 fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx: Option<Vec<u8>>) {
-    let known = {
-        let s = state.lock().unwrap();
-        s.checkpoints.iter().any(|(id, _)| *id == episode_id)
-    };
-    if known {
-        if let Some(tx) = refund_tx {
-            if let Some(sk) = GUARDIAN_SK.get() {
-                let _sig = {
-                    let mut s = state.lock().unwrap();
-                    s.sign_refund(episode_id, &tx, sk)
-                };
-                info!("guardian: co-signed refund for episode {episode_id}");
-            }
-        } else {
-            info!("guardian: discrepancy detected for episode {episode_id}");
+    let discrep = { state.lock().unwrap().disputes.contains(&episode_id) };
+    if !discrep {
+        warn!("guardian: no checkpoint discrepancy for episode {episode_id}");
+        return;
+    }
+    if let Some(tx) = refund_tx {
+        if let Some(sk) = GUARDIAN_SK.get() {
+            let sig = { let mut s = state.lock().unwrap(); s.sign_refund(episode_id, &tx, sk) };
+            let secp = Secp256k1::new();
+            let gpk = PubKey(PublicKey::from_secret_key(&secp, sk));
+            let payload = borsh::to_vec(&(tx, sig, gpk)).expect("serialize refund");
+            let mut msg = TlvMsg { version: TLV_VERSION, msg_type: REFUND_TYPE, episode_id, seq: 0, state_hash: [0u8; 32], payload, auth: [0u8; 32] };
+            msg.sign(DEMO_HMAC_KEY);
+            let sock = UdpSocket::bind("0.0.0.0:0").expect("bind refund sender");
+            let _ = sock.send_to(&msg.encode(), WATCHER_ADDR);
+            info!("guardian: co-signed refund for episode {episode_id}");
         }
-    } else {
-        warn!("guardian: escalation for unknown episode {episode_id}");
     }
 }
 
@@ -253,4 +256,17 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
     });
 
     state
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refuses_without_discrepancy() {
+        let _ = GUARDIAN_SK.set(SecretKey::from_slice(&[1u8; 32]).unwrap());
+        let state = Arc::new(Mutex::new(GuardianState::default()));
+        handle_escalate(&state, 1, Some(b"tx".to_vec()));
+        assert!(state.lock().unwrap().refund_signatures.is_empty());
+    }
 }

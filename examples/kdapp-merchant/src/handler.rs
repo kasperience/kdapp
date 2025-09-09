@@ -3,7 +3,16 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use kdapp::episode::{EpisodeEventHandler, EpisodeId, PayloadMetadata};
-use kdapp::pki::{to_message, verify_signature, PubKey, Sig};
+use kdapp::pki::PubKey;
+use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
+use kaspa_consensus_core::{
+    constants::TX_VERSION,
+    sign::sign,
+    subnets::SUBNETWORK_ID_NATIVE,
+    tx::{MutableTransaction, Transaction, TransactionInput, TransactionOutpoint, TransactionOutput, UtxoEntry},
+};
+use kaspa_txscript::pay_to_address_script;
+use secp256k1::{Keypair, Secp256k1, SecretKey};
 
 use crate::client_sender;
 use crate::episode::{MerchantCommand, ReceiptEpisode};
@@ -21,6 +30,11 @@ static LAST_CKPT: OnceLock<Mutex<HashMap<EpisodeId, u64>>> = OnceLock::new();
 static DID_HANDSHAKE: OnceLock<()> = OnceLock::new();
 static GUARDIANS: OnceLock<Mutex<Vec<(String, PubKey)>>> = OnceLock::new();
 static GUARDIAN_HANDSHAKES: OnceLock<Mutex<HashSet<PubKey>>> = OnceLock::new();
+static MERCHANT_SK: OnceLock<SecretKey> = OnceLock::new();
+
+pub fn set_merchant_sk(sk: SecretKey) {
+    let _ = MERCHANT_SK.set(sk);
+}
 
 fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
@@ -82,33 +96,47 @@ fn emit_checkpoint(episode_id: EpisodeId, episode: &ReceiptEpisode, force: bool)
     }
 }
 
-fn forward_dispute(episode_id: EpisodeId, episode: &ReceiptEpisode) {
-    if let Some(glist) = GUARDIANS.get() {
-        for (addr, gpk) in glist.lock().unwrap().clone() {
-            if episode.guardian_keys.contains(&gpk) {
-                let refund_tx = b"demo refund".to_vec();
-                guardian::send_escalate(
-                    &addr,
-                    episode_id as u64,
-                    "payment dispute".into(),
-                    refund_tx.clone(),
-                    guardian::DEMO_HMAC_KEY,
-                );
-                // In a real implementation the guardian's signature would be returned out of band
-                // and verified before broadcasting the refund transaction.
-                let dummy = secp256k1::ecdsa::Signature::from_compact(&[0u8; 64]);
-                if let Ok(sig) = dummy {
-                    let sig = Sig(sig);
-                    let _ = verify_guardian_cosign(&refund_tx, &sig, &gpk);
+fn create_refund_tx(episode: &ReceiptEpisode, invoice_id: u64) -> Option<Vec<u8>> {
+    let sk = MERCHANT_SK.get()?;
+    let inv = episode.invoices.get(&invoice_id)?;
+    let payer = inv.payer?;
+    let txid = inv.carrier_tx?;
+
+    let outpoint = TransactionOutpoint::new(txid, 0);
+    let merchant_pk = episode.merchant_keys.first()?.0;
+    let addr_prefix = AddrPrefix::Testnet;
+    let merchant_addr = Address::new(addr_prefix, AddrVersion::PubKey, &merchant_pk.x_only_public_key().0.serialize());
+    let in_script = pay_to_address_script(&merchant_addr);
+    let entry = UtxoEntry::new(inv.amount, in_script, 0, false);
+
+    let payer_addr = Address::new(addr_prefix, AddrVersion::PubKey, &payer.0.x_only_public_key().0.serialize());
+    let out_script = pay_to_address_script(&payer_addr);
+    let fee = 1_000;
+    let output = TransactionOutput { value: inv.amount.saturating_sub(fee), script_public_key: out_script };
+    let input = TransactionInput { previous_outpoint: outpoint, signature_script: vec![], sequence: 0, sig_op_count: 1 };
+    let mut tx = Transaction::new_non_finalized(TX_VERSION, vec![input], vec![output], 0, SUBNETWORK_ID_NATIVE, 0, vec![]);
+    tx.finalize();
+    let keypair = Keypair::from_secret_key(&Secp256k1::new(), sk);
+    let signed = sign(MutableTransaction::with_entries(tx, vec![entry]), keypair).tx;
+    Some(signed.id().as_bytes().to_vec())
+}
+
+fn forward_dispute(episode_id: EpisodeId, episode: &ReceiptEpisode, invoice_id: u64) {
+    if let Some(refund_tx) = create_refund_tx(episode, invoice_id) {
+        if let Some(glist) = GUARDIANS.get() {
+            for (addr, gpk) in glist.lock().unwrap().clone() {
+                if episode.guardian_keys.contains(&gpk) {
+                    guardian::send_escalate(
+                        &addr,
+                        episode_id as u64,
+                        "payment dispute".into(),
+                        refund_tx.clone(),
+                        guardian::DEMO_HMAC_KEY,
+                    );
                 }
             }
         }
     }
-}
-
-fn verify_guardian_cosign(tx: &[u8], sig: &Sig, gpk: &PubKey) -> bool {
-    let msg = to_message(&tx.to_vec());
-    verify_signature(gpk, &msg, sig)
 }
 
 impl EpisodeEventHandler<ReceiptEpisode> for MerchantEventHandler {
@@ -136,8 +164,8 @@ impl EpisodeEventHandler<ReceiptEpisode> for MerchantEventHandler {
         storage::flush();
         let force = matches!(cmd, MerchantCommand::AckReceipt { .. });
         emit_checkpoint(episode_id, episode, force);
-        if matches!(cmd, MerchantCommand::CancelInvoice { .. }) {
-            forward_dispute(episode_id, episode);
+        if let MerchantCommand::CancelInvoice { invoice_id } = cmd {
+            forward_dispute(episode_id, episode, *invoice_id);
         }
     }
 

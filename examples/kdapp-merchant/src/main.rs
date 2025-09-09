@@ -347,6 +347,7 @@ fn main() {
     match args.command.unwrap_or(CliCmd::Demo) {
         CliCmd::Demo => {
             let (merchant_sk, merchant_pk) = generate_keypair();
+            handler::set_merchant_sk(merchant_sk.clone());
             let (customer_sk, customer_pk) = generate_keypair();
             storage::put_customer(&customer_pk, &CustomerInfo::default());
             let episode_id: u32 = 42;

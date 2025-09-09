@@ -244,9 +244,6 @@ pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Optio
         GuardianMsg::Escalate { episode_id, reason, .. } => {
             info!("escalation episode {episode_id} reason {reason}");
             state.observe_payment(*episode_id);
-            if !state.disputes.contains(episode_id) {
-                state.disputes.push(*episode_id);
-            }
         }
         GuardianMsg::Confirm { episode_id, seq } => {
             if state.record_checkpoint(*episode_id, *seq) {

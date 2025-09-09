@@ -13,6 +13,7 @@ use secp256k1::SecretKey;
 use serde::{Deserialize, Serialize};
 
 use crate::episode::{MerchantCommand, ReceiptEpisode};
+use crate::handler;
 use crate::sim_router::SimRouter;
 use crate::storage;
 use crate::watcher;
@@ -38,6 +39,7 @@ impl AppState {
         max_fee: Option<u64>,
         congestion_threshold: Option<f64>,
     ) -> Self {
+        handler::set_merchant_sk(merchant_sk.clone());
         Self {
             router,
             episode_id,
