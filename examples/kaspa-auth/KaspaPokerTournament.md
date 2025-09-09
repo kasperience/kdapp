@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 ##### ARCHITECTURAL CONVO
 You've hit on the core philosophical and architectural difference between the
   kdapp model and traditional L2 infrastructure.
@@ -1395,7 +1393,6 @@ Of course. These are excellent questions that go to the heart of the kdapp archi
 
 
 
->>>>>>> master
 ## 🎯 **Recommended Development Sequence**
 
 ### **Phase 1: Complete kaspa-auth (Day 6)**
