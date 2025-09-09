@@ -194,7 +194,7 @@ fn send_with_retry(dest: &str, mut tlv: TlvMsg, key: &[u8]) {
     let sock = UdpSocket::bind("0.0.0.0:0").expect("bind sender");
     let bytes = tlv.encode();
     let expected = MsgType::Ack as u8;
-    let mut timeout_ms = 300u64;
+    let mut timeout_ms = 800u64;
     for attempt in 0..3 {
         let _ = sock.send_to(&bytes, dest);
         let _ = sock.set_read_timeout(Some(Duration::from_millis(timeout_ms)));
