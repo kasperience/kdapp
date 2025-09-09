@@ -14,3 +14,12 @@ kaspa-wrpc-client = { workspace = true }
 kaspa-rpc-core = { workspace = true }
 kaspa-consensus-core = { workspace = true }
 secp256k1 = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+toml = "0.8"
+faster-hex = { workspace = true }
+env_logger = { workspace = true }
+
+[[bin]]
+name = "guardian-service"
+path = "src/main.rs"

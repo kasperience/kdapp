@@ -5,21 +5,28 @@ anchors and assists merchants and customers during disputes.
 
 ## Running the guardian
 
-The `service::run` helper starts a UDP listener for guardian messages
-and polls the Kaspa virtual chain via RPC to detect on‑chain checkpoint anchors:
+The `guardian-service` binary reads a small TOML configuration file and
+starts a UDP listener for guardian messages while polling the Kaspa
+virtual chain for checkpoint anchors:
 
-```rust
-fn main() {
-    let _state = kdapp_guardian::service::run("127.0.0.1:9650", None);
-    std::thread::park();
-}
+```bash
+guardian-service --config config.toml
+```
+
+An example config:
+
+```toml
+listen_addr = "127.0.0.1:9650"
+wrpc_url = "wss://node:16110"
+mainnet = false
+key_path = "guardian.key"
 ```
 
 Under the hood the service uses `get_block_dag_info` +
-`get_virtual_chain_from_block` to follow accepted blocks and scans
-their merged blocks for compact OKCP records (program prefix `KMCP`).
-The returned `GuardianState` is shared and updated as anchors are
-observed on‑chain.
+`get_virtual_chain_from_block` to follow accepted blocks and scans their
+merged blocks for compact OKCP records (program prefix `KMCP`). The
+returned `GuardianState` is shared and updated as anchors are observed
+on‑chain.
 
 ## Using with merchant and customer
 

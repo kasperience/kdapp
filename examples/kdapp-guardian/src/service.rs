@@ -1,4 +1,6 @@
+use std::fs;
 use std::net::UdpSocket;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
@@ -8,9 +10,72 @@ use kaspa_wrpc_client::client::KaspaRpcClient;
 use kdapp::pki::generate_keypair;
 use kdapp::proxy;
 use log::{info, warn};
-use secp256k1::SecretKey;
+use secp256k1::{PublicKey, Secp256k1, SecretKey};
+use serde::Deserialize;
+use clap::Parser;
+use faster_hex::{hex_decode, hex_encode};
 
 use crate::{receive, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct GuardianConfig {
+    pub listen_addr: String,
+    pub wrpc_url: Option<String>,
+    #[serde(default)]
+    pub mainnet: bool,
+    pub key_path: PathBuf,
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "guardian-service", about = "kdapp guardian service")]
+struct Cli {
+    /// Path to a TOML configuration file
+    #[arg(long)]
+    config: Option<PathBuf>,
+    /// UDP listen address
+    #[arg(long)]
+    listen_addr: Option<String>,
+    /// Optional wRPC endpoint
+    #[arg(long)]
+    wrpc_url: Option<String>,
+    /// Use mainnet (default testnet-10)
+    #[arg(long, default_value_t = false)]
+    mainnet: bool,
+    /// Path to guardian private key
+    #[arg(long)]
+    key_path: Option<PathBuf>,
+}
+
+impl GuardianConfig {
+    pub fn from_args() -> Self {
+        let args = Cli::parse();
+        let mut cfg = if let Some(path) = args.config {
+            let text = fs::read_to_string(path).expect("read config");
+            toml::from_str(&text).expect("parse config")
+        } else {
+            GuardianConfig {
+                listen_addr: "127.0.0.1:9650".to_string(),
+                wrpc_url: None,
+                mainnet: false,
+                key_path: PathBuf::from("guardian.key"),
+            }
+        };
+
+        if let Some(v) = args.listen_addr {
+            cfg.listen_addr = v;
+        }
+        if let Some(v) = args.wrpc_url {
+            cfg.wrpc_url = Some(v);
+        }
+        if args.mainnet {
+            cfg.mainnet = true;
+        }
+        if let Some(v) = args.key_path {
+            cfg.key_path = v;
+        }
+        cfg
+    }
+}
 
 #[derive(Clone, Debug)]
 struct OkcpRecord {
@@ -114,11 +179,48 @@ fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx
 static STARTED: OnceLock<()> = OnceLock::new();
 static GUARDIAN_SK: OnceLock<SecretKey> = OnceLock::new();
 
-pub fn run(bind: &str, wrpc_url: Option<String>) -> Arc<Mutex<GuardianState>> {
+fn parse_secret_key(hex: &str) -> Option<SecretKey> {
+    let mut buf = [0u8; 32];
+    let mut tmp = vec![0u8; hex.len() / 2 + hex.len() % 2];
+    if hex_decode(hex.as_bytes(), &mut tmp).is_ok() && tmp.len() == 32 {
+        buf.copy_from_slice(&tmp);
+        SecretKey::from_slice(&buf).ok()
+    } else {
+        None
+    }
+}
+
+fn secret_key_to_hex(sk: &SecretKey) -> String {
+    let bytes = sk.secret_bytes();
+    let mut out = vec![0u8; bytes.len() * 2];
+    hex_encode(&bytes, &mut out).expect("hex encode");
+    String::from_utf8(out).expect("utf8")
+}
+
+fn load_or_generate_key(path: &Path) -> SecretKey {
+    if let Ok(text) = fs::read_to_string(path) {
+        if let Some(sk) = parse_secret_key(text.trim()) {
+            return sk;
+        }
+    }
+    let (sk, _) = generate_keypair();
+    if let Err(e) = fs::write(path, secret_key_to_hex(&sk)) {
+        warn!("guardian: failed to write key to {}: {e}", path.display());
+    }
+    sk
+}
+
+pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
     STARTED.get_or_init(|| {});
-    let _ = GUARDIAN_SK.get_or_init(|| generate_keypair().0);
-    let sock = UdpSocket::bind(bind).expect("bind guardian service");
-    info!("guardian service listening on {bind}");
+    let sk = GUARDIAN_SK.get_or_init(|| load_or_generate_key(&config.key_path));
+    let secp = Secp256k1::new();
+    let pk = PublicKey::from_secret_key(&secp, sk);
+    let bytes = pk.serialize();
+    let mut pk_hex = vec![0u8; bytes.len() * 2];
+    hex_encode(&bytes, &mut pk_hex).expect("hex encode");
+    info!("guardian public key {}", String::from_utf8(pk_hex).expect("utf8"));
+    let sock = UdpSocket::bind(&config.listen_addr).expect("bind guardian service");
+    info!("guardian service listening on {}", config.listen_addr);
     let state = Arc::new(Mutex::new(GuardianState::default()));
 
     // spawn UDP listener
@@ -134,10 +236,16 @@ pub fn run(bind: &str, wrpc_url: Option<String>) -> Arc<Mutex<GuardianState>> {
 
     // spawn wRPC watcher
     let state_watch = state.clone();
+    let wrpc_url = config.wrpc_url.clone();
+    let mainnet = config.mainnet;
     thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("runtime");
         rt.block_on(async move {
-            let network = NetworkId::with_suffix(NetworkType::Testnet, 10);
+            let network = if mainnet {
+                NetworkId::new(NetworkType::Mainnet)
+            } else {
+                NetworkId::with_suffix(NetworkType::Testnet, 10)
+            };
             if let Ok(client) = proxy::connect_client(network, wrpc_url).await {
                 let _ = watch_anchors(&client, state_watch).await;
             }
