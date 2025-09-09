@@ -2,7 +2,9 @@ use std::fs;
 use std::net::UdpSocket;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::time::Duration;
 
 use axum::{extract::State, routing::get, Json, Router};
 use clap::Parser;
@@ -272,7 +274,32 @@ fn load_or_generate_key(path: &Path) -> SecretKey {
     sk
 }
 
-pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
+/// Handle returned by [`run`] to allow graceful shutdown in tests.
+pub struct ServiceHandle {
+    pub state: Arc<Mutex<GuardianState>>,
+    shutdown: Arc<AtomicBool>,
+    threads: Vec<thread::JoinHandle<()>>,
+}
+
+impl ServiceHandle {
+    pub fn shutdown(mut self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        while let Some(handle) = self.threads.pop() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for ServiceHandle {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Relaxed);
+        while let Some(handle) = self.threads.pop() {
+            let _ = handle.join();
+        }
+    }
+}
+
+pub fn run(config: &GuardianConfig) -> ServiceHandle {
     STARTED.get_or_init(|| {});
     let sk = GUARDIAN_SK.get_or_init(|| load_or_generate_key(&config.key_path));
     let secp = Secp256k1::new();
@@ -289,23 +316,34 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
         Arc::new(Mutex::new(GuardianState::default()))
     };
 
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let mut threads = Vec::new();
+
     // spawn UDP listener
     let sock_clone = sock.try_clone().expect("clone socket");
     let state_clone = state.clone();
     let path_udp = config.state_path.clone();
     let watcher_override_udp = config.watcher_addr.clone();
-    thread::spawn(move || loop {
-        let mut st = state_clone.lock().unwrap();
-        if let Some(msg) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
-            if let Some(ref p) = path_udp {
-                st.persist(p);
+    let shutdown_udp = shutdown.clone();
+    let udp_handle = thread::spawn(move || {
+        let _ = sock_clone.set_read_timeout(Some(Duration::from_millis(200)));
+        loop {
+            if shutdown_udp.load(Ordering::Relaxed) {
+                break;
             }
-            if let GuardianMsg::Escalate { episode_id, refund_tx, .. } = msg {
-                drop(st);
-                handle_escalate(&state_clone, episode_id, Some(refund_tx), &path_udp, &watcher_override_udp);
+            let mut st = state_clone.lock().unwrap();
+            if let Some(msg) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
+                if let Some(ref p) = path_udp {
+                    st.persist(p);
+                }
+                if let GuardianMsg::Escalate { episode_id, refund_tx, .. } = msg {
+                    drop(st);
+                    handle_escalate(&state_clone, episode_id, Some(refund_tx), &path_udp, &watcher_override_udp);
+                }
             }
         }
     });
+    threads.push(udp_handle);
 
     // spawn wRPC watcher
     let state_watch = state.clone();
@@ -313,16 +351,30 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
     let watcher_override_watch = config.watcher_addr.clone();
     let wrpc_url = config.wrpc_url.clone();
     let mainnet = config.mainnet;
-    thread::spawn(move || {
+    let shutdown_watch = shutdown.clone();
+    let wrpc_handle = thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("runtime");
         rt.block_on(async move {
             let network =
                 if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             if let Ok(client) = proxy::connect_client(network, wrpc_url).await {
-                let _ = watch_anchors(&client, state_watch, path_watch, watcher_override_watch).await;
+                let shutdown_fut = async {
+                    while !shutdown_watch.load(Ordering::Relaxed) {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                };
+                tokio::select! {
+                    _ = watch_anchors(&client, state_watch, path_watch, watcher_override_watch) => {},
+                    _ = shutdown_fut => {},
+                }
+            } else {
+                while !shutdown_watch.load(Ordering::Relaxed) {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
             }
         });
     });
+    threads.push(wrpc_handle);
 
     // spawn HTTP server for health and metrics
     let state_http = state.clone();
@@ -331,17 +383,26 @@ pub fn run(config: &GuardianConfig) -> Arc<Mutex<GuardianState>> {
         .rsplit_once(':')
         .and_then(|(host, port)| port.parse::<u16>().ok().map(|p| format!("{}:{}", host, p + 1)))
         .unwrap_or_else(|| "127.0.0.1:9651".to_string());
-    thread::spawn(move || {
+    let shutdown_http = shutdown.clone();
+    let http_handle = thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("runtime");
         rt.block_on(async move {
             let app = Router::new().route("/healthz", get(healthz)).route("/metrics", get(metrics_endpoint)).with_state(state_http);
+            let shutdown_fut = async {
+                while !shutdown_http.load(Ordering::Relaxed) {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            };
             if let Ok(listener) = tokio::net::TcpListener::bind(http_addr).await {
-                let _ = axum::serve(listener, app).await;
+                let _ = axum::serve(listener, app).with_graceful_shutdown(shutdown_fut).await;
+            } else {
+                shutdown_fut.await;
             }
         });
     });
+    threads.push(http_handle);
 
-    state
+    ServiceHandle { state, shutdown, threads }
 }
 
 #[cfg(test)]
