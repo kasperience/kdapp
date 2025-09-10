@@ -222,8 +222,11 @@ struct MempoolMetrics {
 }
 
 async fn mempool_metrics() -> Result<Json<MempoolMetrics>, StatusCode> {
-    if let Some((base_fee, congestion)) = watcher::get_metrics() {
-        Ok(Json(MempoolMetrics { base_fee, congestion }))
+    if let Some(snap) = watcher::get_metrics() {
+        Ok(Json(MempoolMetrics {
+            base_fee: snap.base_fee,
+            congestion: snap.congestion_ratio,
+        }))
     } else {
         Err(StatusCode::SERVICE_UNAVAILABLE)
     }
