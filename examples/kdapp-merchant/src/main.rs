@@ -169,6 +169,12 @@ enum CliCmd {
         /// Defer anchoring when congestion ratio exceeds this value
         #[arg(long)]
         congestion_threshold: Option<f64>,
+        /// URL to POST invoice state updates
+        #[arg(long)]
+        webhook_url: Option<String>,
+        /// Shared secret for signing webhook payloads
+        #[arg(long)]
+        webhook_secret: Option<String>,
     },
     /// Build and broadcast an on-chain transaction carrying a command
     OnchainCreate {
@@ -496,7 +502,16 @@ fn main() {
             let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id, cmd };
             router.forward::<ReceiptEpisode>(msg);
         }
-        CliCmd::Serve { bind, episode_id, api_key, merchant_private_key, max_fee, congestion_threshold } => {
+        CliCmd::Serve {
+            bind,
+            episode_id,
+            api_key,
+            merchant_private_key,
+            max_fee,
+            congestion_threshold,
+            webhook_url,
+            webhook_secret,
+        } => {
             let router = SimRouter::new(EngineChannel::Local(tx.clone()));
             let (sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
                 Some(sk) => {
@@ -508,6 +523,9 @@ fn main() {
             log::info!("merchant pubkey: {pk}");
             scheduler::start(router.clone(), episode_id);
             let state = server::AppState::new(Arc::new(router), episode_id, sk, pk, api_key, max_fee, congestion_threshold);
+            let url = webhook_url.or_else(|| std::env::var("WEBHOOK_URL").ok());
+            let secret = webhook_secret.or_else(|| std::env::var("WEBHOOK_SECRET").ok());
+            handler::set_webhook(url, secret);
             let rt = Runtime::new().expect("runtime");
             rt.block_on(async {
                 server::serve(bind, state).await.expect("server");

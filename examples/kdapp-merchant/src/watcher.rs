@@ -39,8 +39,18 @@ pub struct MempoolSnapshot {
     pub congestion_ratio: f64,
 }
 
+#[derive(Clone, Serialize)]
+struct PolicyInfo {
+    min: u64,
+    max: u64,
+    policy: String,
+}
+
 pub trait FeePolicy {
     fn fee_and_deferral(&self, snap: &MempoolSnapshot) -> (u64, bool);
+    fn min_fee(&self) -> u64;
+    fn max_fee(&self) -> u64;
+    fn name(&self) -> &'static str;
 }
 
 pub struct StaticFeePolicy {
@@ -50,6 +60,15 @@ pub struct StaticFeePolicy {
 impl FeePolicy for StaticFeePolicy {
     fn fee_and_deferral(&self, _snap: &MempoolSnapshot) -> (u64, bool) {
         (self.fee, false)
+    }
+    fn min_fee(&self) -> u64 {
+        self.fee
+    }
+    fn max_fee(&self) -> u64 {
+        self.fee
+    }
+    fn name(&self) -> &'static str {
+        "static"
     }
 }
 
@@ -76,9 +95,20 @@ impl FeePolicy for CongestionAwarePolicy {
         }
         (fee, false)
     }
+    fn min_fee(&self) -> u64 {
+        self.min_fee
+    }
+    fn max_fee(&self) -> u64 {
+        self.max_fee
+    }
+    fn name(&self) -> &'static str {
+        "congestion"
+    }
 }
 
 pub static MEMPOOL_METRICS: Lazy<RwLock<Option<MempoolSnapshot>>> = Lazy::new(|| RwLock::new(None));
+static POLICY_INFO: Lazy<RwLock<PolicyInfo>> =
+    Lazy::new(|| RwLock::new(PolicyInfo { min: MIN_FEE, max: MIN_FEE, policy: "static".to_string() }));
 
 pub fn get_metrics() -> Option<MempoolSnapshot> {
     MEMPOOL_METRICS.read().expect("metrics lock").clone()
@@ -88,9 +118,25 @@ fn store_metrics(snap: MempoolSnapshot) {
     *MEMPOOL_METRICS.write().expect("metrics lock") = Some(snap);
 }
 
-async fn get_mempool_metrics() -> Result<Json<MempoolSnapshot>, StatusCode> {
+#[derive(Serialize)]
+struct WatcherMetrics {
+    est_base_fee: u64,
+    congestion_ratio: f64,
+    min: u64,
+    max: u64,
+    policy: String,
+}
+
+async fn get_mempool_metrics() -> Result<Json<WatcherMetrics>, StatusCode> {
     if let Some(snap) = get_metrics() {
-        Ok(Json(snap))
+        let p = POLICY_INFO.read().expect("policy lock").clone();
+        Ok(Json(WatcherMetrics {
+            est_base_fee: snap.base_fee,
+            congestion_ratio: snap.congestion_ratio,
+            min: p.min,
+            max: p.max,
+            policy: p.policy,
+        }))
     } else {
         Err(StatusCode::SERVICE_UNAVAILABLE)
     }
@@ -274,6 +320,10 @@ pub fn run(
     policy: Box<dyn FeePolicy>,
     http_port: Option<u16>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    {
+        let mut info = POLICY_INFO.write().expect("policy lock");
+        *info = PolicyInfo { min: policy.min_fee(), max: policy.max_fee(), policy: policy.name().to_string() };
+    }
     if let Some(port) = http_port {
         thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().expect("runtime");
