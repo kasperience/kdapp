@@ -43,6 +43,7 @@ fn scenario_a_refund_signed_and_recorded() {
         mainnet: false,
         key_path: key_path.clone(),
         log_level: "info".into(),
+        http_port: None,
     };
     let handle = run(&cfg);
     let state = handle.state.clone();
@@ -89,7 +90,14 @@ fn scenario_b_replay_confirm_rejected() {
     drop(tmp);
     let listen = format!("127.0.0.1:{port}");
 
-    let cfg = GuardianConfig { listen_addr: listen.clone(), wrpc_url: None, mainnet: false, key_path, log_level: "info".into() };
+    let cfg = GuardianConfig {
+        listen_addr: listen.clone(),
+        wrpc_url: None,
+        mainnet: false,
+        key_path,
+        log_level: "info".into(),
+        http_port: None,
+    };
     let handle = run(&cfg);
     let state = handle.state.clone();
 
