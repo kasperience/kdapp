@@ -76,8 +76,11 @@ If you start the watcher with `--http-port <port>`, it exposes:
 GET /mempool
 
 {
-  "base_fee": 5000,
-  "congestion": 0.42
+  "est_base_fee": 5000,
+  "congestion_ratio": 0.42,
+  "min": 1000,
+  "max": 10000,
+  "policy": "default"
 }
 ```
 
