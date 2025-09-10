@@ -374,7 +374,7 @@ fn main() {
             let (customer_sk, customer_pk) = generate_keypair();
             storage::put_customer(&customer_pk, &CustomerInfo::default());
             let episode_id: u32 = 42;
-            router.forward::<ReceiptEpisode>(EpisodeMessage::NewEpisode { episode_id, participants: vec![merchant_pk] });
+            let _ = router.forward::<ReceiptEpisode>(EpisodeMessage::NewEpisode { episode_id, participants: vec![merchant_pk] });
             scheduler::start(router.clone(), episode_id);
             let _label = program_id::derive_program_label(&merchant_pk, "merchant-pos");
             // Create
@@ -385,14 +385,14 @@ fn main() {
                 guardian_keys: guardian_keys.clone(),
             };
             let signed = EpisodeMessage::new_signed_command(episode_id, cmd, merchant_sk, merchant_pk);
-            router.forward::<ReceiptEpisode>(signed);
+            let _ = router.forward::<ReceiptEpisode>(signed);
             // Pay
             let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: customer_pk };
-            router.forward::<ReceiptEpisode>(EpisodeMessage::UnsignedCommand { episode_id, cmd });
+            let _ = router.forward::<ReceiptEpisode>(EpisodeMessage::UnsignedCommand { episode_id, cmd });
             // Ack
             let cmd = MerchantCommand::AckReceipt { invoice_id: 1 };
             let signed = EpisodeMessage::new_signed_command(episode_id, cmd, merchant_sk, merchant_pk);
-            router.forward::<ReceiptEpisode>(signed);
+            let _ = router.forward::<ReceiptEpisode>(signed);
             log::info!("demo customer private key: {}", customer_sk.display_secret());
         }
         CliCmd::RouterUdp { bind, proxy } => {
@@ -441,7 +441,7 @@ fn main() {
             };
             log::info!("merchant pubkey: {pk}");
             let msg = EpisodeMessage::<ReceiptEpisode>::NewEpisode { episode_id, participants: vec![pk] };
-            router.forward::<ReceiptEpisode>(msg);
+            let _ = router.forward::<ReceiptEpisode>(msg);
         }
         CliCmd::Create { episode_id, invoice_id, amount, memo, merchant_private_key } => {
             let (sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
@@ -454,13 +454,13 @@ fn main() {
             log::info!("merchant pubkey: {pk}");
             let cmd = MerchantCommand::CreateInvoice { invoice_id, amount, memo, guardian_keys: guardian_keys.clone() };
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
-            router.forward::<ReceiptEpisode>(msg);
+            let _ = router.forward::<ReceiptEpisode>(msg);
         }
         CliCmd::Pay { episode_id, invoice_id, payer_public_key } => {
             let pk = parse_public_key(&payer_public_key).expect("invalid public key");
             let cmd = MerchantCommand::MarkPaid { invoice_id, payer: pk };
             let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id, cmd };
-            router.forward::<ReceiptEpisode>(msg);
+            let _ = router.forward::<ReceiptEpisode>(msg);
         }
         CliCmd::Ack { episode_id, invoice_id, merchant_private_key } => {
             let (sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
@@ -473,12 +473,12 @@ fn main() {
             log::info!("merchant pubkey: {pk}");
             let cmd = MerchantCommand::AckReceipt { invoice_id };
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
-            router.forward::<ReceiptEpisode>(msg);
+            let _ = router.forward::<ReceiptEpisode>(msg);
         }
         CliCmd::Cancel { episode_id, invoice_id } => {
             let cmd = MerchantCommand::CancelInvoice { invoice_id };
             let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id, cmd };
-            router.forward::<ReceiptEpisode>(msg);
+            let _ = router.forward::<ReceiptEpisode>(msg);
         }
         CliCmd::CreateSubscription { episode_id, subscription_id, customer_public_key, amount, interval, merchant_private_key } => {
             let customer = parse_public_key(&customer_public_key).expect("invalid public key");
@@ -492,12 +492,12 @@ fn main() {
             log::info!("merchant pubkey: {pk}");
             let cmd = MerchantCommand::CreateSubscription { subscription_id, customer, amount, interval };
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, sk, pk);
-            router.forward::<ReceiptEpisode>(msg);
+            let _ = router.forward::<ReceiptEpisode>(msg);
         }
         CliCmd::CancelSubscription { episode_id, subscription_id } => {
             let cmd = MerchantCommand::CancelSubscription { subscription_id };
             let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id, cmd };
-            router.forward::<ReceiptEpisode>(msg);
+            let _ = router.forward::<ReceiptEpisode>(msg);
         }
         CliCmd::Serve { bind, episode_id, api_key, merchant_private_key, max_fee, congestion_threshold, webhook_url } => {
             let router = SimRouter::new(EngineChannel::Local(tx.clone()));

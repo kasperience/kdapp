@@ -1,10 +1,12 @@
 #![allow(clippy::enum_variant_names)]
 use std::collections::{BTreeMap, BTreeSet};
+use std::cmp::max;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use kaspa_consensus_core::Hash;
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
+use rand::Rng;
 // Use a relative path so this module works when compiled
 // as part of the crate and when included from tests/fixtures.rs
 use super::storage;
@@ -283,12 +285,17 @@ impl Episode for ReceiptEpisode {
                     return Err(EpisodeError::Unauthorized);
                 }
                 let info = self.customers.get_mut(customer).ok_or(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer))?;
+                let interval_i64 = *interval as i64;
+                let jitter = max(1, interval_i64 * 5 / 100);
+                let offset = rand::thread_rng().gen_range(-jitter..=jitter);
+                let next_run =
+                    (metadata.accepting_time as i64 + interval_i64 + offset).max(metadata.accepting_time as i64) as u64;
                 let sub = Subscription {
                     id: *subscription_id,
                     customer: *customer,
                     amount: *amount,
                     interval: *interval,
-                    next_run: metadata.accepting_time + interval,
+                    next_run,
                 };
                 info.subscriptions.push(*subscription_id);
                 storage::put_customer(customer, info);
@@ -302,7 +309,11 @@ impl Episode for ReceiptEpisode {
                     .get_mut(subscription_id)
                     .ok_or(EpisodeError::InvalidCommand(MerchantError::SubscriptionNotFound))?;
                 let prev = sub.next_run;
-                sub.next_run = metadata.accepting_time + sub.interval;
+                let interval_i64 = sub.interval as i64;
+                let jitter = max(1, interval_i64 * 5 / 100);
+                let offset = rand::thread_rng().gen_range(-jitter..=jitter);
+                sub.next_run =
+                    (metadata.accepting_time as i64 + interval_i64 + offset).max(metadata.accepting_time as i64) as u64;
                 storage::put_subscription(sub);
                 Ok(MerchantRollback::UndoProcessSubscription { subscription_id: *subscription_id, prev_next_run: prev })
             }
