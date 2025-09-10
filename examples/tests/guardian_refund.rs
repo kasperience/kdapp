@@ -86,11 +86,7 @@ fn scenario_a_refund_signed_and_recorded() {
                 }
                 thread::sleep(Duration::from_millis(50));
             }
-            let ok = if let Some(sig) = sig {
-                verify_signature(&pk_watch, &to_message(&refund_tx), &sig)
-            } else {
-                false
-            };
+            let ok = if let Some(sig) = sig { verify_signature(&pk_watch, &to_message(&refund_tx), &sig) } else { false };
             tx.send((episode_id, ok)).unwrap();
         } else {
             tx.send((0, false)).unwrap();
