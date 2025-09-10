@@ -140,10 +140,7 @@ async fn metrics_endpoint(State(state): State<Arc<Mutex<GuardianState>>>) -> Jso
     })
 }
 
-async fn watch_anchors(
-    client: &KaspaRpcClient,
-    state: Arc<Mutex<GuardianState>>,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn watch_anchors(client: &KaspaRpcClient, state: Arc<Mutex<GuardianState>>) -> Result<(), Box<dyn std::error::Error>> {
     // Poll the virtual chain and scan merged blocks for OKCP payloads
     use tokio::time::{sleep, Duration};
 
@@ -202,11 +199,8 @@ async fn watch_anchors(
 fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx: Option<Vec<u8>>) {
     if let Some(tx) = refund_tx {
         if let Some(sk) = GUARDIAN_SK.get() {
-            let _sig = {
-                let mut s = state.lock().unwrap();
-                let sig = s.sign_refund(episode_id, &tx, sk);
-                sig
-            };
+            let mut s = state.lock().unwrap();
+            let _sig = s.sign_refund(episode_id, &tx, sk);
             info!("guardian: co-signed refund for episode {episode_id}");
         }
     } else {
@@ -300,11 +294,11 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
                 break;
             }
             let mut st = state_clone.lock().unwrap();
-            if let Some(msg) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
-                if let GuardianMsg::Escalate { episode_id, refund_tx, .. } = msg {
-                    drop(st);
-                    handle_escalate(&state_clone, episode_id, Some(refund_tx));
-                }
+            if let Some(GuardianMsg::Escalate { episode_id, refund_tx, .. }) =
+                receive(&sock_clone, &mut st, DEMO_HMAC_KEY)
+            {
+                drop(st);
+                handle_escalate(&state_clone, episode_id, Some(refund_tx));
             }
         }
     });
