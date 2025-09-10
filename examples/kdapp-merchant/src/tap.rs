@@ -12,6 +12,7 @@ pub struct InvoiceRequest {
 }
 
 /// Encode the request as an NDEF URI record.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn encode_ndef(req: &InvoiceRequest) -> String {
     let mut uri = format!("onlykas://invoice/{}?amount={}", req.invoice_id, req.amount);
     if let Some(m) = &req.memo {
@@ -22,6 +23,7 @@ pub fn encode_ndef(req: &InvoiceRequest) -> String {
 }
 
 /// Decode the request from an NDEF URI record.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn decode_ndef(uri: &str) -> Option<InvoiceRequest> {
     const PREFIX: &str = "onlykas://invoice/";
     if !uri.starts_with(PREFIX) {
@@ -48,6 +50,7 @@ pub fn decode_ndef(uri: &str) -> Option<InvoiceRequest> {
 }
 
 /// Encode the request into BLE characteristic bytes using TLV framing.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn encode_ble(req: &InvoiceRequest) -> Vec<u8> {
     let cmd = MerchantCommand::CreateInvoice {
         invoice_id: req.invoice_id,
@@ -55,7 +58,9 @@ pub fn encode_ble(req: &InvoiceRequest) -> Vec<u8> {
         memo: req.memo.clone(),
         guardian_keys: Vec::new(),
     };
-    let payload = cmd.try_to_vec().expect("serialize command");
+    // Serialize command payload using Borsh in a version-agnostic way
+    let mut payload = Vec::new();
+    cmd.serialize(&mut payload).expect("serialize command");
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Cmd as u8,
@@ -69,6 +74,7 @@ pub fn encode_ble(req: &InvoiceRequest) -> Vec<u8> {
 }
 
 /// Decode the request from BLE characteristic bytes.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn decode_ble(bytes: &[u8]) -> Option<InvoiceRequest> {
     let tlv = TlvMsg::decode(bytes)?;
     if MsgType::from_u8(tlv.msg_type)? != MsgType::Cmd {

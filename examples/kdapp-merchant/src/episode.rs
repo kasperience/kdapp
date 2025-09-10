@@ -11,6 +11,22 @@ use rand::Rng;
 // as part of the crate and when included from tests/fixtures.rs
 use super::storage;
 
+fn compute_next_run(now: u64, interval: u64) -> u64 {
+    #[cfg(test)]
+    {
+        // Deterministic for tests
+        now.saturating_add(interval)
+    }
+    #[cfg(not(test))]
+    {
+        // Add small jitter in production to avoid thundering herds
+        let interval_i64 = interval as i64;
+        let jitter = max(1, interval_i64 * 5 / 100);
+        let offset = rand::thread_rng().gen_range(-jitter..=jitter);
+        (now as i64 + interval_i64 + offset).max(now as i64) as u64
+    }
+}
+
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 pub enum MerchantCommand {
     CreateInvoice { invoice_id: u64, amount: u64, memo: Option<String>, guardian_keys: Vec<PubKey> },
@@ -285,10 +301,7 @@ impl Episode for ReceiptEpisode {
                     return Err(EpisodeError::Unauthorized);
                 }
                 let info = self.customers.get_mut(customer).ok_or(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer))?;
-                let interval_i64 = *interval as i64;
-                let jitter = max(1, interval_i64 * 5 / 100);
-                let offset = rand::thread_rng().gen_range(-jitter..=jitter);
-                let next_run = (metadata.accepting_time as i64 + interval_i64 + offset).max(metadata.accepting_time as i64) as u64;
+                let next_run = compute_next_run(metadata.accepting_time, *interval);
                 let sub = Subscription { id: *subscription_id, customer: *customer, amount: *amount, interval: *interval, next_run };
                 info.subscriptions.push(*subscription_id);
                 storage::put_customer(customer, info);
@@ -302,10 +315,7 @@ impl Episode for ReceiptEpisode {
                     .get_mut(subscription_id)
                     .ok_or(EpisodeError::InvalidCommand(MerchantError::SubscriptionNotFound))?;
                 let prev = sub.next_run;
-                let interval_i64 = sub.interval as i64;
-                let jitter = max(1, interval_i64 * 5 / 100);
-                let offset = rand::thread_rng().gen_range(-jitter..=jitter);
-                sub.next_run = (metadata.accepting_time as i64 + interval_i64 + offset).max(metadata.accepting_time as i64) as u64;
+                sub.next_run = compute_next_run(metadata.accepting_time, sub.interval);
                 storage::put_subscription(sub);
                 Ok(MerchantRollback::UndoProcessSubscription { subscription_id: *subscription_id, prev_next_run: prev })
             }
