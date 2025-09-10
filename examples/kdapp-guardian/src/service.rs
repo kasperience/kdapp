@@ -358,7 +358,7 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
             let network =
                 if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             if let Ok(client) = proxy::connect_client(network, wrpc_url).await {
-                let shutdown_fut = async {
+                let shutdown_fut = async move {
                     while !shutdown_watch.load(Ordering::Relaxed) {
                         tokio::time::sleep(Duration::from_millis(100)).await;
                     }
@@ -388,7 +388,7 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
         let rt = tokio::runtime::Runtime::new().expect("runtime");
         rt.block_on(async move {
             let app = Router::new().route("/healthz", get(healthz)).route("/metrics", get(metrics_endpoint)).with_state(state_http);
-            let shutdown_fut = async {
+            let shutdown_fut = async move {
                 while !shutdown_http.load(Ordering::Relaxed) {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
