@@ -132,6 +132,10 @@ Tic‑Tac‑Toe, merchant/customer flows, and more live under `examples/`.
 
 Explore `examples/kaspa-auth` and `examples/comment-board` for richer flows and docs.
 
+### Fast Path: Stripe‑like Trio
+- Lint/build/test only `kdapp-merchant`, `kdapp-customer`, and `kdapp-guardian`.
+- Use `scripts/fastpath.ps1` or see `docs/fast_path_testing.md` for commands and space‑saving tips.
+
 ## Kaspa‑Auth: What It Is and Isn’t
 
 Kaspa‑auth in this repository (e.g., comment‑it, comment‑board) is not a browser cookie/session system. It provides episode‑scoped authorization enforced on‑chain via signed commands.

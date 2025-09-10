@@ -1,12 +1,10 @@
 #![allow(clippy::enum_variant_names)]
-use std::cmp::max;
 use std::collections::{BTreeMap, BTreeSet};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use kaspa_consensus_core::Hash;
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
-use rand::Rng;
 // Use a relative path so this module works when compiled
 // as part of the crate and when included from tests/fixtures.rs
 use super::storage;
@@ -20,8 +18,9 @@ fn compute_next_run(now: u64, interval: u64) -> u64 {
     #[cfg(not(test))]
     {
         // Add small jitter in production to avoid thundering herds
+        use rand::Rng; // local import to avoid unused in tests
         let interval_i64 = interval as i64;
-        let jitter = max(1, interval_i64 * 5 / 100);
+        let jitter = std::cmp::max(1, interval_i64 * 5 / 100);
         let offset = rand::thread_rng().gen_range(-jitter..=jitter);
         (now as i64 + interval_i64 + offset).max(now as i64) as u64
     }
