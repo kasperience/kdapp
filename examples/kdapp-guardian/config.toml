@@ -7,3 +7,5 @@ mainnet = false
 key_path = "guardian.key"
 # Log level for env_logger
 log_level = "info"
+# Optional path to persist guardian state
+# state_path = "guardian_state.json"
