@@ -6,7 +6,7 @@ pub const DEMO_HMAC_KEY: &[u8] = b"kdapp-demo-secret";
 
 pub const TLV_VERSION: u8 = 1;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MsgType {
     New = 0,
