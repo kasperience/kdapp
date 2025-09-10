@@ -18,11 +18,7 @@ use log::{info, warn};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 
-use crate::{metrics, receive, send_escalate, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
-
-fn watcher_addr() -> String {
-    std::env::var("KDAPP_GUARDIAN_WATCHER_ADDR").unwrap_or_else(|_| "127.0.0.1:9590".to_string())
-}
+use crate::{metrics, receive, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct GuardianConfig {
@@ -31,9 +27,12 @@ pub struct GuardianConfig {
     #[serde(default)]
     pub mainnet: bool,
     pub key_path: PathBuf,
-    pub state_path: Option<PathBuf>,
-    /// Optional explicit watcher address (overrides env var)
-    pub watcher_addr: Option<String>,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
 }
 
 #[derive(Parser, Debug)]
@@ -54,12 +53,9 @@ struct Cli {
     /// Path to guardian private key
     #[arg(long)]
     key_path: Option<PathBuf>,
-    /// Optional path to persist guardian state
+    /// Log level (e.g. info, debug)
     #[arg(long)]
-    state_path: Option<PathBuf>,
-    /// Optional explicit watcher address (overrides env var)
-    #[arg(long)]
-    watcher_addr: Option<String>,
+    log_level: Option<String>,
 }
 
 impl GuardianConfig {
@@ -74,8 +70,7 @@ impl GuardianConfig {
                 wrpc_url: None,
                 mainnet: false,
                 key_path: PathBuf::from("guardian.key"),
-                state_path: None,
-                watcher_addr: None,
+                log_level: default_log_level(),
             }
         };
 
@@ -91,11 +86,8 @@ impl GuardianConfig {
         if let Some(v) = args.key_path {
             cfg.key_path = v;
         }
-        if let Some(v) = args.state_path {
-            cfg.state_path = Some(v);
-        }
-        if let Some(v) = args.watcher_addr {
-            cfg.watcher_addr = Some(v);
+        if let Some(v) = args.log_level {
+            cfg.log_level = v;
         }
         cfg
     }
@@ -151,8 +143,6 @@ async fn metrics_endpoint(State(state): State<Arc<Mutex<GuardianState>>>) -> Jso
 async fn watch_anchors(
     client: &KaspaRpcClient,
     state: Arc<Mutex<GuardianState>>,
-    state_path: Option<PathBuf>,
-    watcher_override: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Poll the virtual chain and scan merged blocks for OKCP payloads
     use tokio::time::{sleep, Duration};
@@ -197,12 +187,9 @@ async fn watch_anchors(
                         if let Some(rec) = decode_okcp(payload) {
                             let mut s = state.lock().unwrap();
                             let discrepancy = s.record_checkpoint(rec.episode_id, rec.seq);
-                            if let Some(ref p) = state_path {
-                                s.persist(p);
-                            }
                             drop(s);
                             if discrepancy {
-                                handle_escalate(&state, rec.episode_id, None, &state_path, &watcher_override);
+                                handle_escalate(&state, rec.episode_id, None);
                             }
                         }
                     }
@@ -212,27 +199,15 @@ async fn watch_anchors(
     }
 }
 
-fn handle_escalate(
-    state: &Arc<Mutex<GuardianState>>,
-    episode_id: u64,
-    refund_tx: Option<Vec<u8>>,
-    state_path: &Option<PathBuf>,
-    watcher_override: &Option<String>,
-) {
+fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx: Option<Vec<u8>>) {
     if let Some(tx) = refund_tx {
         if let Some(sk) = GUARDIAN_SK.get() {
-            // Sign and persist first so tests can immediately observe the signature
             let _sig = {
-                let mut s = state.lock().unwrap();
-                let sig = s.sign_refund(episode_id, &tx, sk);
-                if let Some(ref p) = state_path {
-                    s.persist(p);
-                }
-                sig
+                state
+                    .lock()
+                    .unwrap()
+                    .sign_refund(episode_id, &tx, sk)
             };
-            // Then notify watcher with an Escalate message (expected by tests)
-            let watcher = watcher_override.clone().unwrap_or_else(watcher_addr);
-            send_escalate(&watcher, episode_id, "refund".into(), tx, DEMO_HMAC_KEY);
             info!("guardian: co-signed refund for episode {episode_id}");
         }
     } else {
@@ -310,11 +285,7 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
     info!("guardian public key {}", String::from_utf8(pk_hex).expect("utf8"));
     let sock = UdpSocket::bind(&config.listen_addr).expect("bind guardian service");
     info!("guardian service listening on {}", config.listen_addr);
-    let state = if let Some(ref path) = config.state_path {
-        Arc::new(Mutex::new(GuardianState::load(path)))
-    } else {
-        Arc::new(Mutex::new(GuardianState::default()))
-    };
+    let state = Arc::new(Mutex::new(GuardianState::default()));
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let mut threads = Vec::new();
@@ -322,8 +293,6 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
     // spawn UDP listener
     let sock_clone = sock.try_clone().expect("clone socket");
     let state_clone = state.clone();
-    let path_udp = config.state_path.clone();
-    let watcher_override_udp = config.watcher_addr.clone();
     let shutdown_udp = shutdown.clone();
     let udp_handle = thread::spawn(move || {
         let _ = sock_clone.set_read_timeout(Some(Duration::from_millis(200)));
@@ -332,14 +301,11 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
                 break;
             }
             let mut st = state_clone.lock().unwrap();
-            if let Some(msg) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
-                if let Some(ref p) = path_udp {
-                    st.persist(p);
-                }
-                if let GuardianMsg::Escalate { episode_id, refund_tx, .. } = msg {
-                    drop(st);
-                    handle_escalate(&state_clone, episode_id, Some(refund_tx), &path_udp, &watcher_override_udp);
-                }
+            if let Some(GuardianMsg::Escalate { episode_id, refund_tx, .. }) =
+                receive(&sock_clone, &mut st, DEMO_HMAC_KEY)
+            {
+                drop(st);
+                handle_escalate(&state_clone, episode_id, Some(refund_tx));
             }
         }
     });
@@ -347,8 +313,6 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
 
     // spawn wRPC watcher
     let state_watch = state.clone();
-    let path_watch = config.state_path.clone();
-    let watcher_override_watch = config.watcher_addr.clone();
     let wrpc_url = config.wrpc_url.clone();
     let mainnet = config.mainnet;
     let shutdown_watch = shutdown.clone();
@@ -364,7 +328,7 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
                     }
                 };
                 tokio::select! {
-                    _ = watch_anchors(&client, state_watch, path_watch, watcher_override_watch) => {},
+                    _ = watch_anchors(&client, state_watch) => {},
                     _ = shutdown_fut => {},
                 }
             } else {
@@ -416,17 +380,14 @@ mod tests {
     }
 
     #[test]
-    fn signs_and_persists_refund() {
+    fn signs_refund() {
         let _g = test_guard();
         let state = Arc::new(Mutex::new(GuardianState::default()));
         state.lock().unwrap().disputes.push(42);
         let (sk, _) = generate_keypair();
         let _ = GUARDIAN_SK.get_or_init(|| sk);
-        let path = std::env::temp_dir().join("guardian_state_test.json");
-        handle_escalate(&state, 42, Some(vec![1, 2, 3]), &Some(path.clone()), &None);
+        handle_escalate(&state, 42, Some(vec![1, 2, 3]));
         assert_eq!(state.lock().unwrap().refund_signatures.len(), 1);
-        assert!(path.exists());
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
@@ -434,7 +395,7 @@ mod tests {
         let _g = test_guard();
         let state = Arc::new(Mutex::new(GuardianState::default()));
         state.lock().unwrap().disputes.push(7);
-        handle_escalate(&state, 7, None, &None, &None);
+        handle_escalate(&state, 7, None);
         assert!(state.lock().unwrap().refund_signatures.is_empty());
     }
 }
