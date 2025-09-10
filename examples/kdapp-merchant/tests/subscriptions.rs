@@ -20,17 +20,13 @@ fn subscription_creation_and_recurring_charges() {
     // process twice to simulate recurring charges
     let mut md = ctx.metadata.clone();
     md.accepting_time = first_run;
-    ctx.episode
-        .execute(&MerchantCommand::ProcessSubscription { subscription_id: 1 }, None, &md)
-        .expect("process once");
+    ctx.episode.execute(&MerchantCommand::ProcessSubscription { subscription_id: 1 }, None, &md).expect("process once");
     let second_expected = first_run + interval;
     let second_run = ctx.episode.subscriptions.get(&1).unwrap().next_run;
     assert!(second_run >= second_expected - jitter && second_run <= second_expected + jitter);
 
     md.accepting_time = second_run;
-    ctx.episode
-        .execute(&MerchantCommand::ProcessSubscription { subscription_id: 1 }, None, &md)
-        .expect("process twice");
+    ctx.episode.execute(&MerchantCommand::ProcessSubscription { subscription_id: 1 }, None, &md).expect("process twice");
     let third_expected = second_run + interval;
     let third_run = ctx.episode.subscriptions.get(&1).unwrap().next_run;
     assert!(third_run >= third_expected - jitter && third_run <= third_expected + jitter);

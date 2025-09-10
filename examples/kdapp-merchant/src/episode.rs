@@ -1,6 +1,6 @@
 #![allow(clippy::enum_variant_names)]
-use std::collections::{BTreeMap, BTreeSet};
 use std::cmp::max;
+use std::collections::{BTreeMap, BTreeSet};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use kaspa_consensus_core::Hash;
@@ -288,15 +288,8 @@ impl Episode for ReceiptEpisode {
                 let interval_i64 = *interval as i64;
                 let jitter = max(1, interval_i64 * 5 / 100);
                 let offset = rand::thread_rng().gen_range(-jitter..=jitter);
-                let next_run =
-                    (metadata.accepting_time as i64 + interval_i64 + offset).max(metadata.accepting_time as i64) as u64;
-                let sub = Subscription {
-                    id: *subscription_id,
-                    customer: *customer,
-                    amount: *amount,
-                    interval: *interval,
-                    next_run,
-                };
+                let next_run = (metadata.accepting_time as i64 + interval_i64 + offset).max(metadata.accepting_time as i64) as u64;
+                let sub = Subscription { id: *subscription_id, customer: *customer, amount: *amount, interval: *interval, next_run };
                 info.subscriptions.push(*subscription_id);
                 storage::put_customer(customer, info);
                 self.subscriptions.insert(*subscription_id, sub.clone());
@@ -312,8 +305,7 @@ impl Episode for ReceiptEpisode {
                 let interval_i64 = sub.interval as i64;
                 let jitter = max(1, interval_i64 * 5 / 100);
                 let offset = rand::thread_rng().gen_range(-jitter..=jitter);
-                sub.next_run =
-                    (metadata.accepting_time as i64 + interval_i64 + offset).max(metadata.accepting_time as i64) as u64;
+                sub.next_run = (metadata.accepting_time as i64 + interval_i64 + offset).max(metadata.accepting_time as i64) as u64;
                 storage::put_subscription(sub);
                 Ok(MerchantRollback::UndoProcessSubscription { subscription_id: *subscription_id, prev_next_run: prev })
             }

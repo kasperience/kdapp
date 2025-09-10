@@ -32,10 +32,7 @@ impl SimRouter {
         Self { sender }
     }
 
-    pub fn forward<G: kdapp::episode::Episode>(
-        &self,
-        msg: EpisodeMessage<G>,
-    ) -> Result<(), std::sync::mpsc::SendError<EngineMsg>> {
+    pub fn forward<G: kdapp::episode::Episode>(&self, msg: EpisodeMessage<G>) -> Result<(), std::sync::mpsc::SendError<EngineMsg>> {
         let payload = borsh::to_vec(&msg).expect("serialize episode msg");
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
         let accepting_hash = Hash::default();
