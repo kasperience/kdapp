@@ -55,7 +55,9 @@ pub fn encode_ble(req: &InvoiceRequest) -> Vec<u8> {
         memo: req.memo.clone(),
         guardian_keys: Vec::new(),
     };
+
     let payload = cmd.try_to_vec().expect("serialize command");
+
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Cmd as u8,
