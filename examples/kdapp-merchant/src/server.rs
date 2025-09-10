@@ -91,7 +91,9 @@ async fn create_invoice(
     let gkeys = req.guardian_public_keys.unwrap_or_default().iter().filter_map(|h| parse_public_key(h)).collect();
     let cmd = MerchantCommand::CreateInvoice { invoice_id: req.invoice_id, amount: req.amount, memo: req.memo, guardian_keys: gkeys };
     let msg = EpisodeMessage::new_signed_command(state.episode_id, cmd, state.merchant_sk, state.merchant_pk);
-    state.router.forward::<ReceiptEpisode>(msg);
+    if let Err(e) = state.router.forward::<ReceiptEpisode>(msg) {
+        log::warn!("forward failed: {e}");
+    }
     Ok(StatusCode::ACCEPTED)
 }
 
@@ -110,7 +112,9 @@ async fn pay_invoice(
     let payer = parse_public_key(&req.payer_public_key).ok_or(StatusCode::BAD_REQUEST)?;
     let cmd = MerchantCommand::MarkPaid { invoice_id: req.invoice_id, payer };
     let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id: state.episode_id, cmd };
-    state.router.forward::<ReceiptEpisode>(msg);
+    if let Err(e) = state.router.forward::<ReceiptEpisode>(msg) {
+        log::warn!("forward failed: {e}");
+    }
     Ok(StatusCode::ACCEPTED)
 }
 
@@ -136,7 +140,9 @@ async fn create_subscription(
         interval: req.interval,
     };
     let msg = EpisodeMessage::new_signed_command(state.episode_id, cmd, state.merchant_sk, state.merchant_pk);
-    state.router.forward::<ReceiptEpisode>(msg);
+    if let Err(e) = state.router.forward::<ReceiptEpisode>(msg) {
+        log::warn!("forward failed: {e}");
+    }
     Ok(StatusCode::ACCEPTED)
 }
 
