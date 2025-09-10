@@ -169,6 +169,9 @@ enum CliCmd {
         /// Defer anchoring when congestion ratio exceeds this value
         #[arg(long)]
         congestion_threshold: Option<f64>,
+        /// URL to POST invoice state updates
+        #[arg(long)]
+        webhook_url: Option<String>,
     },
     /// Build and broadcast an on-chain transaction carrying a command
     OnchainCreate {
@@ -496,7 +499,7 @@ fn main() {
             let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id, cmd };
             router.forward::<ReceiptEpisode>(msg);
         }
-        CliCmd::Serve { bind, episode_id, api_key, merchant_private_key, max_fee, congestion_threshold } => {
+        CliCmd::Serve { bind, episode_id, api_key, merchant_private_key, max_fee, congestion_threshold, webhook_url } => {
             let router = SimRouter::new(EngineChannel::Local(tx.clone()));
             let (sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
                 Some(sk) => {
@@ -508,6 +511,7 @@ fn main() {
             log::info!("merchant pubkey: {pk}");
             scheduler::start(router.clone(), episode_id);
             let state = server::AppState::new(Arc::new(router), episode_id, sk, pk, api_key, max_fee, congestion_threshold);
+            handler::set_webhook(webhook_url);
             let rt = Runtime::new().expect("runtime");
             rt.block_on(async {
                 server::serve(bind, state).await.expect("server");

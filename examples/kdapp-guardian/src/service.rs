@@ -29,6 +29,7 @@ pub struct GuardianConfig {
     pub key_path: PathBuf,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    pub http_port: Option<u16>,
 }
 
 fn default_log_level() -> String {
@@ -56,6 +57,9 @@ struct Cli {
     /// Log level (e.g. info, debug)
     #[arg(long)]
     log_level: Option<String>,
+    /// Optional HTTP metrics port
+    #[arg(long)]
+    http_port: Option<u16>,
 }
 
 impl GuardianConfig {
@@ -71,6 +75,7 @@ impl GuardianConfig {
                 mainnet: false,
                 key_path: PathBuf::from("guardian.key"),
                 log_level: default_log_level(),
+                http_port: None,
             }
         };
 
@@ -88,6 +93,9 @@ impl GuardianConfig {
         }
         if let Some(v) = args.log_level {
             cfg.log_level = v;
+        }
+        if let Some(v) = args.http_port {
+            cfg.http_port = Some(v);
         }
         cfg
     }
@@ -119,9 +127,9 @@ fn decode_okcp(bytes: &[u8]) -> Option<OkcpRecord> {
 struct HttpMetrics {
     valid: u64,
     invalid: u64,
-    disputes: usize,
-    observed_payments: usize,
-    guardian_refunds: usize,
+    disputes_open: usize,
+    disputes_closed: usize,
+    refunds_signed: usize,
 }
 
 async fn healthz() -> &'static str {
@@ -134,9 +142,9 @@ async fn metrics_endpoint(State(state): State<Arc<Mutex<GuardianState>>>) -> Jso
     Json(HttpMetrics {
         valid,
         invalid,
-        disputes: st.disputes.len(),
-        observed_payments: st.observed_payments.len(),
-        guardian_refunds: st.refund_signatures.len(),
+        disputes_open: st.disputes.len(),
+        disputes_closed: st.checkpoints.len(),
+        refunds_signed: st.refund_signatures.len(),
     })
 }
 
@@ -333,11 +341,15 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
 
     // spawn HTTP server for health and metrics
     let state_http = state.clone();
-    let http_addr = config
-        .listen_addr
-        .rsplit_once(':')
-        .and_then(|(host, port)| port.parse::<u16>().ok().map(|p| format!("{}:{}", host, p + 1)))
-        .unwrap_or_else(|| "127.0.0.1:9651".to_string());
+    let http_addr = if let Some(port) = config.http_port {
+        format!("0.0.0.0:{port}")
+    } else {
+        config
+            .listen_addr
+            .rsplit_once(':')
+            .and_then(|(host, port)| port.parse::<u16>().ok().map(|p| format!("{}:{}", host, p + 1)))
+            .unwrap_or_else(|| "127.0.0.1:9651".to_string())
+    };
     let shutdown_http = shutdown.clone();
     let http_handle = thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("runtime");
