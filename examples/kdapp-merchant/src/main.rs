@@ -6,6 +6,7 @@ mod scheduler;
 mod server;
 mod sim_router;
 mod storage;
+mod tap;
 mod tcp_router;
 mod tlv;
 mod udp_router;
