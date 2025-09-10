@@ -1,4 +1,4 @@
-use borsh::BorshDeserialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::episode::MerchantCommand;
 use crate::tlv::{MsgType, TlvMsg, TLV_VERSION};
@@ -55,7 +55,7 @@ pub fn encode_ble(req: &InvoiceRequest) -> Vec<u8> {
         memo: req.memo.clone(),
         guardian_keys: Vec::new(),
     };
-    let payload = borsh::to_vec(&cmd).expect("serialize command");
+    let payload = cmd.try_to_vec().expect("serialize command");
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Cmd as u8,
