@@ -5,7 +5,5 @@ wrpc_url = "wss://node:16110"
 mainnet = false
 # Private key file for guardian's ECDSA key; created if missing
 key_path = "guardian.key"
-# Optional: persist guardian state (disputes, signatures)
-state_path = "guardian_state.json"
-## Optional: explicit watcher address (overrides KDAPP_GUARDIAN_WATCHER_ADDR; default 127.0.0.1:9590)
-watcher_addr = "127.0.0.1:9590"
+# Log level for env_logger
+log_level = "info"

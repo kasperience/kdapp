@@ -12,8 +12,7 @@ Minimal guardian service that watches checkpoint anchors and helps resolve dispu
   wrpc_url = "wss://node:16110"       # Kaspa wRPC endpoint (testnet-10 or mainnet)
   mainnet = false                      # false = testnet-10
   key_path = "guardian.key"            # will be created if missing
-  state_path = "guardian_state.json"   # optional, persists disputes + signatures
-  watcher_addr = "127.0.0.1:9590"      # optional; overrides KDAPP_GUARDIAN_WATCHER_ADDR
+  log_level = "info"                   # log verbosity
   ```
 
 - Run the service:
@@ -30,8 +29,6 @@ Minimal guardian service that watches checkpoint anchors and helps resolve dispu
 - Anchor watcher (wRPC): connects to Kaspa and scans accepted virtual blocks for compact OKCP checkpoint records (prefix `KMCP`).
   - Tracks per-episode sequences and marks an episode as disputed if a replay or gap is seen.
 - Refund co-sign: upon a valid `Escalate` that includes a refund transaction, the guardian signs the refund with its private key.
-- Watcher notification: after co-signing, it notifies the checkpoint watcher (UDP `watcher_addr` or `KDAPP_GUARDIAN_WATCHER_ADDR`, default `127.0.0.1:9590`) with a `Refund` TLV so the watcher can verify and log the refund.
-- Optional persistence: when `state_path` is set, maintains disputes, last sequences and signed refunds across restarts.
 
 ## HTTP endpoints
 
@@ -60,15 +57,7 @@ Fields:
 
 1) Start the guardian (see Quickstart). Note the printed guardian public key (hex).
 
-2) Start the kdapp-merchant watcher on the same machine so it listens on UDP `127.0.0.1:9590`:
-
-   ```sh
-   cargo run -p kdapp-merchant -- watcher --kaspa-private-key <hex> --wrpc-url wss://node:16110 --http-port 9591
-   ```
-
-   The watcher anchors OKCP checkpoints on-chain and exposes `GET http://127.0.0.1:9591/mempool`.
-
-3) Run kdapp-merchant and include the guardian address/key so disputes are forwarded to the guardian:
+2) Run kdapp-merchant and include the guardian address/key so disputes are forwarded to the guardian:
 
    ```sh
    cargo run -p kdapp-merchant -- \
@@ -79,15 +68,11 @@ Fields:
    cargo run -p kdapp-merchant -- cancel --episode-id 42 --invoice-id 1
    ```
 
-   After the cancel, the guardian signs the refund and notifies the watcher. In watcher logs you should see:
+   After the cancel, the guardian signs the refund. In guardian logs you should see:
 
-   - `checkpoint received: ep=42 seq=...` (periodic)
-   - `refund verified for ep=42 seq=0`
-
-   In guardian logs: `guardian: co-signed refund and notified watcher for episode 42`.
+   - `guardian: co-signed refund for episode 42`.
 
 ## Troubleshooting
 
 - wrpc connect errors: verify `wrpc_url` and network (`mainnet=false` uses testnet-10).
 - unknown episode warnings: a refund was escalated for an episode the guardian hasn’t observed yet; once checkpoints arrive (or another escalate occurs) the dispute will be tracked.
-- ack timeout when notifying watcher: the watcher does not ack `Refund`; this is expected. The guardian still sends the notification once.

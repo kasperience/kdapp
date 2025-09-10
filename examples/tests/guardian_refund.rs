@@ -3,12 +3,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
-use borsh::BorshDeserialize;
 use kdapp::pki::{generate_keypair, to_message, verify_signature};
 use kdapp_guardian::{
     metrics, send_confirm, send_escalate,
     service::{run, GuardianConfig},
-    GuardianMsg, GuardianState, MsgType, TlvMsg, DEMO_HMAC_KEY,
+    GuardianState, DEMO_HMAC_KEY,
 };
 
 fn write_secret_key(path: &std::path::Path, sk: &secp256k1::SecretKey) {
@@ -38,68 +37,33 @@ fn scenario_a_refund_signed_and_recorded() {
     drop(tmp);
     let listen = format!("127.0.0.1:{port}");
 
-    // Bind watcher socket before triggering guardian and pass it via config
-    let watcher = UdpSocket::bind("127.0.0.1:0").unwrap();
-    let watcher_port = watcher.local_addr().unwrap().port();
     let cfg = GuardianConfig {
         listen_addr: listen.clone(),
         wrpc_url: None,
         mainnet: false,
         key_path: key_path.clone(),
-        state_path: None,
-        watcher_addr: Some(format!("127.0.0.1:{watcher_port}")),
+        log_level: "info".into(),
     };
     let handle = run(&cfg);
     let state = handle.state.clone();
 
-    let state_watch = state.clone();
-    let pk_watch = pk;
-    let (tx, rx) = std::sync::mpsc::channel();
-    thread::spawn(move || {
-        let sock = watcher;
-        let mut buf = [0u8; 1024];
-        let (n, src) = sock.recv_from(&mut buf).unwrap();
-        let tlv = TlvMsg::decode(&buf[..n]).unwrap();
-        // Ack the escalate so guardian doesn't retry
-        let mut ack = TlvMsg {
-            version: tlv.version,
-            msg_type: MsgType::Ack as u8,
-            episode_id: tlv.episode_id,
-            seq: tlv.seq,
-            state_hash: [0u8; 32],
-            payload: vec![],
-            auth: [0u8; 32],
-        };
-        ack.sign(DEMO_HMAC_KEY);
-        let _ = sock.send_to(&ack.encode(), src);
-        let msg = GuardianMsg::try_from_slice(&tlv.payload).unwrap();
-        if let GuardianMsg::Escalate { episode_id, refund_tx, .. } = msg {
-            // wait until guardian persists the signature (up to ~2.5s)
-            let mut sig = None;
-            for _ in 0..50 {
-                if let Some(s) = {
-                    let st = state_watch.lock().unwrap();
-                    st.refund_signatures.iter().find(|(ep, _)| *ep == episode_id).map(|(_, s)| *s)
-                } {
-                    sig = Some(s);
-                    break;
-                }
-                thread::sleep(Duration::from_millis(50));
-            }
-            let ok = if let Some(sig) = sig { verify_signature(&pk_watch, &to_message(&refund_tx), &sig) } else { false };
-            tx.send((episode_id, ok)).unwrap();
-        } else {
-            tx.send((0, false)).unwrap();
-        }
-    });
-
     let before = metrics::snapshot();
     let episode = 42u64;
     let refund_tx = b"demo refund".to_vec();
-    send_escalate(&listen, episode, "late payment".into(), refund_tx, DEMO_HMAC_KEY);
-    let (ep, verified) = rx.recv_timeout(Duration::from_secs(7)).unwrap();
-    assert_eq!(ep, episode);
-    assert!(verified);
+    send_escalate(&listen, episode, "late payment".into(), refund_tx.clone(), DEMO_HMAC_KEY);
+    let mut sig = None;
+    for _ in 0..50 {
+        if let Some(s) = {
+            let st = state.lock().unwrap();
+            st.refund_signatures.iter().find(|(ep, _)| *ep == episode).map(|(_, s)| *s)
+        } {
+            sig = Some(s);
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    let sig = sig.expect("signature");
+    assert!(verify_signature(&pk, &to_message(&refund_tx), &sig));
     assert_eq!(state.lock().unwrap().refund_signatures.len(), 1);
     let after = metrics::snapshot();
     assert_eq!(after.0, before.0 + 1);
@@ -125,37 +89,15 @@ fn scenario_b_replay_confirm_rejected() {
     drop(tmp);
     let listen = format!("127.0.0.1:{port}");
 
-    // Minimal watcher to ack escalate; bind first and pass via config
-    let watcher = UdpSocket::bind("127.0.0.1:0").unwrap();
-    let watcher_port = watcher.local_addr().unwrap().port();
     let cfg = GuardianConfig {
         listen_addr: listen.clone(),
         wrpc_url: None,
         mainnet: false,
         key_path,
-        state_path: None,
-        watcher_addr: Some(format!("127.0.0.1:{watcher_port}")),
+        log_level: "info".into(),
     };
     let handle = run(&cfg);
     let state = handle.state.clone();
-    thread::spawn(move || {
-        let sock = watcher;
-        let mut buf = [0u8; 1024];
-        let (n, src) = sock.recv_from(&mut buf).unwrap();
-        if let Some(tlv) = TlvMsg::decode(&buf[..n]) {
-            let mut ack = TlvMsg {
-                version: tlv.version,
-                msg_type: MsgType::Ack as u8,
-                episode_id: tlv.episode_id,
-                seq: tlv.seq,
-                state_hash: [0u8; 32],
-                payload: vec![],
-                auth: [0u8; 32],
-            };
-            ack.sign(DEMO_HMAC_KEY);
-            let _ = sock.send_to(&ack.encode(), src);
-        }
-    });
 
     let before = metrics::snapshot();
     let ep = 7u64;
