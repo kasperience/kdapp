@@ -202,12 +202,10 @@ async fn watch_anchors(
 fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx: Option<Vec<u8>>) {
     if let Some(tx) = refund_tx {
         if let Some(sk) = GUARDIAN_SK.get() {
-            let _sig = {
-                state
-                    .lock()
-                    .unwrap()
-                    .sign_refund(episode_id, &tx, sk)
-            };
+            state
+                .lock()
+                .unwrap()
+                .sign_refund(episode_id, &tx, sk);
             info!("guardian: co-signed refund for episode {episode_id}");
         }
     } else {
