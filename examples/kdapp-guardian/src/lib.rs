@@ -4,7 +4,7 @@ use kdapp::pki::{sign_message, to_message, PubKey, Sig};
 use log::info;
 use secp256k1::SecretKey;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, net::UdpSocket, path::Path, time::Duration};
+use std::{collections::HashMap, fs, net::{SocketAddr, UdpSocket}, path::Path, time::Duration};
 
 pub mod metrics;
 pub mod service;
@@ -244,7 +244,7 @@ pub fn send_confirm(dest: &str, episode_id: u64, seq: u64, key: &[u8]) {
     send_msg(dest, GuardianMsg::Confirm { episode_id, seq }, key);
 }
 
-pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Option<GuardianMsg> {
+pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Option<(GuardianMsg, SocketAddr)> {
     let mut buf = [0u8; 1024];
     let (n, addr) = sock.recv_from(&mut buf).ok()?;
     let tlv = TlvMsg::decode(&buf[..n])?;
@@ -295,7 +295,7 @@ pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Optio
     };
     ack.sign(key);
     let _ = sock.send_to(&ack.encode(), addr);
-    Some(msg)
+    Some((msg, addr))
 }
 
 #[cfg(test)]
@@ -320,7 +320,7 @@ mod tests {
         let addr = server.local_addr().unwrap();
         let handle = std::thread::spawn(move || {
             let mut state = GuardianState::default();
-            let msg = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
+            let (msg, _) = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
             assert!(matches!(msg, GuardianMsg::Handshake { .. }));
         });
         handshake(&addr.to_string(), pk_m, pk_g, DEMO_HMAC_KEY);
@@ -336,9 +336,9 @@ mod tests {
         let addr = server.local_addr().unwrap();
         let handle = std::thread::spawn(move || {
             let mut state = GuardianState::default();
-            let msg1 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
+            let (msg1, _) = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
             assert!(matches!(msg1, GuardianMsg::Escalate { .. }));
-            let msg2 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
+            let (msg2, _) = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
             assert!(matches!(msg2, GuardianMsg::Confirm { .. }));
             state
         });
@@ -429,10 +429,10 @@ mod tests {
             let path = path.clone();
             move || {
                 let mut state = GuardianState::load(&path);
-                let m1 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
+                let (m1, _) = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
                 assert!(matches!(m1, GuardianMsg::Escalate { .. }));
                 state.persist(&path);
-                let m2 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
+                let (m2, _) = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
                 assert!(matches!(m2, GuardianMsg::Confirm { .. }));
                 state.persist(&path);
             }
