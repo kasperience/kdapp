@@ -11,7 +11,7 @@ mod tlv;
 mod udp_router;
 mod watcher;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kaspa_consensus_core::tx::{TransactionOutpoint, UtxoEntry};
@@ -30,6 +30,7 @@ use tokio::runtime::Runtime;
 use episode::{CustomerInfo, MerchantCommand, ReceiptEpisode};
 use handler::MerchantEventHandler;
 use sim_router::{EngineChannel, SimRouter};
+use watcher::{CongestionAwarePolicy, StaticFeePolicy, MIN_FEE};
 
 #[derive(Parser, Debug)]
 #[command(name = "kdapp-merchant", version, about = "onlyKAS Merchant demo (scaffold)")]
@@ -54,6 +55,12 @@ struct Args {
     guardian_public_key: Vec<String>,
     #[command(subcommand)]
     command: Option<CliCmd>,
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+enum FeePolicyCli {
+    Static,
+    Congestion,
 }
 
 #[derive(Subcommand, Debug)]
@@ -217,12 +224,23 @@ enum CliCmd {
         mainnet: bool,
         #[arg(long)]
         wrpc_url: Option<String>,
-        /// Maximum fee in sompis for anchoring transactions
+        #[arg(long, value_enum, default_value_t = FeePolicyCli::Congestion)]
+        fee_policy: FeePolicyCli,
+        /// Fee in sompis when using the static policy
+        #[arg(long)]
+        static_fee: Option<u64>,
+        /// Minimum fee for congestion-aware policy
+        #[arg(long)]
+        min_fee: Option<u64>,
+        /// Maximum fee for congestion-aware policy
         #[arg(long)]
         max_fee: Option<u64>,
         /// Defer anchoring when congestion ratio exceeds this value
         #[arg(long)]
-        congestion_threshold: Option<f64>,
+        defer_threshold: Option<f64>,
+        /// Multiplier applied to congestion ratio when calculating fees
+        #[arg(long)]
+        multiplier: Option<f64>,
         /// Show current mempool metrics and exit
         #[arg(long, default_value_t = false)]
         show_metrics: bool,
@@ -591,7 +609,20 @@ fn main() {
                 log::info!("on-chain ack submitted: tx_id={tx_id}");
             });
         }
-        CliCmd::Watcher { bind, kaspa_private_key, mainnet, wrpc_url, max_fee, congestion_threshold, show_metrics, http_port } => {
+        CliCmd::Watcher {
+            bind,
+            kaspa_private_key,
+            mainnet,
+            wrpc_url,
+            fee_policy,
+            static_fee,
+            min_fee,
+            max_fee,
+            defer_threshold,
+            multiplier,
+            show_metrics,
+            http_port,
+        } => {
             if show_metrics {
                 let network =
                     if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
@@ -600,20 +631,31 @@ fn main() {
                     let client = proxy::connect_client(network, wrpc_url).await.map_err(|e| e.to_string())?;
                     watcher::update_metrics(&client).await
                 }) {
-                    Ok((base_fee, congestion)) => {
-                        println!("base_fee: {base_fee}, congestion: {congestion:.2}");
+                    Ok(snap) => {
+                        println!("base_fee: {}, congestion: {:.2}", snap.base_fee, snap.congestion_ratio);
                     }
                     Err(e) => println!("failed to fetch metrics: {e}"),
                 }
             } else {
-                let kaspa_private_key = kaspa_private_key.expect("kaspa_private_key required when not using --show-metrics");
+                let kaspa_private_key =
+                    kaspa_private_key.expect("kaspa_private_key required when not using --show-metrics");
+                let policy: Box<dyn watcher::FeePolicy> = match fee_policy {
+                    FeePolicyCli::Static => Box::new(StaticFeePolicy {
+                        fee: static_fee.unwrap_or(MIN_FEE),
+                    }),
+                    FeePolicyCli::Congestion => Box::new(CongestionAwarePolicy {
+                        min_fee: min_fee.unwrap_or(MIN_FEE),
+                        max_fee: max_fee.unwrap_or(u64::MAX),
+                        defer_threshold: defer_threshold.unwrap_or(0.7),
+                        multiplier: multiplier.unwrap_or(1.0),
+                    }),
+                };
                 watcher::run(
                     &bind,
                     kaspa_private_key,
                     mainnet,
                     wrpc_url,
-                    max_fee.unwrap_or(u64::MAX),
-                    congestion_threshold.unwrap_or(0.7),
+                    policy,
                     http_port,
                 )
                 .expect("watcher");
