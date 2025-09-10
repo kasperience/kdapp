@@ -32,6 +32,7 @@ pub struct Invoice {
     pub memo: Option<String>,
     pub status: InvoiceStatus,
     pub payer: Option<PubKey>,
+    pub merchant: PubKey,
     pub guardian_keys: Vec<PubKey>,
 }
 
@@ -78,6 +79,7 @@ impl Episode for ReceiptEpisode {
                     memo: memo.clone(),
                     status: InvoiceStatus::Open,
                     payer: None,
+                    merchant: authorization.unwrap(),
                     guardian_keys: guardian_keys.clone(),
                 };
                 self.invoices.insert(*invoice_id, inv);
@@ -93,14 +95,21 @@ impl Episode for ReceiptEpisode {
                         return Err(EpisodeError::InvalidCommand(CmdErr::Invalid));
                     }
                 }
-                // Rely on proxy-provided tx outputs. Customer accepts any standard-looking output
-                // carrying the exact invoice amount, without enforcing a specific recipient key.
+                // Ensure a transaction output pays at least the invoice amount to the expected merchant script.
                 let outs = metadata.tx_outputs.as_ref().ok_or(EpisodeError::InvalidCommand(CmdErr::Invalid))?;
+                let mut script = Vec::with_capacity(35);
+                script.push(33);
+                script.extend_from_slice(&inv.merchant.0.serialize());
+                script.push(0xac);
                 let mut found = false;
                 for o in outs {
-                    if o.value == inv.amount && o.script_bytes.is_some() {
-                        found = true;
-                        break;
+                    if o.value >= inv.amount {
+                        if let Some(bytes) = &o.script_bytes {
+                            if *bytes == script {
+                                found = true;
+                                break;
+                            }
+                        }
                     }
                 }
                 if !found {
@@ -159,13 +168,14 @@ mod tests {
 
     #[test]
     fn invoice_receipt_and_ack_flow() {
-        let (_sk, pk) = generate_keypair();
+        let (_skm, merchant_pk) = generate_keypair();
+        let (_skp, payer_pk) = generate_keypair();
         let metadata = md();
-        let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
+        let mut ep = ReceiptEpisode::initialize(vec![merchant_pk], &metadata);
 
         // Receive invoice
         let cmd = MerchantCommand::CreateInvoice { invoice_id: 1, amount: 50, memo: Some("test".into()), guardian_keys: vec![] };
-        ep.execute(&cmd, Some(pk), &metadata).expect("create");
+        ep.execute(&cmd, Some(merchant_pk), &metadata).expect("create");
         let inv = ep.invoice(1).expect("stored");
         assert_eq!(inv.amount, 50);
         assert!(matches!(inv.status, InvoiceStatus::Open));
@@ -174,39 +184,40 @@ mod tests {
         let mut paid_md = md();
         let mut script = Vec::with_capacity(35);
         script.push(33);
-        script.extend_from_slice(&pk.0.serialize());
+        script.extend_from_slice(&merchant_pk.0.serialize());
         script.push(0xac);
         paid_md.tx_outputs = Some(vec![TxOutputInfo { value: 50, script_version: 0, script_bytes: Some(script) }]);
-        let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: pk };
-        ep.execute(&cmd, Some(pk), &paid_md).expect("paid");
+        let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: payer_pk };
+        ep.execute(&cmd, Some(payer_pk), &paid_md).expect("paid");
         let inv = ep.invoice(1).unwrap();
         assert!(matches!(inv.status, InvoiceStatus::Paid));
-        assert_eq!(inv.payer, Some(pk));
+        assert_eq!(inv.payer, Some(payer_pk));
 
         // Acknowledge receipt
         let cmd = MerchantCommand::AckReceipt { invoice_id: 1 };
-        ep.execute(&cmd, Some(pk), &metadata).expect("ack");
+        ep.execute(&cmd, Some(merchant_pk), &metadata).expect("ack");
         let inv = ep.invoice(1).unwrap();
         assert!(matches!(inv.status, InvoiceStatus::Acked));
     }
 
     #[test]
     fn mark_paid_mismatched_amount() {
-        let (_sk, pk) = generate_keypair();
+        let (_skm, merchant_pk) = generate_keypair();
+        let (_skp, payer_pk) = generate_keypair();
         let metadata = md();
-        let mut ep = ReceiptEpisode::initialize(vec![pk], &metadata);
+        let mut ep = ReceiptEpisode::initialize(vec![merchant_pk], &metadata);
 
         let cmd = MerchantCommand::CreateInvoice { invoice_id: 2, amount: 50, memo: None, guardian_keys: vec![] };
-        ep.execute(&cmd, Some(pk), &metadata).expect("create");
+        ep.execute(&cmd, Some(merchant_pk), &metadata).expect("create");
 
         let mut paid_md = md();
         let mut script = Vec::with_capacity(35);
         script.push(33);
-        script.extend_from_slice(&pk.0.serialize());
+        script.extend_from_slice(&merchant_pk.0.serialize());
         script.push(0xac);
         paid_md.tx_outputs = Some(vec![TxOutputInfo { value: 40, script_version: 0, script_bytes: Some(script) }]);
-        let cmd = MerchantCommand::MarkPaid { invoice_id: 2, payer: pk };
-        assert!(matches!(ep.execute(&cmd, Some(pk), &paid_md), Err(EpisodeError::InvalidCommand(CmdErr::Invalid))));
+        let cmd = MerchantCommand::MarkPaid { invoice_id: 2, payer: payer_pk };
+        assert!(matches!(ep.execute(&cmd, Some(payer_pk), &paid_md), Err(EpisodeError::InvalidCommand(CmdErr::Invalid))));
     }
 
     #[test]
@@ -223,7 +234,6 @@ mod tests {
     fn mark_paid_unknown_payer() {
         let (_skm, merchant_pk) = generate_keypair();
         let (_sk1, payer1) = generate_keypair();
-        let (_sk2, payer2) = generate_keypair();
         let metadata = md();
         let mut ep = ReceiptEpisode::initialize(vec![merchant_pk], &metadata);
 
@@ -233,10 +243,31 @@ mod tests {
         let mut paid_md = md();
         let mut script = Vec::with_capacity(35);
         script.push(33);
-        script.extend_from_slice(&payer2.0.serialize());
+        script.extend_from_slice(&merchant_pk.0.serialize());
         script.push(0xac);
         paid_md.tx_outputs = Some(vec![TxOutputInfo { value: 25, script_version: 0, script_bytes: Some(script) }]);
         let cmd = MerchantCommand::MarkPaid { invoice_id: 4, payer: payer1 };
         assert!(matches!(ep.execute(&cmd, Some(merchant_pk), &paid_md), Err(EpisodeError::InvalidCommand(CmdErr::Invalid))));
+    }
+
+    #[test]
+    fn mark_paid_mismatched_script() {
+        let (_skm, merchant_pk) = generate_keypair();
+        let (_skp, payer_pk) = generate_keypair();
+        let (_skx, other_pk) = generate_keypair();
+        let metadata = md();
+        let mut ep = ReceiptEpisode::initialize(vec![merchant_pk], &metadata);
+
+        let cmd = MerchantCommand::CreateInvoice { invoice_id: 5, amount: 50, memo: None, guardian_keys: vec![] };
+        ep.execute(&cmd, Some(merchant_pk), &metadata).expect("create");
+
+        let mut paid_md = md();
+        let mut script = Vec::with_capacity(35);
+        script.push(33);
+        script.extend_from_slice(&other_pk.0.serialize());
+        script.push(0xac);
+        paid_md.tx_outputs = Some(vec![TxOutputInfo { value: 50, script_version: 0, script_bytes: Some(script) }]);
+        let cmd = MerchantCommand::MarkPaid { invoice_id: 5, payer: payer_pk };
+        assert!(matches!(ep.execute(&cmd, Some(payer_pk), &paid_md), Err(EpisodeError::InvalidCommand(CmdErr::Invalid))));
     }
 }
