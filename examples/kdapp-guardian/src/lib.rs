@@ -4,7 +4,13 @@ use kdapp::pki::{sign_message, to_message, PubKey, Sig};
 use log::info;
 use secp256k1::SecretKey;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, net::UdpSocket, path::Path, time::Duration};
+use std::{
+    collections::HashMap,
+    fs,
+    net::UdpSocket,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 pub mod metrics;
 pub mod service;
@@ -119,19 +125,26 @@ pub struct GuardianState {
     pub disputes: Vec<u64>,
     pub refund_signatures: Vec<(u64, kdapp::pki::Sig)>,
     pub last_seq: HashMap<u64, u64>,
+    #[serde(skip)]
+    #[serde(default)]
+    state_path: Option<PathBuf>,
 }
 
 impl GuardianState {
     pub fn load(path: &Path) -> Self {
         if let Ok(bytes) = fs::read(path) {
-            if let Ok(state) = serde_json::from_slice(&bytes) {
+            if let Ok(mut state) = serde_json::from_slice(&bytes) {
+                state.state_path = Some(path.to_path_buf());
                 return state;
             }
         }
-        Self::default()
+        let mut state = Self::default();
+        state.state_path = Some(path.to_path_buf());
+        state
     }
 
-    pub fn persist(&self, path: &Path) {
+    pub fn persist(&self) {
+        let Some(path) = &self.state_path else { return };
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -145,6 +158,7 @@ impl GuardianState {
 
     pub fn observe_payment(&mut self, invoice_id: u64) {
         self.observed_payments.push(invoice_id);
+        self.persist();
     }
 
     /// Track last seen seq per episode; return false if duplicate or out of order
@@ -153,6 +167,7 @@ impl GuardianState {
             Some(last) => {
                 if seq == *last + 1 {
                     self.last_seq.insert(episode_id, seq);
+                    self.persist();
                     true
                 } else {
                     false
@@ -161,6 +176,7 @@ impl GuardianState {
             None => {
                 if seq == 0 {
                     self.last_seq.insert(episode_id, seq);
+                    self.persist();
                     true
                 } else {
                     false
@@ -174,10 +190,12 @@ impl GuardianState {
         if !self.observe_msg(episode_id, seq) {
             if !self.disputes.contains(&episode_id) {
                 self.disputes.push(episode_id);
+                self.persist();
             }
             return true;
         }
         self.checkpoints.push((episode_id, seq));
+        self.persist();
         false
     }
 
@@ -185,6 +203,7 @@ impl GuardianState {
         let msg = to_message(&tx.to_vec());
         let sig = sign_message(sk, &msg);
         self.refund_signatures.push((episode_id, sig));
+        self.persist();
         sig
     }
 }
@@ -269,6 +288,7 @@ pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Optio
             state.observe_payment(*episode_id);
             if !state.disputes.contains(episode_id) {
                 state.disputes.push(*episode_id);
+                state.persist();
             }
         }
         GuardianMsg::Confirm { episode_id, seq } => {
@@ -415,33 +435,25 @@ mod tests {
     }
 
     #[test]
-    fn state_persists_across_restarts() {
+    fn state_persistence_roundtrip() {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let _g = test_guard();
         metrics::reset();
-        let server = UdpSocket::bind("127.0.0.1:0").unwrap();
-        let addr = server.local_addr().unwrap();
         let path = std::env::temp_dir()
             .join(format!("guardian_state_test_{}.json", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
-        let episode = 42u64;
-        let handle = std::thread::spawn({
-            let path = path.clone();
-            move || {
-                let mut state = GuardianState::load(&path);
-                let m1 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
-                assert!(matches!(m1, GuardianMsg::Escalate { .. }));
-                state.persist(&path);
-                let m2 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
-                assert!(matches!(m2, GuardianMsg::Confirm { .. }));
-                state.persist(&path);
-            }
-        });
-        send_escalate(&addr.to_string(), episode, "late".into(), vec![], DEMO_HMAC_KEY);
-        send_confirm(&addr.to_string(), episode, 1, DEMO_HMAC_KEY);
-        handle.join().unwrap();
+        {
+            let mut state = GuardianState::load(&path);
+            assert!(!state.record_checkpoint(1, 0));
+            assert!(!state.record_checkpoint(1, 1));
+            assert!(state.record_checkpoint(2, 1));
+            let (sk, _) = kdapp::pki::generate_keypair();
+            let _ = state.sign_refund(2, &[1, 2, 3], &sk);
+        }
         let state = GuardianState::load(&path);
-        let _ = std::fs::remove_file(&path);
-        assert_eq!(state.disputes, vec![episode]);
+        assert_eq!(state.last_seq.get(&1), Some(&1));
+        assert_eq!(state.disputes, vec![2]);
+        assert_eq!(state.refund_signatures.len(), 1);
+        let _ = std::fs::remove_file(path);
     }
 }

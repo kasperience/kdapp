@@ -13,6 +13,7 @@ Minimal guardian service that watches checkpoint anchors and helps resolve dispu
   mainnet = false                      # false = testnet-10
   key_path = "guardian.key"            # will be created if missing
   log_level = "info"                   # log verbosity
+  # state_path = "guardian_state.json"   # optional persisted state file
   ```
 
 - Run the service:
