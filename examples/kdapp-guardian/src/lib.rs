@@ -133,14 +133,12 @@ pub struct GuardianState {
 impl GuardianState {
     pub fn load(path: &Path) -> Self {
         if let Ok(bytes) = fs::read(path) {
-            if let Ok(mut state) = serde_json::from_slice(&bytes) {
+            if let Ok(mut state) = serde_json::from_slice::<Self>(&bytes) {
                 state.state_path = Some(path.to_path_buf());
                 return state;
             }
         }
-        let mut state = Self::default();
-        state.state_path = Some(path.to_path_buf());
-        state
+        Self { state_path: Some(path.to_path_buf()), ..Default::default() }
     }
 
     pub fn persist(&self) {

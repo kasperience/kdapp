@@ -637,12 +637,9 @@ fn main() {
                     Err(e) => println!("failed to fetch metrics: {e}"),
                 }
             } else {
-                let kaspa_private_key =
-                    kaspa_private_key.expect("kaspa_private_key required when not using --show-metrics");
+                let kaspa_private_key = kaspa_private_key.expect("kaspa_private_key required when not using --show-metrics");
                 let policy: Box<dyn watcher::FeePolicy> = match fee_policy {
-                    FeePolicyCli::Static => Box::new(StaticFeePolicy {
-                        fee: static_fee.unwrap_or(MIN_FEE),
-                    }),
+                    FeePolicyCli::Static => Box::new(StaticFeePolicy { fee: static_fee.unwrap_or(MIN_FEE) }),
                     FeePolicyCli::Congestion => Box::new(CongestionAwarePolicy {
                         min_fee: min_fee.unwrap_or(MIN_FEE),
                         max_fee: max_fee.unwrap_or(u64::MAX),
@@ -650,15 +647,7 @@ fn main() {
                         multiplier: multiplier.unwrap_or(1.0),
                     }),
                 };
-                watcher::run(
-                    &bind,
-                    kaspa_private_key,
-                    mainnet,
-                    wrpc_url,
-                    policy,
-                    http_port,
-                )
-                .expect("watcher");
+                watcher::run(&bind, kaspa_private_key, mainnet, wrpc_url, policy, http_port).expect("watcher");
             }
         }
         CliCmd::Addr { merchant_public_key } => {

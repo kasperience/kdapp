@@ -66,8 +66,7 @@ impl FeePolicy for CongestionAwarePolicy {
             info!("anchoring deferred: congestion above threshold");
             return (0, true);
         }
-        let mut fee =
-            (snap.base_fee as f64 * (1.0 + self.multiplier * snap.congestion_ratio)).ceil() as u64;
+        let mut fee = (snap.base_fee as f64 * (1.0 + self.multiplier * snap.congestion_ratio)).ceil() as u64;
         if fee < self.min_fee {
             fee = self.min_fee;
         }
@@ -79,8 +78,7 @@ impl FeePolicy for CongestionAwarePolicy {
     }
 }
 
-pub static MEMPOOL_METRICS: Lazy<RwLock<Option<MempoolSnapshot>>> =
-    Lazy::new(|| RwLock::new(None));
+pub static MEMPOOL_METRICS: Lazy<RwLock<Option<MempoolSnapshot>>> = Lazy::new(|| RwLock::new(None));
 
 pub fn get_metrics() -> Option<MempoolSnapshot> {
     MEMPOOL_METRICS.read().expect("metrics lock").clone()
@@ -180,12 +178,7 @@ pub async fn relay_checkpoints(
 async fn fetch_mempool_snapshot(client: &KaspaRpcClient) -> Result<MempoolSnapshot, String> {
     // Base fee: derive from fee estimate (sompi), with a conservative mass assumption and MIN_FEE floor
     let estimate = client.get_fee_estimate().await.map_err(|e| e.to_string())?;
-    let feerate =
-        estimate
-            .normal_buckets
-            .first()
-            .map(|b| b.feerate)
-            .unwrap_or(estimate.priority_bucket.feerate);
+    let feerate = estimate.normal_buckets.first().map(|b| b.feerate).unwrap_or(estimate.priority_bucket.feerate);
     // Approximate small tx mass (1 in / 1 out with payload); adjust as needed
     let approx_mass: f64 = 200.0;
     let mut base_fee = (feerate * approx_mass).ceil() as u64;
@@ -195,10 +188,7 @@ async fn fetch_mempool_snapshot(client: &KaspaRpcClient) -> Result<MempoolSnapsh
 
     // Congestion: use consensus metrics' network_mempool_size as a simple heuristic
     let congestion = match client.get_metrics(false, false, false, true, false, false).await {
-        Ok(m) => m
-            .consensus_metrics
-            .map(|cm| (cm.network_mempool_size as f64) / 10_000.0)
-            .unwrap_or(0.0),
+        Ok(m) => m.consensus_metrics.map(|cm| (cm.network_mempool_size as f64) / 10_000.0).unwrap_or(0.0),
         Err(_) => 0.0,
     };
 

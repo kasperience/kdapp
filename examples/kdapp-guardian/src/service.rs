@@ -29,8 +29,6 @@ pub struct GuardianConfig {
     pub key_path: PathBuf,
     #[serde(default = "default_log_level")]
     pub log_level: String,
-    #[serde(default)]
-    pub state_path: Option<PathBuf>,
 }
 
 fn default_log_level() -> String {
@@ -58,9 +56,6 @@ struct Cli {
     /// Log level (e.g. info, debug)
     #[arg(long)]
     log_level: Option<String>,
-    /// Optional path to persist guardian state
-    #[arg(long)]
-    state_path: Option<PathBuf>,
 }
 
 impl GuardianConfig {
@@ -76,7 +71,6 @@ impl GuardianConfig {
                 mainnet: false,
                 key_path: PathBuf::from("guardian.key"),
                 log_level: default_log_level(),
-                state_path: None,
             }
         };
 
@@ -94,9 +88,6 @@ impl GuardianConfig {
         }
         if let Some(v) = args.log_level {
             cfg.log_level = v;
-        }
-        if let Some(v) = args.state_path {
-            cfg.state_path = Some(v);
         }
         cfg
     }
@@ -287,12 +278,7 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
     info!("guardian public key {}", String::from_utf8(pk_hex).expect("utf8"));
     let sock = UdpSocket::bind(&config.listen_addr).expect("bind guardian service");
     info!("guardian service listening on {}", config.listen_addr);
-    let state_obj = if let Some(path) = &config.state_path {
-        GuardianState::load(path)
-    } else {
-        GuardianState::default()
-    };
-    let state = Arc::new(Mutex::new(state_obj));
+    let state = Arc::new(Mutex::new(GuardianState::default()));
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let mut threads = Vec::new();
@@ -308,9 +294,7 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
                 break;
             }
             let mut st = state_clone.lock().unwrap();
-            if let Some(GuardianMsg::Escalate { episode_id, refund_tx, .. }) =
-                receive(&sock_clone, &mut st, DEMO_HMAC_KEY)
-            {
+            if let Some(GuardianMsg::Escalate { episode_id, refund_tx, .. }) = receive(&sock_clone, &mut st, DEMO_HMAC_KEY) {
                 drop(st);
                 handle_escalate(&state_clone, episode_id, Some(refund_tx));
             }
