@@ -18,7 +18,7 @@ use log::{info, warn};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 
-use crate::{metrics, receive, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
+use crate::{metrics, receive, send_escalate, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct GuardianConfig {
@@ -189,7 +189,7 @@ async fn watch_anchors(
                             let discrepancy = s.record_checkpoint(rec.episode_id, rec.seq);
                             drop(s);
                             if discrepancy {
-                                handle_escalate(&state, rec.episode_id, None);
+                                handle_escalate(&state, rec.episode_id, None, None);
                             }
                         }
                     }
@@ -199,14 +199,29 @@ async fn watch_anchors(
     }
 }
 
-fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx: Option<Vec<u8>>) {
+fn handle_escalate(
+    state: &Arc<Mutex<GuardianState>>,
+    episode_id: u64,
+    refund_tx: Option<Vec<u8>>,
+    watcher: Option<std::net::SocketAddr>,
+) {
     if let Some(tx) = refund_tx {
         if let Some(sk) = GUARDIAN_SK.get() {
-            state
+            let sig = state
                 .lock()
                 .unwrap()
                 .sign_refund(episode_id, &tx, sk);
             info!("guardian: co-signed refund for episode {episode_id}");
+            if let Some(addr) = watcher {
+                let sig_bytes = sig.0.serialize_der();
+                send_escalate(
+                    &addr.to_string(),
+                    episode_id,
+                    "refund signature".into(),
+                    sig_bytes,
+                    DEMO_HMAC_KEY,
+                );
+            }
         }
     } else {
         info!("guardian: discrepancy detected for episode {episode_id}");
@@ -299,11 +314,11 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
                 break;
             }
             let mut st = state_clone.lock().unwrap();
-            if let Some(GuardianMsg::Escalate { episode_id, refund_tx, .. }) =
+            if let Some((GuardianMsg::Escalate { episode_id, refund_tx, .. }, addr)) =
                 receive(&sock_clone, &mut st, DEMO_HMAC_KEY)
             {
                 drop(st);
-                handle_escalate(&state_clone, episode_id, Some(refund_tx));
+                handle_escalate(&state_clone, episode_id, Some(refund_tx), Some(addr));
             }
         }
     });
@@ -371,6 +386,7 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
 mod tests {
     use super::*;
     use std::sync::{Mutex, OnceLock};
+    use kdapp::pki::generate_keypair;
 
     fn test_guard() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -384,7 +400,7 @@ mod tests {
         state.lock().unwrap().disputes.push(42);
         let (sk, _) = generate_keypair();
         let _ = GUARDIAN_SK.get_or_init(|| sk);
-        handle_escalate(&state, 42, Some(vec![1, 2, 3]));
+        handle_escalate(&state, 42, Some(vec![1, 2, 3]), None);
         assert_eq!(state.lock().unwrap().refund_signatures.len(), 1);
     }
 
@@ -393,7 +409,7 @@ mod tests {
         let _g = test_guard();
         let state = Arc::new(Mutex::new(GuardianState::default()));
         state.lock().unwrap().disputes.push(7);
-        handle_escalate(&state, 7, None);
+        handle_escalate(&state, 7, None, None);
         assert!(state.lock().unwrap().refund_signatures.is_empty());
     }
 }

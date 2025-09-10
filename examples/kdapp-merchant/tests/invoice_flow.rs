@@ -47,9 +47,9 @@ fn invoice_flow_with_guardian() {
     let addr = server.local_addr().unwrap();
     let handle = thread::spawn(move || {
         let mut state = GuardianState::default();
-        let msg1 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
+        let (msg1, _) = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
         assert!(matches!(msg1, GuardianMsg::Escalate { episode_id: 1, .. }));
-        let msg2 = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
+        let (msg2, _) = receive(&server, &mut state, DEMO_HMAC_KEY).unwrap();
         assert!(matches!(msg2, GuardianMsg::Confirm { episode_id: 1, seq: 1 }));
         state
     });
