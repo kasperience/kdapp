@@ -1,5 +1,9 @@
 #[path = "../../kdapp-customer/src/episode.rs"]
 mod customer_episode;
+// Bring in the customer's pki module so `crate::pki::p2pk_script` resolves
+// inside the included `customer_episode` module when compiled in this test crate.
+#[path = "../../kdapp-customer/src/pki.rs"]
+mod pki;
 mod fixtures;
 
 use customer_episode::{
