@@ -9,11 +9,11 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use hmac::{Hmac, Mac};
 use kdapp::engine::EpisodeMessage;
 use kdapp::pki::PubKey;
 use secp256k1::SecretKey;
 use serde::{Deserialize, Serialize};
-use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 use crate::episode::{MerchantCommand, ReceiptEpisode};
@@ -57,16 +57,7 @@ impl AppState {
             o.max_fee = max_fee;
             o.congestion_threshold = congestion_threshold;
         }
-        Self {
-            router,
-            episode_id,
-            merchant_sk,
-            merchant_pk,
-            api_key,
-            watcher_overrides: overrides,
-            webhook_url,
-            webhook_secret,
-        }
+        Self { router, episode_id, merchant_sk, merchant_pk, api_key, watcher_overrides: overrides, webhook_url, webhook_secret }
     }
 }
 
@@ -109,12 +100,7 @@ fn spawn_webhook(state: &AppState, event: WebhookEvent) {
         let client = reqwest::Client::new();
         let mut delay = 1u64;
         for attempt in 0..3 {
-            let res = client
-                .post(&url)
-                .header("X-Signature", sig_hex.clone())
-                .body(body.clone())
-                .send()
-                .await;
+            let res = client.post(&url).header("X-Signature", sig_hex.clone()).body(body.clone()).send().await;
             match res {
                 Ok(r) if r.status().is_success() => break,
                 Ok(r) => log::warn!("webhook POST failed: status {}", r.status()),
@@ -168,12 +154,7 @@ async fn create_invoice(
     Json(req): Json<CreateInvoiceReq>,
 ) -> Result<StatusCode, StatusCode> {
     authorize(&headers, &state)?;
-    let gkeys = req
-        .guardian_public_keys
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|h| parse_public_key(h))
-        .collect();
+    let gkeys = req.guardian_public_keys.unwrap_or_default().iter().filter_map(|h| parse_public_key(h)).collect();
     let cmd = MerchantCommand::CreateInvoice {
         invoice_id: req.invoice_id,
         amount: req.amount,
@@ -191,10 +172,7 @@ async fn create_invoice(
         amount: req.amount,
         memo: req.memo,
         payer_pubkey: None,
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
+        timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
     };
     spawn_webhook(&state, event);
     Ok(StatusCode::ACCEPTED)
@@ -218,10 +196,7 @@ async fn pay_invoice(
     if let Err(e) = state.router.forward::<ReceiptEpisode>(msg) {
         log::warn!("forward failed: {e}");
     }
-    let (amount, memo) = storage::load_invoices()
-        .get(&req.invoice_id)
-        .map(|inv| (inv.amount, inv.memo.clone()))
-        .unwrap_or((0, None));
+    let (amount, memo) = storage::load_invoices().get(&req.invoice_id).map(|inv| (inv.amount, inv.memo.clone())).unwrap_or((0, None));
     let event = WebhookEvent {
         event: "invoice_paid".into(),
         invoice_id: req.invoice_id,
@@ -229,10 +204,7 @@ async fn pay_invoice(
         amount,
         memo,
         payer_pubkey: Some(req.payer_public_key),
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
+        timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
     };
     spawn_webhook(&state, event);
     Ok(StatusCode::ACCEPTED)
@@ -265,10 +237,7 @@ async fn ack_invoice(
         amount,
         memo,
         payer_pubkey: payer,
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
+        timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
     };
     spawn_webhook(&state, event);
     Ok(StatusCode::ACCEPTED)
@@ -301,10 +270,7 @@ async fn cancel_invoice(
         amount,
         memo,
         payer_pubkey: payer,
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
+        timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
     };
     spawn_webhook(&state, event);
     Ok(StatusCode::ACCEPTED)

@@ -30,7 +30,6 @@ pub fn add_guardian(addr: String, pk: PubKey) {
     GUARDIANS.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap().push((addr, pk));
 }
 
-
 fn emit_checkpoint(episode_id: EpisodeId, episode: &ReceiptEpisode, force: bool) {
     // Ensure a handshake with the watcher before sending signed messages
     DID_HANDSHAKE.get_or_init(|| {
@@ -106,7 +105,6 @@ fn forward_dispute(episode_id: EpisodeId, episode: &ReceiptEpisode) {
         }
     }
 }
-
 
 fn verify_guardian_cosign(tx: &[u8], sig: &Sig, gpk: &PubKey) -> bool {
     let msg = to_message(&tx.to_vec());
