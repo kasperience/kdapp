@@ -136,6 +136,14 @@ Explore `examples/kaspa-auth` and `examples/comment-board` for richer flows and 
 - Lint/build/test only `kdapp-merchant`, `kdapp-customer`, and `kdapp-guardian`.
 - Use `scripts/fastpath.ps1` or see `docs/fast_path_testing.md` for commands and space‑saving tips.
 
+### Development Tips
+- Build examples together:
+  - `cargo build -p kdapp-merchant -p kdapp-guardian -p kdapp-customer`
+- Lint strictly (deny warnings):
+  - `cargo clippy -p kdapp-merchant -p kdapp-guardian -p kdapp-customer --all-targets -- -D warnings`
+- Run tests for examples as needed, e.g.:
+  - `cargo test -p kdapp-merchant`
+
 ## Kaspa‑Auth: What It Is and Isn’t
 
 Kaspa‑auth in this repository (e.g., comment‑it, comment‑board) is not a browser cookie/session system. It provides episode‑scoped authorization enforced on‑chain via signed commands.

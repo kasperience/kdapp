@@ -77,3 +77,9 @@ Fields:
 
 - wrpc connect errors: verify `wrpc_url` and network (`mainnet=false` uses testnet-10).
 - unknown episode warnings: a refund was escalated for an episode the guardian hasn’t observed yet; once checkpoints arrive (or another escalate occurs) the dispute will be tracked.
+
+## Keys & Permissions
+
+- The guardian creates `guardian.key` on first run if it doesn't exist.
+- On Unix, the file permissions are tightened to `0600` (owner read/write).
+- On Windows, permission tightening is skipped; manage ACLs using the OS tools if needed.

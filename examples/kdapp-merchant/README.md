@@ -180,3 +180,12 @@ Notes:
   - The guardian hasn’t seen checkpoints for the episode yet. Once it observes OKCP anchors (or receives another escalate), the dispute will be tracked.
 - ack timeouts from routers or watcher
   - Ensure the initial `Handshake` was sent and the HMAC key matches (`kdapp-demo-secret` in examples).
+
+## Developer Notes
+
+- Build example trio:
+  - `cargo build -p kdapp-merchant -p kdapp-guardian -p kdapp-customer`
+- Lint strictly (deny warnings):
+  - `cargo clippy -p kdapp-merchant -p kdapp-guardian -p kdapp-customer --all-targets -- -D warnings`
+- Run tests for merchant example:
+  - `cargo test -p kdapp-merchant`
