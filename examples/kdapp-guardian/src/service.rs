@@ -1,6 +1,6 @@
 use std::fs;
 use std::net::UdpSocket;
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -26,7 +26,7 @@ pub struct GuardianConfig {
     pub wrpc_url: String,
     pub mainnet: bool,
     pub key_path: String,
-    pub state_path: Option<String>,
+    pub state_path: Option<PathBuf>,
     pub log_level: String,
 }
 
@@ -37,7 +37,7 @@ impl Default for GuardianConfig {
             wrpc_url: "ws://127.0.0.1:16110".to_string(),
             mainnet: false,
             key_path: "guardian.key".to_string(),
-            state_path: Some("guardian.state".to_string()),
+            state_path: Some(PathBuf::from("guardian.state")),
             log_level: "info".to_string(),
         }
     }
@@ -55,7 +55,7 @@ pub struct Cli {
     #[arg(long)]
     pub key_path: Option<String>,
     #[arg(long)]
-    pub state_path: Option<String>,
+    pub state_path: Option<PathBuf>,
     #[arg(long, default_value = "info")]
     pub log_level: String,
     #[arg(long)]
@@ -266,8 +266,11 @@ pub fn run(cfg: GuardianConfig) -> ServiceHandle {
     info!("Listen: {}  wRPC: {}  mainnet: {}", cfg.listen_addr, cfg.wrpc_url, cfg.mainnet);
     let sock = UdpSocket::bind(&cfg.listen_addr).expect("bind guardian service");
     sock.set_nonblocking(true).expect("nonblocking");
-    let state_path = cfg.state_path.clone().unwrap_or_else(|| "guardian.state".to_string());
-    let state = Arc::new(Mutex::new(GuardianState::load(Path::new(&state_path))));
+    let state_path = cfg
+        .state_path
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("guardian.state"));
+    let state = Arc::new(Mutex::new(GuardianState::load(&state_path)));
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let mut threads = Vec::new();
