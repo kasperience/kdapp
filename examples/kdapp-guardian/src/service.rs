@@ -1,6 +1,6 @@
 use std::fs;
 use std::net::UdpSocket;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -8,95 +8,78 @@ use std::time::Duration;
 
 use axum::{extract::State, routing::get, Json, Router};
 use clap::Parser;
-use faster_hex::{hex_decode, hex_encode};
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kaspa_rpc_core::api::rpc::RpcApi;
 use kaspa_wrpc_client::client::KaspaRpcClient;
-use kdapp::pki::generate_keypair;
 use kdapp::proxy;
 use log::{info, warn};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use ripemd::Ripemd160;
 
 use crate::{metrics, receive, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct GuardianConfig {
     pub listen_addr: String,
-    pub wrpc_url: Option<String>,
-    #[serde(default)]
+    pub wrpc_url: String,
     pub mainnet: bool,
-    pub key_path: PathBuf,
-    #[serde(default = "default_log_level")]
+    pub key_path: String,
+    pub state_path: Option<String>,
     pub log_level: String,
-    pub http_port: Option<u16>,
 }
 
-fn default_log_level() -> String {
-    "info".to_string()
+impl Default for GuardianConfig {
+    fn default() -> Self {
+        Self {
+            listen_addr: "0.0.0.0:9735".to_string(),
+            wrpc_url: "ws://127.0.0.1:16110".to_string(),
+            mainnet: false,
+            key_path: "guardian.key".to_string(),
+            state_path: Some("guardian.state".to_string()),
+            log_level: "info".to_string(),
+        }
+    }
 }
 
 #[derive(Parser, Debug)]
 #[command(name = "guardian-service", about = "kdapp guardian service")]
-struct Cli {
-    /// Path to a TOML configuration file
+pub struct Cli {
     #[arg(long)]
-    config: Option<PathBuf>,
-    /// UDP listen address
+    pub listen_addr: Option<String>,
     #[arg(long)]
-    listen_addr: Option<String>,
-    /// Optional wRPC endpoint
-    #[arg(long)]
-    wrpc_url: Option<String>,
-    /// Use mainnet (default testnet-10)
+    pub wrpc_url: Option<String>,
     #[arg(long, default_value_t = false)]
-    mainnet: bool,
-    /// Path to guardian private key
+    pub mainnet: bool,
     #[arg(long)]
-    key_path: Option<PathBuf>,
-    /// Log level (e.g. info, debug)
+    pub key_path: Option<String>,
     #[arg(long)]
-    log_level: Option<String>,
-    /// Optional HTTP metrics port
+    pub state_path: Option<String>,
+    #[arg(long, default_value = "info")]
+    pub log_level: String,
     #[arg(long)]
-    http_port: Option<u16>,
+    pub config: Option<String>,
 }
 
-impl GuardianConfig {
-    pub fn from_args() -> Self {
-        let args = Cli::parse();
-        let mut cfg = if let Some(path) = args.config {
-            let text = fs::read_to_string(path).expect("read config");
-            toml::from_str(&text).expect("parse config")
-        } else {
-            GuardianConfig {
-                listen_addr: "127.0.0.1:9650".to_string(),
-                wrpc_url: None,
-                mainnet: false,
-                key_path: PathBuf::from("guardian.key"),
-                log_level: default_log_level(),
-                http_port: None,
-            }
-        };
-
-        if let Some(v) = args.listen_addr {
+impl Cli {
+    pub fn merge_into_config(self, mut cfg: GuardianConfig) -> GuardianConfig {
+        if let Some(v) = self.listen_addr {
             cfg.listen_addr = v;
         }
-        if let Some(v) = args.wrpc_url {
-            cfg.wrpc_url = Some(v);
+        if let Some(v) = self.wrpc_url {
+            cfg.wrpc_url = v;
         }
-        if args.mainnet {
+        if self.mainnet {
             cfg.mainnet = true;
         }
-        if let Some(v) = args.key_path {
+        if let Some(v) = self.key_path {
             cfg.key_path = v;
         }
-        if let Some(v) = args.log_level {
-            cfg.log_level = v;
+        if let Some(v) = self.state_path {
+            cfg.state_path = Some(v);
         }
-        if let Some(v) = args.http_port {
-            cfg.http_port = Some(v);
-        }
+        cfg.log_level = self.log_level;
         cfg
     }
 }
@@ -219,35 +202,33 @@ fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx
 static STARTED: OnceLock<()> = OnceLock::new();
 static GUARDIAN_SK: OnceLock<SecretKey> = OnceLock::new();
 
-fn parse_secret_key(hex: &str) -> Option<SecretKey> {
-    let mut buf = [0u8; 32];
-    let mut tmp = vec![0u8; hex.len() / 2 + hex.len() % 2];
-    if hex_decode(hex.as_bytes(), &mut tmp).is_ok() && tmp.len() == 32 {
-        buf.copy_from_slice(&tmp);
-        SecretKey::from_slice(&buf).ok()
-    } else {
-        None
-    }
-}
-
-fn secret_key_to_hex(sk: &SecretKey) -> String {
-    let bytes = sk.secret_bytes();
-    let mut out = vec![0u8; bytes.len() * 2];
-    hex_encode(&bytes, &mut out).expect("hex encode");
-    String::from_utf8(out).expect("utf8")
-}
-
-fn load_or_generate_key(path: &Path) -> SecretKey {
-    if let Ok(text) = fs::read_to_string(path) {
-        if let Some(sk) = parse_secret_key(text.trim()) {
+fn load_or_generate_key(path: &str) -> SecretKey {
+    if let Ok(bytes) = fs::read(path) {
+        if let Ok(sk) = SecretKey::from_slice(&bytes) {
             return sk;
         }
     }
-    let (sk, _) = generate_keypair();
-    if let Err(e) = fs::write(path, secret_key_to_hex(&sk)) {
-        warn!("guardian: failed to write key to {}: {e}", path.display());
+    let secp = Secp256k1::new();
+    let mut rng = rand::thread_rng();
+    let (sk, _pk) = secp.generate_keypair(&mut rng);
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::write(path, sk.secret_bytes()).expect("write key");
+        let mut perm = fs::metadata(path).expect("meta").permissions();
+        #[cfg(unix)]
+        {
+            perm.set_mode(0o600);
+            fs::set_permissions(path, perm).expect("perms");
+        }
     }
     sk
+}
+
+fn pubkey_fingerprint(pk: &PublicKey) -> String {
+    let compressed = pk.serialize();
+    let sha = Sha256::digest(&compressed);
+    let ripe = Ripemd160::digest(sha);
+    hex::encode(ripe)
 }
 
 /// Handle returned by [`run`] to allow graceful shutdown in tests.
@@ -275,18 +256,24 @@ impl Drop for ServiceHandle {
     }
 }
 
-pub fn run(config: &GuardianConfig) -> ServiceHandle {
+pub fn run(cfg: GuardianConfig) -> ServiceHandle {
     STARTED.get_or_init(|| {});
-    let sk = GUARDIAN_SK.get_or_init(|| load_or_generate_key(&config.key_path));
+    let sk = GUARDIAN_SK.get_or_init(|| load_or_generate_key(&cfg.key_path));
     let secp = Secp256k1::new();
     let pk = PublicKey::from_secret_key(&secp, sk);
-    let bytes = pk.serialize();
-    let mut pk_hex = vec![0u8; bytes.len() * 2];
-    hex_encode(&bytes, &mut pk_hex).expect("hex encode");
-    info!("guardian public key {}", String::from_utf8(pk_hex).expect("utf8"));
-    let sock = UdpSocket::bind(&config.listen_addr).expect("bind guardian service");
-    info!("guardian service listening on {}", config.listen_addr);
-    let state = Arc::new(Mutex::new(GuardianState::default()));
+    info!("Guardian pubkey: {}", hex::encode(pk.serialize()));
+    info!("Guardian fingerprint: {}", pubkey_fingerprint(&pk));
+    info!(
+        "Listen: {}  wRPC: {}  mainnet: {}",
+        cfg.listen_addr, cfg.wrpc_url, cfg.mainnet
+    );
+    let sock = UdpSocket::bind(&cfg.listen_addr).expect("bind guardian service");
+    sock.set_nonblocking(true).expect("nonblocking");
+    let state_path = cfg
+        .state_path
+        .clone()
+        .unwrap_or_else(|| "guardian.state".to_string());
+    let state = Arc::new(Mutex::new(GuardianState::load(Path::new(&state_path))));
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let mut threads = Vec::new();
@@ -312,8 +299,8 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
 
     // spawn wRPC watcher
     let state_watch = state.clone();
-    let wrpc_url = config.wrpc_url.clone();
-    let mainnet = config.mainnet;
+    let wrpc_url = Some(cfg.wrpc_url.clone());
+    let mainnet = cfg.mainnet;
     let shutdown_watch = shutdown.clone();
     let wrpc_handle = thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("runtime");
@@ -341,15 +328,11 @@ pub fn run(config: &GuardianConfig) -> ServiceHandle {
 
     // spawn HTTP server for health and metrics
     let state_http = state.clone();
-    let http_addr = if let Some(port) = config.http_port {
-        format!("0.0.0.0:{port}")
-    } else {
-        config
-            .listen_addr
-            .rsplit_once(':')
-            .and_then(|(host, port)| port.parse::<u16>().ok().map(|p| format!("{}:{}", host, p + 1)))
-            .unwrap_or_else(|| "127.0.0.1:9651".to_string())
-    };
+    let http_addr = cfg
+        .listen_addr
+        .rsplit_once(':')
+        .and_then(|(host, port)| port.parse::<u16>().ok().map(|p| format!("{}:{}", host, p + 1)))
+        .unwrap_or_else(|| "127.0.0.1:9651".to_string());
     let shutdown_http = shutdown.clone();
     let http_handle = thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("runtime");
