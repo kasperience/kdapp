@@ -226,7 +226,7 @@ fn load_or_generate_key(path: &str) -> SecretKey {
 
 fn pubkey_fingerprint(pk: &PublicKey) -> String {
     let compressed = pk.serialize();
-    let sha = Sha256::digest(&compressed);
+    let sha = Sha256::digest(compressed);
     let ripe = Ripemd160::digest(sha);
     hex::encode(ripe)
 }
@@ -353,6 +353,7 @@ pub fn run(cfg: GuardianConfig) -> ServiceHandle {
 mod tests {
     use super::*;
     use std::sync::{Mutex, OnceLock};
+    use kdapp::pki::generate_keypair;
 
     fn test_guard() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
