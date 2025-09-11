@@ -17,6 +17,12 @@ use crate::sim_router::SimRouter;
 use crate::storage;
 use crate::watcher;
 
+#[derive(Clone, Default)]
+pub struct WatcherRuntimeOverrides {
+    pub max_fee: Option<u64>,
+    pub congestion_threshold: Option<f64>,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     router: Arc<SimRouter>,
@@ -24,8 +30,7 @@ pub struct AppState {
     merchant_sk: SecretKey,
     merchant_pk: PubKey,
     api_key: String,
-    max_fee: Arc<Mutex<Option<u64>>>,
-    congestion_threshold: Arc<Mutex<Option<f64>>>,
+    watcher_overrides: Arc<Mutex<WatcherRuntimeOverrides>>,
 }
 
 impl AppState {
@@ -38,15 +43,13 @@ impl AppState {
         max_fee: Option<u64>,
         congestion_threshold: Option<f64>,
     ) -> Self {
-        Self {
-            router,
-            episode_id,
-            merchant_sk,
-            merchant_pk,
-            api_key,
-            max_fee: Arc::new(Mutex::new(max_fee)),
-            congestion_threshold: Arc::new(Mutex::new(congestion_threshold)),
+        let overrides = watcher::WATCHER_OVERRIDES.clone();
+        {
+            let mut o = overrides.blocking_lock();
+            o.max_fee = max_fee;
+            o.congestion_threshold = congestion_threshold;
         }
+        Self { router, episode_id, merchant_sk, merchant_pk, api_key, watcher_overrides: overrides }
     }
 }
 
@@ -212,11 +215,12 @@ async fn set_watcher_config(
     Json(req): Json<WatcherConfigReq>,
 ) -> Result<StatusCode, StatusCode> {
     authorize(&headers, &state)?;
+    let mut o = state.watcher_overrides.lock().await;
     if let Some(fee) = req.max_fee {
-        *state.max_fee.lock().await = Some(fee);
+        o.max_fee = Some(fee);
     }
     if let Some(th) = req.congestion_threshold {
-        *state.congestion_threshold.lock().await = Some(th);
+        o.congestion_threshold = Some(th);
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -229,7 +233,7 @@ struct MempoolMetrics {
 
 async fn mempool_metrics() -> Result<Json<MempoolMetrics>, StatusCode> {
     if let Some(snap) = watcher::get_metrics() {
-        Ok(Json(MempoolMetrics { base_fee: snap.base_fee, congestion: snap.congestion_ratio }))
+        Ok(Json(MempoolMetrics { base_fee: snap.est_base_fee, congestion: snap.congestion_ratio }))
     } else {
         Err(StatusCode::SERVICE_UNAVAILABLE)
     }
