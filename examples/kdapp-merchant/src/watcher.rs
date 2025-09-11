@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
 use std::net::UdpSocket;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::thread;
 
 use once_cell::sync::Lazy;
+use tokio::sync::Mutex;
 
 #[cfg(feature = "okcp_relay")]
 use crate::sim_router::EngineChannel;
@@ -30,13 +31,16 @@ use secp256k1::Keypair;
 use serde::Serialize;
 
 use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
+use crate::server::WatcherRuntimeOverrides;
 
 pub const MIN_FEE: u64 = 5_000;
 const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KMCP");
 #[derive(Clone, Serialize)]
 pub struct MempoolSnapshot {
-    pub base_fee: u64,
+    pub est_base_fee: u64,
     pub congestion_ratio: f64,
+    pub min_fee: u64,
+    pub max_fee: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -44,13 +48,13 @@ struct PolicyInfo {
     min: u64,
     max: u64,
     policy: String,
+    selected_fee: u64,
+    deferred: bool,
 }
 
-pub trait FeePolicy {
+pub trait FeePolicy: Send + Sync + 'static {
     fn fee_and_deferral(&self, snap: &MempoolSnapshot) -> (u64, bool);
-    fn min_fee(&self) -> u64;
-    fn max_fee(&self) -> u64;
-    fn name(&self) -> &'static str;
+    fn into_kind(self: Box<Self>) -> FeePolicyKind;
 }
 
 pub struct StaticFeePolicy {
@@ -61,14 +65,8 @@ impl FeePolicy for StaticFeePolicy {
     fn fee_and_deferral(&self, _snap: &MempoolSnapshot) -> (u64, bool) {
         (self.fee, false)
     }
-    fn min_fee(&self) -> u64 {
-        self.fee
-    }
-    fn max_fee(&self) -> u64 {
-        self.fee
-    }
-    fn name(&self) -> &'static str {
-        "static"
+    fn into_kind(self: Box<Self>) -> FeePolicyKind {
+        FeePolicyKind::Static(*self)
     }
 }
 
@@ -82,33 +80,44 @@ pub struct CongestionAwarePolicy {
 impl FeePolicy for CongestionAwarePolicy {
     fn fee_and_deferral(&self, snap: &MempoolSnapshot) -> (u64, bool) {
         if snap.congestion_ratio >= self.defer_threshold {
-            info!("anchoring deferred: congestion above threshold");
-            return (0, true);
+            return (snap.min_fee, true);
         }
-        let mut fee = (snap.base_fee as f64 * (1.0 + self.multiplier * snap.congestion_ratio)).ceil() as u64;
-        if fee < self.min_fee {
-            fee = self.min_fee;
-        }
-        if fee > self.max_fee {
-            info!("anchoring deferred: fee {fee} exceeds max {}", self.max_fee);
-            return (fee, true);
-        }
-        (fee, false)
+        let scaled = (snap.est_base_fee as f64 * (1.0 + self.multiplier * snap.congestion_ratio)).ceil() as u64;
+        let clamped = scaled.clamp(self.min_fee, self.max_fee);
+        (clamped, false)
     }
-    fn min_fee(&self) -> u64 {
-        self.min_fee
-    }
-    fn max_fee(&self) -> u64 {
-        self.max_fee
-    }
-    fn name(&self) -> &'static str {
-        "congestion"
+    fn into_kind(self: Box<Self>) -> FeePolicyKind {
+        FeePolicyKind::Congestion(*self)
     }
 }
 
+pub enum FeePolicyKind {
+    Static(StaticFeePolicy),
+    Congestion(CongestionAwarePolicy),
+}
+
+impl FeePolicyKind {
+    pub fn as_dyn(&self) -> &dyn FeePolicy {
+        match self {
+            FeePolicyKind::Static(p) => p,
+            FeePolicyKind::Congestion(p) => p,
+        }
+    }
+    pub fn name(&self) -> &'static str {
+        match self {
+            FeePolicyKind::Static(_) => "static",
+            FeePolicyKind::Congestion(_) => "congestion",
+        }
+    }
+}
+
+pub static WATCHER_OVERRIDES: Lazy<Arc<Mutex<WatcherRuntimeOverrides>>> =
+    Lazy::new(|| Arc::new(Mutex::new(WatcherRuntimeOverrides::default())));
+
 pub static MEMPOOL_METRICS: Lazy<RwLock<Option<MempoolSnapshot>>> = Lazy::new(|| RwLock::new(None));
-static POLICY_INFO: Lazy<RwLock<PolicyInfo>> =
-    Lazy::new(|| RwLock::new(PolicyInfo { min: MIN_FEE, max: MIN_FEE, policy: "static".to_string() }));
+static POLICY_INFO: Lazy<RwLock<PolicyInfo>> = Lazy::new(|| {
+    RwLock::new(PolicyInfo { min: MIN_FEE, max: MIN_FEE, policy: "static".to_string(), selected_fee: MIN_FEE, deferred: false })
+});
 
 pub fn get_metrics() -> Option<MempoolSnapshot> {
     MEMPOOL_METRICS.read().expect("metrics lock").clone()
@@ -125,17 +134,21 @@ struct WatcherMetrics {
     min: u64,
     max: u64,
     policy: String,
+    selected_fee: u64,
+    deferred: bool,
 }
 
 async fn get_mempool_metrics() -> Result<Json<WatcherMetrics>, StatusCode> {
     if let Some(snap) = get_metrics() {
         let p = POLICY_INFO.read().expect("policy lock").clone();
         Ok(Json(WatcherMetrics {
-            est_base_fee: snap.base_fee,
+            est_base_fee: snap.est_base_fee,
             congestion_ratio: snap.congestion_ratio,
             min: p.min,
             max: p.max,
             policy: p.policy,
+            selected_fee: p.selected_fee,
+            deferred: p.deferred,
         }))
     } else {
         Err(StatusCode::SERVICE_UNAVAILABLE)
@@ -227,9 +240,9 @@ async fn fetch_mempool_snapshot(client: &KaspaRpcClient) -> Result<MempoolSnapsh
     let feerate = estimate.normal_buckets.first().map(|b| b.feerate).unwrap_or(estimate.priority_bucket.feerate);
     // Approximate small tx mass (1 in / 1 out with payload); adjust as needed
     let approx_mass: f64 = 200.0;
-    let mut base_fee = (feerate * approx_mass).ceil() as u64;
-    if base_fee < MIN_FEE {
-        base_fee = MIN_FEE;
+    let mut est_base_fee = (feerate * approx_mass).ceil() as u64;
+    if est_base_fee < MIN_FEE {
+        est_base_fee = MIN_FEE;
     }
 
     // Congestion: use consensus metrics' network_mempool_size as a simple heuristic
@@ -238,13 +251,24 @@ async fn fetch_mempool_snapshot(client: &KaspaRpcClient) -> Result<MempoolSnapsh
         Err(_) => 0.0,
     };
 
-    Ok(MempoolSnapshot { base_fee, congestion_ratio: congestion })
+    Ok(MempoolSnapshot { est_base_fee, congestion_ratio: congestion, min_fee: MIN_FEE, max_fee: MIN_FEE })
 }
 
 pub async fn update_metrics(client: &KaspaRpcClient) -> Result<MempoolSnapshot, String> {
     let snap = fetch_mempool_snapshot(client).await?;
     store_metrics(snap.clone());
     Ok(snap)
+}
+
+fn apply_overrides(
+    base_min_fee: u64,
+    base_max_fee: u64,
+    base_defer_threshold: f64,
+    overrides: &WatcherRuntimeOverrides,
+) -> (u64, u64, f64) {
+    let max_fee = overrides.max_fee.unwrap_or(base_max_fee);
+    let defer_threshold = overrides.congestion_threshold.unwrap_or(base_defer_threshold);
+    (base_min_fee, max_fee, defer_threshold)
 }
 
 async fn submit_checkpoint_tx(
@@ -320,9 +344,20 @@ pub fn run(
     policy: Box<dyn FeePolicy>,
     http_port: Option<u16>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mut policy = policy.into_kind();
     {
         let mut info = POLICY_INFO.write().expect("policy lock");
-        *info = PolicyInfo { min: policy.min_fee(), max: policy.max_fee(), policy: policy.name().to_string() };
+        match &policy {
+            FeePolicyKind::Static(p) => {
+                info.min = p.fee;
+                info.max = p.fee;
+            }
+            FeePolicyKind::Congestion(p) => {
+                info.min = p.min_fee;
+                info.max = p.max_fee;
+            }
+        }
+        info.policy = policy.name().to_string();
     }
     if let Some(port) = http_port {
         thread::spawn(move || {
@@ -402,24 +437,54 @@ pub fn run(
         pending.push_back((ep, seq, root));
         let key = kaspa_private_key.clone();
         let url = wrpc_url.clone();
-        let snap = match rt.block_on({
+        let base_snap = match rt.block_on({
             let url_clone = url.clone();
             async move {
                 let network =
                     if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
                 let client = proxy::connect_client(network, url_clone).await.map_err(|e| e.to_string())?;
-                update_metrics(&client).await
+                fetch_mempool_snapshot(&client).await
             }
         }) {
             Ok(v) => v,
             Err(e) => {
                 warn!("fee metrics unavailable: {e}");
-                MempoolSnapshot { base_fee: MIN_FEE, congestion_ratio: 0.0 }
+                MempoolSnapshot { est_base_fee: MIN_FEE, congestion_ratio: 0.0, min_fee: MIN_FEE, max_fee: MIN_FEE }
             }
         };
-        info!("mempool congestion: {:.2}", snap.congestion_ratio);
-        let (fee, defer) = policy.fee_and_deferral(&snap);
+        info!("mempool congestion: {:.2}", base_snap.congestion_ratio);
+
+        let (base_min, base_max, base_thr) = match &policy {
+            FeePolicyKind::Static(p) => (p.fee, p.fee, 1.0),
+            FeePolicyKind::Congestion(p) => (p.min_fee, p.max_fee, p.defer_threshold),
+        };
+        let (min_fee_now, max_fee_now, defer_thr_now) = {
+            let overrides = WATCHER_OVERRIDES.blocking_lock();
+            apply_overrides(base_min, base_max, base_thr, &*overrides)
+        };
+        if let FeePolicyKind::Congestion(ref mut p) = policy {
+            p.min_fee = min_fee_now;
+            p.max_fee = max_fee_now;
+            p.defer_threshold = defer_thr_now;
+        }
+        let snapshot = MempoolSnapshot {
+            est_base_fee: base_snap.est_base_fee,
+            congestion_ratio: base_snap.congestion_ratio,
+            min_fee: min_fee_now,
+            max_fee: max_fee_now,
+        };
+        store_metrics(snapshot.clone());
+        let (fee, defer) = policy.as_dyn().fee_and_deferral(&snapshot);
+        {
+            let mut info = POLICY_INFO.write().expect("policy lock");
+            info.min = min_fee_now;
+            info.max = max_fee_now;
+            info.policy = policy.name().to_string();
+            info.selected_fee = fee;
+            info.deferred = defer;
+        }
         if defer {
+            warn!("congestion high; deferring anchor (ratio {:.2})", snapshot.congestion_ratio);
             continue;
         }
         info!("processing {} queued checkpoints", pending.len());
@@ -450,7 +515,7 @@ mod tests {
     #[test]
     fn static_policy_no_defer() {
         let policy = StaticFeePolicy { fee: 5 };
-        let snap = MempoolSnapshot { base_fee: 100, congestion_ratio: 0.9 };
+        let snap = MempoolSnapshot { est_base_fee: 100, congestion_ratio: 0.9, min_fee: 1, max_fee: 10 };
         let (fee, defer) = policy.fee_and_deferral(&snap);
         assert_eq!(fee, 5);
         assert!(!defer);
@@ -459,8 +524,18 @@ mod tests {
     #[test]
     fn congestion_policy_defers_on_threshold() {
         let policy = CongestionAwarePolicy { min_fee: 1, max_fee: 10_000, defer_threshold: 0.5, multiplier: 1.0 };
-        let snap = MempoolSnapshot { base_fee: 100, congestion_ratio: 0.6 };
-        let (_, defer) = policy.fee_and_deferral(&snap);
+        let snap = MempoolSnapshot { est_base_fee: 100, congestion_ratio: 0.6, min_fee: 1, max_fee: 10_000 };
+        let (fee, defer) = policy.fee_and_deferral(&snap);
         assert!(defer);
+        assert_eq!(fee, 1);
+    }
+
+    #[test]
+    fn congestion_policy_scales_and_clamps() {
+        let policy = CongestionAwarePolicy { min_fee: 1, max_fee: 10, defer_threshold: 0.9, multiplier: 1.0 };
+        let snap = MempoolSnapshot { est_base_fee: 6_000, congestion_ratio: 0.2, min_fee: 1, max_fee: 10 };
+        let (fee, defer) = policy.fee_and_deferral(&snap);
+        assert!(!defer);
+        assert!(fee >= 1 && fee <= 10);
     }
 }
