@@ -1,6 +1,7 @@
 mod client_sender;
 mod episode;
 mod tlv;
+mod pki;
 
 use clap::{Parser, Subcommand};
 use episode::{MerchantCommand, ReceiptEpisode};
