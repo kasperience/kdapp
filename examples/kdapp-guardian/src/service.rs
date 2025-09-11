@@ -352,8 +352,8 @@ pub fn run(cfg: GuardianConfig) -> ServiceHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
     use kdapp::pki::generate_keypair;
+    use std::sync::{Mutex, OnceLock};
 
     fn test_guard() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
