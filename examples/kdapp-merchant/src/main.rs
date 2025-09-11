@@ -637,7 +637,7 @@ fn main() {
                     watcher::update_metrics(&client).await
                 }) {
                     Ok(snap) => {
-                        println!("base_fee: {}, congestion: {:.2}", snap.base_fee, snap.congestion_ratio);
+                        println!("base_fee: {}, congestion: {:.2}", snap.est_base_fee, snap.congestion_ratio);
                     }
                     Err(e) => println!("failed to fetch metrics: {e}"),
                 }

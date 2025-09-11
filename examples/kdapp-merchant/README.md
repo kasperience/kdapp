@@ -70,16 +70,47 @@ GET /mempool-metrics
 
 ### Via HTTP (watcher)
 
-If you start the watcher with `--http-port <port>`, it exposes:
+If you start the watcher with `--http-port <port>`, it exposes a richer metrics view:
 
 ```http
 GET /mempool
 
 {
-  "base_fee": 5000,
-  "congestion": 0.42
+  "est_base_fee": 5000,
+  "congestion_ratio": 0.42,
+  "min": 5000,
+  "max": 100000,
+  "policy": "congestion",
+  "selected_fee": 7000,
+  "deferred": false
 }
 ```
+
+- `est_base_fee` – current estimate for a small anchor tx.
+- `congestion_ratio` – heuristic based on mempool size.
+- `min`/`max` – effective fee clamps after runtime overrides.
+- `policy` – active policy name (`static` or `congestion`).
+- `selected_fee` – fee chosen by the policy for the next anchor.
+- `deferred` – whether anchoring is currently deferred.
+
+Note: the CLI `--show-metrics` prints `base_fee` (mapped from `est_base_fee`) and `congestion` for convenience.
+
+### Fee Policy (watcher)
+
+Select between a fixed fee or congestion-aware policy:
+
+```
+kdapp-merchant watcher \
+  --fee-policy static --static-fee 5000
+
+kdapp-merchant watcher \
+  --fee-policy congestion \
+  --min-fee 5000 --max-fee 100000 \
+  --defer-threshold 0.7 --multiplier 1.0
+```
+
+- Static: always uses `--static-fee`.
+- Congestion: scales `est_base_fee` by `(1 + multiplier * congestion_ratio)`, clamped to `[min_fee, max_fee]`, and defers when `congestion_ratio > defer_threshold`.
 
 ## Dispute & Refund Flow (testnet)
 

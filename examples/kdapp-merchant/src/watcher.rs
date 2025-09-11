@@ -30,8 +30,8 @@ use log::{info, warn};
 use secp256k1::Keypair;
 use serde::Serialize;
 
-use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
 use crate::server::WatcherRuntimeOverrides;
+use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
 
 pub const MIN_FEE: u64 = 5_000;
 const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KMCP");
@@ -460,7 +460,7 @@ pub fn run(
         };
         let (min_fee_now, max_fee_now, defer_thr_now) = {
             let overrides = WATCHER_OVERRIDES.blocking_lock();
-            apply_overrides(base_min, base_max, base_thr, &*overrides)
+            apply_overrides(base_min, base_max, base_thr, &overrides)
         };
         if let FeePolicyKind::Congestion(ref mut p) = policy {
             p.min_fee = min_fee_now;
@@ -536,6 +536,6 @@ mod tests {
         let snap = MempoolSnapshot { est_base_fee: 6_000, congestion_ratio: 0.2, min_fee: 1, max_fee: 10 };
         let (fee, defer) = policy.fee_and_deferral(&snap);
         assert!(!defer);
-        assert!(fee >= 1 && fee <= 10);
+        assert!((1..=10).contains(&fee));
     }
 }
