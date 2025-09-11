@@ -124,7 +124,7 @@ Tic‑Tac‑Toe, merchant/customer flows, and more live under `examples/`.
   - Merchant UDP router (requires handshake + signed TLV):
     - `cargo run -p kdapp-merchant -- router-udp --bind 127.0.0.1:9530`
   - Optional watcher to anchor checkpoints on-chain:
-    - `cargo run -p kdapp-merchant -- watch --bind 127.0.0.1:9590 --kaspa-private-key <hex> [--wrpc-url wss://host:port] [--mainnet]`
+    - `cargo run -p kdapp-merchant -- watcher --bind 127.0.0.1:9590 --kaspa-private-key <hex> [--wrpc-url wss://host:port] [--mainnet]`
   - Customer actions (handshake performed automatically):
     - `cargo run -p kdapp-customer -- pay --episode-id 42 --invoice-id 1001 --payer-private-key <hex>`
     - `cargo run -p kdapp-customer -- ack --episode-id 42 --invoice-id 1001 --merchant-private-key <hex>`

@@ -42,17 +42,17 @@ Example metrics JSON:
 {
   "valid": 12,
   "invalid": 1,
-  "disputes": 2,
-  "observed_payments": 3,
-  "guardian_refunds": 1
+  "disputes_open": 2,
+  "disputes_closed": 5,
+  "refunds_signed": 1
 }
 ```
 
 Fields:
 - valid/invalid: count of accepted vs rejected guardian TLV messages (HMAC/ordering).
-- disputes: number of open disputes (episodes with sequence discrepancies or escalations).
-- observed_payments: `Escalate` messages received that referenced an invoice/payment.
-- guardian_refunds: refunds the guardian has co-signed (size of the signature store).
+- disputes_open: number of currently open disputes (episodes with sequence discrepancies or escalations).
+- disputes_closed: historical count of disputes that were resolved.
+- refunds_signed: refunds the guardian has co-signed (size of the signature store).
 
 ## End-to-end on testnet
 
