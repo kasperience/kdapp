@@ -127,7 +127,7 @@ pub struct GuardianState {
     pub last_seq: HashMap<u64, u64>,
     #[serde(skip)]
     #[serde(default)]
-    state_path: Option<PathBuf>,
+    pub state_path: Option<PathBuf>,
 }
 
 impl GuardianState {
