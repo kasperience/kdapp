@@ -13,10 +13,10 @@ use kaspa_rpc_core::api::rpc::RpcApi;
 use kaspa_wrpc_client::client::KaspaRpcClient;
 use kdapp::proxy;
 use log::{info, warn};
+use ripemd::Ripemd160;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use ripemd::Ripemd160;
 
 use crate::{metrics, receive, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
 
@@ -212,11 +212,11 @@ fn load_or_generate_key(path: &str) -> SecretKey {
     let mut rng = rand::thread_rng();
     let (sk, _pk) = secp.generate_keypair(&mut rng);
     {
-        use std::os::unix::fs::PermissionsExt;
         fs::write(path, sk.secret_bytes()).expect("write key");
-        let mut perm = fs::metadata(path).expect("meta").permissions();
         #[cfg(unix)]
         {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perm = fs::metadata(path).expect("meta").permissions();
             perm.set_mode(0o600);
             fs::set_permissions(path, perm).expect("perms");
         }
@@ -263,16 +263,10 @@ pub fn run(cfg: GuardianConfig) -> ServiceHandle {
     let pk = PublicKey::from_secret_key(&secp, sk);
     info!("Guardian pubkey: {}", hex::encode(pk.serialize()));
     info!("Guardian fingerprint: {}", pubkey_fingerprint(&pk));
-    info!(
-        "Listen: {}  wRPC: {}  mainnet: {}",
-        cfg.listen_addr, cfg.wrpc_url, cfg.mainnet
-    );
+    info!("Listen: {}  wRPC: {}  mainnet: {}", cfg.listen_addr, cfg.wrpc_url, cfg.mainnet);
     let sock = UdpSocket::bind(&cfg.listen_addr).expect("bind guardian service");
     sock.set_nonblocking(true).expect("nonblocking");
-    let state_path = cfg
-        .state_path
-        .clone()
-        .unwrap_or_else(|| "guardian.state".to_string());
+    let state_path = cfg.state_path.clone().unwrap_or_else(|| "guardian.state".to_string());
     let state = Arc::new(Mutex::new(GuardianState::load(Path::new(&state_path))));
 
     let shutdown = Arc::new(AtomicBool::new(false));
