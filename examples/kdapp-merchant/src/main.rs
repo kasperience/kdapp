@@ -173,6 +173,9 @@ enum CliCmd {
         /// URL to POST invoice state updates
         #[arg(long)]
         webhook_url: Option<String>,
+        /// Secret used for HMAC signatures on webhook payloads (hex)
+        #[arg(long)]
+        webhook_secret: Option<String>,
     },
     /// Build and broadcast an on-chain transaction carrying a command
     OnchainCreate {
@@ -500,7 +503,16 @@ fn main() {
             let msg = EpisodeMessage::<ReceiptEpisode>::UnsignedCommand { episode_id, cmd };
             let _ = router.forward::<ReceiptEpisode>(msg);
         }
-        CliCmd::Serve { bind, episode_id, api_key, merchant_private_key, max_fee, congestion_threshold, webhook_url } => {
+        CliCmd::Serve {
+            bind,
+            episode_id,
+            api_key,
+            merchant_private_key,
+            max_fee,
+            congestion_threshold,
+            webhook_url,
+            webhook_secret,
+        } => {
             let router = SimRouter::new(EngineChannel::Local(tx.clone()));
             let (sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
                 Some(sk) => {
@@ -511,8 +523,25 @@ fn main() {
             };
             log::info!("merchant pubkey: {pk}");
             scheduler::start(router.clone(), episode_id);
-            let state = server::AppState::new(Arc::new(router), episode_id, sk, pk, api_key, max_fee, congestion_threshold);
-            handler::set_webhook(webhook_url);
+            let secret = webhook_secret.and_then(|h| {
+                let mut buf = vec![0u8; h.len() / 2 + h.len() % 2];
+                if faster_hex::hex_decode(h.as_bytes(), &mut buf).is_ok() {
+                    Some(buf)
+                } else {
+                    None
+                }
+            });
+            let state = server::AppState::new(
+                Arc::new(router),
+                episode_id,
+                sk,
+                pk,
+                api_key,
+                max_fee,
+                congestion_threshold,
+                webhook_url,
+                secret,
+            );
             let rt = Runtime::new().expect("runtime");
             rt.block_on(async {
                 server::serve(bind, state).await.expect("server");
