@@ -1,10 +1,12 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::net::UdpSocket;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Mutex as StdMutex};
 use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use once_cell::sync::Lazy;
 use tokio::sync::Mutex;
+use thiserror::Error;
 
 #[cfg(feature = "okcp_relay")]
 use crate::sim_router::EngineChannel;
@@ -31,7 +33,7 @@ use secp256k1::Keypair;
 use serde::Serialize;
 
 use crate::server::WatcherRuntimeOverrides;
-use crate::tlv::{MsgType, TlvMsg, DEMO_HMAC_KEY};
+use crate::tlv::{Attestation, MsgType, TlvMsg, DEMO_HMAC_KEY, verify_attestation};
 
 pub const MIN_FEE: u64 = 5_000;
 const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KMCP");
@@ -118,6 +120,83 @@ pub static MEMPOOL_METRICS: Lazy<RwLock<Option<MempoolSnapshot>>> = Lazy::new(||
 static POLICY_INFO: Lazy<RwLock<PolicyInfo>> = Lazy::new(|| {
     RwLock::new(PolicyInfo { min: MIN_FEE, max: MIN_FEE, policy: "static".to_string(), selected_fee: MIN_FEE, deferred: false })
 });
+
+#[derive(Clone, serde::Serialize, Default)]
+pub struct AttestationSummary {
+    pub root_hash: [u8; 32],
+    pub epoch: u64,
+    pub fee_bucket: u64,
+    pub count: usize,
+    pub by_key: Vec<PubKey>,
+    pub last_updated_ts: u64,
+}
+
+static ATTEST_CACHE: Lazy<Arc<StdMutex<HashMap<[u8; 32], Vec<(u64, Attestation)>>>>>
+    = Lazy::new(|| Arc::new(StdMutex::new(HashMap::new())));
+
+#[derive(Debug, Error)]
+pub enum AttestationError {
+    #[error("bad signature")]
+    BadSignature,
+}
+
+pub fn ingest_attestation(att: Attestation) -> Result<(), AttestationError> {
+    if !verify_attestation(&att) {
+        return Err(AttestationError::BadSignature);
+    }
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let root = att.root_hash;
+    let mut cache = ATTEST_CACHE.lock().expect("attest cache lock");
+    let mut remove_root = false;
+    {
+        let entry = cache.entry(root).or_insert_with(Vec::new);
+        if entry.iter().any(|(_, a)| a.attester_pubkey == att.attester_pubkey) {
+            // duplicate key, skip
+        } else {
+            info!(
+                "attestation root={} key={} fee_bucket={} cong={}",
+                hex::encode(att.root_hash),
+                hex::encode(att.attester_pubkey.0.serialize()),
+                att.fee_bucket,
+                att.congestion_ratio
+            );
+            entry.push((now, att));
+        }
+        entry.retain(|(ts, _)| now.saturating_sub(*ts) <= 60);
+        if entry.is_empty() {
+            remove_root = true;
+        }
+    }
+    if remove_root {
+        cache.remove(&root);
+    }
+    Ok(())
+}
+
+pub fn attestation_summaries() -> Vec<AttestationSummary> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let mut out = Vec::new();
+    let mut cache = ATTEST_CACHE.lock().expect("attest cache lock");
+    cache.retain(|root, list| {
+        list.retain(|(ts, _)| now.saturating_sub(*ts) <= 60);
+        if list.is_empty() {
+            false
+        } else {
+            let count = list.len();
+            let by_key = list.iter().map(|(_, a)| a.attester_pubkey).collect::<Vec<_>>();
+            let last_updated_ts = list.iter().map(|(ts, _)| *ts).max().unwrap_or(0);
+            let epoch = list.iter().max_by_key(|(ts, _)| *ts).map(|(_, a)| a.epoch).unwrap_or(0);
+            let mut fee_counts: HashMap<u64, usize> = HashMap::new();
+            for (_, a) in list.iter() {
+                *fee_counts.entry(a.fee_bucket).or_insert(0) += 1;
+            }
+            let fee_bucket = fee_counts.into_iter().max_by_key(|(_, c)| *c).map(|(b, _)| b).unwrap_or(0);
+            out.push(AttestationSummary { root_hash: *root, epoch, fee_bucket, count, by_key, last_updated_ts });
+            true
+        }
+    });
+    out
+}
 
 pub fn get_metrics() -> Option<MempoolSnapshot> {
     MEMPOOL_METRICS.read().expect("metrics lock").clone()

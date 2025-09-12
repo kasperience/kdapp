@@ -5,6 +5,8 @@ wrpc_url = "wss://node:16110"
 mainnet = false
 # Private key file for guardian's ECDSA key; created if missing
 key_path = "guardian.key"
+# HTTP metrics port
+http_port = 9651
 # Log level for env_logger
 log_level = "info"
 # Optional path to persist guardian state

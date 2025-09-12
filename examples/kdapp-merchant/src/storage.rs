@@ -1,8 +1,12 @@
 use once_cell::sync::Lazy;
 use sled::Db;
 use std::collections::BTreeMap;
-#[cfg(not(test))]
 use std::env;
+use std::sync::Once;
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use ctrlc;
 
 use super::episode::{CustomerInfo, Invoice, Subscription};
 use kdapp::pki::PubKey;
@@ -19,12 +23,17 @@ pub static DB: Lazy<Db> = Lazy::new(|| {
     #[cfg(not(test))]
     {
         let path = env::var("MERCHANT_DB_PATH").unwrap_or_else(|_| "merchant.db".to_string());
-        sled::open(&path).unwrap_or_else(|e| panic!("failed to open {path}: {e}"))
+        sled::Config::new()
+            .path(&path)
+            .flush_every_ms(Some(500))
+            .open()
+            .unwrap_or_else(|e| panic!("failed to open {path}: {e}"))
     }
 });
 
 pub fn init() {
     Lazy::force(&DB);
+    Lazy::force(&FLUSH_WORKER);
     let _invoices = DB.open_tree("invoices").expect("invoices tree");
     let _customers = DB.open_tree("customers").expect("customers tree");
     let _subscriptions = DB.open_tree("subscriptions").expect("subscriptions tree");
@@ -35,6 +44,36 @@ pub fn init() {
         let _ = _customers.clear();
         let _ = _subscriptions.clear();
     }
+}
+
+static FLUSH_WORKER: Lazy<()> = Lazy::new(|| {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let db = DB.clone();
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(60));
+            let _ = db.flush();
+        });
+        let db2 = DB.clone();
+        let _ = ctrlc::set_handler(move || {
+            let _ = db2.flush();
+        });
+    });
+});
+
+static COMPACT_ONCE: Once = Once::new();
+
+pub fn start_compaction(interval_secs: u64) {
+    COMPACT_ONCE.call_once(|| {
+        let db = DB.clone();
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(interval_secs));
+            let path = env::var("MERCHANT_DB_PATH").unwrap_or_else(|_| "merchant.db".to_string());
+            let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+            let cp_path = format!("{path}.cp{ts}");
+            let _ = db.checkpoint(cp_path);
+        });
+    });
 }
 
 #[cfg_attr(test, allow(dead_code))]

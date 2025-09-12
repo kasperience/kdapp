@@ -1,5 +1,8 @@
 use blake2::{Blake2b512, Digest};
 use serde::{Deserialize, Serialize};
+use borsh::{BorshDeserialize, BorshSerialize};
+use kdapp::pki::{sign_message, to_message, verify_signature, PubKey, Sig};
+use secp256k1::{PublicKey, SecretKey, Secp256k1};
 
 /// Demo shared secret used for HMAC signing of TLV messages.
 /// In real deployments this should be negotiated out of band.
@@ -163,4 +166,57 @@ pub fn hash_state(bytes: &[u8]) -> [u8; 32] {
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&out[..32]);
     arr
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Attestation {
+    pub root_hash: [u8; 32],
+    pub epoch: u64,
+    pub fee_bucket: u64,
+    pub congestion_ratio: f64,
+    pub attester_pubkey: PubKey,
+    pub signature: Vec<u8>,
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+struct AttestationSigData {
+    root_hash: [u8; 32],
+    epoch: u64,
+    fee_bucket: u64,
+    congestion_ratio: f64,
+    attester_pubkey: PubKey,
+}
+
+pub fn sign_attestation(sk: &SecretKey, att: &mut Attestation) {
+    let secp = Secp256k1::signing_only();
+    let pk = PublicKey::from_secret_key(&secp, sk);
+    att.attester_pubkey = PubKey(pk);
+    let data = AttestationSigData {
+        root_hash: att.root_hash,
+        epoch: att.epoch,
+        fee_bucket: att.fee_bucket,
+        congestion_ratio: att.congestion_ratio,
+        attester_pubkey: att.attester_pubkey,
+    };
+    let msg = to_message(&data);
+    let sig = sign_message(sk, &msg);
+    att.signature = sig.0.serialize_der().to_vec();
+}
+
+pub fn verify_attestation(att: &Attestation) -> bool {
+    let sig = match secp256k1::ecdsa::Signature::from_der(&att.signature) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let data = AttestationSigData {
+        root_hash: att.root_hash,
+        epoch: att.epoch,
+        fee_bucket: att.fee_bucket,
+        congestion_ratio: att.congestion_ratio,
+        attester_pubkey: att.attester_pubkey,
+    };
+    let msg = to_message(&data);
+    let pk = att.attester_pubkey;
+    let sig = Sig(sig);
+    verify_signature(&pk, &msg, &sig)
 }

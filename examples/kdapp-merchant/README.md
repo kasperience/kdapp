@@ -4,6 +4,25 @@ The merchant example showcases a pay‑per‑invoice workflow with optional subs
 router for TLV messages, a watcher that anchors checkpoints, a scheduler for recurring charges, and
 an HTTP server for integrating external systems.
 
+## Quickstart
+
+```bash
+kdapp-merchant serve --bind 127.0.0.1:3000 --episode-id 1 \
+  --merchant-private-key <hex> --api-key secret \
+  --webhook-url http://127.0.0.1:4000/hook --webhook-secret deadbeef
+```
+
+Create, pay, and acknowledge an invoice:
+
+```bash
+curl -X POST http://127.0.0.1:3000/invoice -H 'x-api-key: secret' \
+  -d '{"invoice_id":1,"amount":1000}'
+curl -X POST http://127.0.0.1:3000/pay -H 'x-api-key: secret' \
+  -d '{"invoice_id":1,"payer_public_key":"<hex>"}'
+curl -X POST http://127.0.0.1:3000/ack -H 'x-api-key: secret' \
+  -d '{"invoice_id":1}'
+```
+
 ## Installation
 
 ```bash
@@ -49,6 +68,9 @@ Query current metrics:
 ```bash
 curl http://127.0.0.1:9591/mempool
 ```
+
+The watcher selects a fee based on `static` or `congestion` policy. Runtime overrides can be sent to
+`POST /watcher-config`.
 
 ## Guardian integration
 
@@ -110,6 +132,12 @@ curl -X POST http://127.0.0.1:3000/pay \
 The scheduler thread scans stored subscriptions every ten seconds.  When a charge fails, it retries
 with exponential backoff starting at five seconds and capping at five minutes.
 
+### Subscription flow
+
+1. `POST /subscribe` to create a subscription.
+2. Scheduler issues `charge` TLV on schedule.
+3. Merchant `POST /ack` to acknowledge and emits an invoice.
+
 ## Webhooks
 
 Supply `--webhook-url` and `--webhook-secret` when running `serve` to receive HMAC‑signed JSON
@@ -119,6 +147,15 @@ callbacks:
 - `invoice_paid`
 - `invoice_acked`
 - `invoice_cancelled`
+
+Webhook events fire in order: `invoice_created` → `invoice_paid` → `invoice_acked`.
+
+## Pay-per-invoice flow
+
+1. Merchant creates an invoice (`POST /invoice`).
+2. Customer pays it (`POST /pay`).
+3. Merchant acknowledges (`POST /ack`).
+4. Watcher anchors the checkpoint to Kaspa.
 
 ## Example flow
 
