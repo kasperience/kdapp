@@ -1,191 +1,134 @@
-# kdapp-merchant
+# OnlyKAS Merchant
 
-This example demonstrates a simple merchant application built on kdapp. It includes an optional checkpoint watcher that anchors state hashes to the Kaspa network.
+The merchant example showcases a pay‑per‑invoice workflow with optional subscriptions. It bundles a
+router for TLV messages, a watcher that anchors checkpoints, a scheduler for recurring charges, and
+an HTTP server for integrating external systems.
 
-Key protocol notes
-- TLV transport includes `Handshake`, `New`, `Cmd`, `Ack`, `Close`, `AckClose`, `Checkpoint`, and `Refund` types.
-- Routers (UDP/TCP) enforce a per-peer handshake and HMAC, forward `New/Cmd/Close/Checkpoint` to the engine, and ignore `Ack/AckClose/Refund`.
-- The watcher validates `Checkpoint` messages (HMAC) before anchoring and separately accepts `Refund` messages with guardian signatures, verifying `(tx, sig, gpk)`.
-- `PubKey` implements `Hash`, so it can be used in `HashMap`/`HashSet` (e.g., guardian handshake tracking).
-
-## Watcher Configuration
-
-The watcher fee and congestion behaviour can be tuned using two parameters:
-
-- `max_fee` – maximum fee (in sompis) for an anchoring transaction. The watcher defers if the estimated fee exceeds this limit. **Default:** no limit. **Recommended range:** 5,000 – 100,000.
-- `congestion_threshold` – mempool congestion ratio above which anchoring is deferred. **Default:** 0.7. **Recommended range:** 0.5 – 0.9.
-
-### Via CLI
-
-Provide these options when starting either the `serve` or `watcher` subcommands:
+## Installation
 
 ```bash
-kdapp-merchant serve --max-fee 50000 --congestion-threshold 0.8
-kdapp-merchant watcher --max-fee 50000 --congestion-threshold 0.8
+cargo build -p kdapp-merchant
 ```
 
-### Via HTTP
+## Demo mode
 
-When running the `serve` subcommand, the watcher settings can be updated at runtime:
-
-```http
-POST /watcher-config
-Content-Type: application/json
-x-api-key: <API_KEY>
-
-{
-  "max_fee": 50000,
-  "congestion_threshold": 0.8
-}
-```
-
-The provided values apply to the currently running watcher process.
-
-## Mempool Metrics
-
-The watcher tracks the most recent fee estimate and a simple mempool congestion ratio. These metrics help decide when to anchor
-checkpoints.
-
-### Via CLI
+Run a full in‑process demo that creates, pays, and acknowledges an invoice:
 
 ```bash
-kdapp-merchant watcher --show-metrics
+kdapp-merchant demo
 ```
 
-Outputs the current `base_fee` (sompis required for a small transaction) and `congestion` ratio.
+The command spins up the engine, router, and scheduler, then prints a demo customer's private key
+for experimentation.
 
-### Via HTTP (server)
+## Watcher configuration
 
-```http
-GET /mempool-metrics
+The watcher anchors compact `OKCP` checkpoints on Kaspa and exposes mempool metrics.  Fee policies
+can be tuned via CLI flags or at runtime through the HTTP API.
 
-{
-  "base_fee": 5000,
-  "congestion": 0.42
-}
-```
+### CLI flags
 
-- `base_fee` – conservative fee in sompis for anchoring transactions.
-- `congestion` – mempool size ratio (higher values indicate a busier mempool).
+```bash
+# static fee policy
+kdapp-merchant watcher --fee-policy static --static-fee 5000 --http-port 9591
 
-### Via HTTP (watcher)
-
-If you start the watcher with `--http-port <port>`, it exposes a richer metrics view:
-
-```http
-GET /mempool
-
-{
-  "est_base_fee": 5000,
-  "congestion_ratio": 0.42,
-  "min": 5000,
-  "max": 100000,
-  "policy": "congestion",
-  "selected_fee": 7000,
-  "deferred": false
-}
-```
-
-- `est_base_fee` – current estimate for a small anchor tx.
-- `congestion_ratio` – heuristic based on mempool size.
-- `min`/`max` – effective fee clamps after runtime overrides.
-- `policy` – active policy name (`static` or `congestion`).
-- `selected_fee` – fee chosen by the policy for the next anchor.
-- `deferred` – whether anchoring is currently deferred.
-
-Note: the CLI `--show-metrics` prints `base_fee` (mapped from `est_base_fee`) and `congestion` for convenience.
-
-### Fee Policy (watcher)
-
-Select between a fixed fee or congestion-aware policy:
-
-```
-kdapp-merchant watcher \
-  --fee-policy static --static-fee 5000
-
+# congestion-aware policy
 kdapp-merchant watcher \
   --fee-policy congestion \
   --min-fee 5000 --max-fee 100000 \
-  --defer-threshold 0.7 --multiplier 1.0
-```
-
-- Static: always uses `--static-fee`.
-- Congestion: scales `est_base_fee` by `(1 + multiplier * congestion_ratio)`, clamped to `[min_fee, max_fee]`, and defers when `congestion_ratio > defer_threshold`.
-
-## Dispute & Refund Flow (testnet)
-
-End-to-end steps to reproduce pay-per-invoice, dispute, and guardian refund.
-
-1) Start the checkpoint watcher (anchors to testnet-10):
-
-```sh
-cargo run -p kdapp-merchant -- watcher \
-  --kaspa-private-key <hex> \
-  --wrpc-url wss://node:16110 \
+  --defer-threshold 0.7 --multiplier 1.0 \
   --http-port 9591
 ```
 
-2) Start the guardian service and copy its public key from logs:
+- `--max-fee` – cap fee for anchoring transactions.
+- `--defer-threshold` – skip anchoring when congestion ratio exceeds this value.
+- `--http-port` – expose mempool metrics on `/mempool`.
 
-```sh
-cargo run -p kdapp-guardian --bin guardian-service -- --config examples/kdapp-guardian/config.toml
+Query current metrics:
+
+```bash
+curl http://127.0.0.1:9591/mempool
 ```
 
-3) Create an episode and invoice, supplying the guardian address/key so disputes reach the guardian:
+## Guardian integration
 
-```sh
-# create episode 42 and an open invoice 1
-cargo run -p kdapp-merchant -- \
-  --guardian-addr 127.0.0.1:9650 \
-  --guardian-key <guardian_pubkey_hex> \
-  new --episode-id 42
+Merchants may delegate dispute resolution to guardians.  Supply guardian UDP addresses and public
+keys when invoking commands or running the demo:
 
-cargo run -p kdapp-merchant -- \
-  --guardian-addr 127.0.0.1:9650 \
-  --guardian-key <guardian_pubkey_hex> \
-  create --episode-id 42 --invoice-id 1 --amount 1000 --memo test
+```bash
+kdapp-merchant --guardian-addr 127.0.0.1:9650 \
+  --guardian-key <guardian_pubkey_hex> demo
 ```
 
-4) Open a dispute by canceling before payment (demo policy):
+During a dispute, the merchant sends an escalation TLV to the guardian.  The guardian co‑signs the
+refund and the watcher verifies the signature before broadcasting it.
 
-```sh
-cargo run -p kdapp-merchant -- cancel --episode-id 42 --invoice-id 1
+## HTTP API quickstart
+
+Start the HTTP server:
+
+```bash
+kdapp-merchant serve \
+  --bind 127.0.0.1:3000 \
+  --episode-id 1 \
+  --api-key secret \
+  --merchant-private-key <hex>
 ```
 
-This triggers an `Escalate` to the guardian. The guardian co‑signs a refund and notifies the watcher; in watcher logs expect:
+Endpoints use `x-api-key` for authentication:
 
-- `checkpoint received: ep=42 seq=...` (periodic)
-- `refund verified for ep=42 seq=0`
+| Endpoint | Description |
+| -------- | ----------- |
+| `POST /invoice` | Create an invoice `{invoice_id, amount, memo?, guardian_public_keys?}` |
+| `POST /pay` | Mark an invoice paid `{invoice_id, payer_public_key}` |
+| `POST /ack` | Acknowledge payment `{invoice_id}` |
+| `POST /cancel` | Cancel an open invoice `{invoice_id}` |
+| `POST /subscribe` | Create a subscription `{subscription_id, customer_public_key, amount, interval}` |
+| `POST /subscriptions/:id/charge` | Trigger a subscription charge immediately |
+| `POST /subscriptions/:id/disputes` | Escalate a subscription dispute |
+| `GET /invoices` | List invoices |
+| `GET /subscriptions` | List subscriptions |
+| `POST /watcher-config` | Override watcher `max_fee` or `congestion_threshold` |
+| `GET /mempool-metrics` | Fetch mempool metrics snapshot |
 
-In guardian logs: `guardian: co-signed refund and notified watcher for episode 42`.
+Example usage:
 
-### Trusting guardian signatures
+```bash
+# create an invoice
+curl -X POST http://127.0.0.1:3000/invoice \ 
+  -H 'x-api-key: secret' \ 
+  -d '{"invoice_id":1,"amount":1000}'
 
-- Verification: the watcher checks `verify_signature(guardian_pubkey, hash(refund_tx), guardian_sig)` before logging.
-- You can also verify locally via `kdapp::pki::verify_signature` if you capture the `(tx, sig, gpk)` tuple.
+# pay it
+curl -X POST http://127.0.0.1:3000/pay \ 
+  -H 'x-api-key: secret' \ 
+  -d '{"invoice_id":1,"payer_public_key":"<hex>"}'
+```
 
-Notes:
-- The demo uses a shared HMAC key (`kdapp-demo-secret`) for TLV; change this in production.
-- Refund TLV is consumed by the watcher only; routers ignore it by design (see onlyKAS-merchant.md).
+## Scheduler and subscriptions
 
-## Troubleshooting
+The scheduler thread scans stored subscriptions every ten seconds.  When a charge fails, it retries
+with exponential backoff starting at five seconds and capping at five minutes.
 
-- anchoring deferred: congestion above threshold
-  - The watcher skipped on-chain anchoring due to mempool load. Lower `--congestion-threshold`, raise `--max-fee`, or retry later.
-- anchoring deferred: fee {fee} exceeds max {max_fee}
-  - Increase `--max-fee` or adjust at runtime via `POST /watcher-config`.
-- wrpc connect errors / timeouts
-  - Verify `--wrpc-url` and network flag (`--mainnet` vs testnet-10 default). The watcher reconnects automatically on transient disconnects.
-- guardian: escalation for unknown episode
-  - The guardian hasn’t seen checkpoints for the episode yet. Once it observes OKCP anchors (or receives another escalate), the dispute will be tracked.
-- ack timeouts from routers or watcher
-  - Ensure the initial `Handshake` was sent and the HMAC key matches (`kdapp-demo-secret` in examples).
+## Webhooks
 
-## Developer Notes
+Supply `--webhook-url` and `--webhook-secret` when running `serve` to receive HMAC‑signed JSON
+callbacks:
 
-- Build example trio:
-  - `cargo build -p kdapp-merchant -p kdapp-guardian -p kdapp-customer`
-- Lint strictly (deny warnings):
-  - `cargo clippy -p kdapp-merchant -p kdapp-guardian -p kdapp-customer --all-targets -- -D warnings`
-- Run tests for merchant example:
-  - `cargo test -p kdapp-merchant`
+- `invoice_created`
+- `invoice_paid`
+- `invoice_acked`
+- `invoice_cancelled`
+
+## Example flow
+
+1. Run the watcher to anchor checkpoints and expose mempool metrics.
+2. Start the HTTP server with an API key and merchant private key.
+3. A customer creates and pays an invoice via HTTP or CLI.
+4. The merchant acknowledges the payment or escalates a dispute.
+5. If disputed, the guardian co‑signs the refund and the watcher confirms it.
+
+## References
+
+- [Guardian README](../kdapp-guardian/README.md)
+- [Top‑level README](../../README.md)
