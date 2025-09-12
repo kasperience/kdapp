@@ -127,7 +127,9 @@ pub struct AttestationSummary {
     pub epoch: u64,
     pub fee_bucket: u64,
     pub count: usize,
-    pub by_key: Vec<[u8; 33]>,
+
+    pub by_key: Vec<PubKey>,
+
     pub last_updated_ts: u64,
 }
 
@@ -156,7 +158,9 @@ pub fn ingest_attestation(att: Attestation) -> Result<(), AttestationError> {
             info!(
                 "attestation root={} key={} fee_bucket={} cong={}",
                 hex::encode(att.root_hash),
-                hex::encode(att.attester_pubkey),
+
+                hex::encode(att.attester_pubkey.0.serialize()),
+
                 att.fee_bucket,
                 att.congestion_ratio
             );

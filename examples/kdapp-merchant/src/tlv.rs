@@ -174,7 +174,10 @@ pub struct Attestation {
     pub epoch: u64,
     pub fee_bucket: u64,
     pub congestion_ratio: f64,
-    pub attester_pubkey: [u8; 33],
+
+    pub attester_pubkey: PubKey,
+
+
     pub signature: Vec<u8>,
 }
 
@@ -184,13 +187,18 @@ struct AttestationSigData {
     epoch: u64,
     fee_bucket: u64,
     congestion_ratio: f64,
-    attester_pubkey: [u8; 33],
+
+    attester_pubkey: PubKey,
+
 }
 
 pub fn sign_attestation(sk: &SecretKey, att: &mut Attestation) {
     let secp = Secp256k1::signing_only();
     let pk = PublicKey::from_secret_key(&secp, sk);
-    att.attester_pubkey.copy_from_slice(&pk.serialize());
+
+    att.attester_pubkey = PubKey(pk);
+
+
     let data = AttestationSigData {
         root_hash: att.root_hash,
         epoch: att.epoch,
@@ -204,10 +212,12 @@ pub fn sign_attestation(sk: &SecretKey, att: &mut Attestation) {
 }
 
 pub fn verify_attestation(att: &Attestation) -> bool {
+
     let pk = match PublicKey::from_slice(&att.attester_pubkey) {
         Ok(k) => k,
         Err(_) => return false,
     };
+
     let sig = match secp256k1::ecdsa::Signature::from_der(&att.signature) {
         Ok(s) => s,
         Err(_) => return false,
@@ -220,7 +230,11 @@ pub fn verify_attestation(att: &Attestation) -> bool {
         attester_pubkey: att.attester_pubkey,
     };
     let msg = to_message(&data);
+
+    let pk = att.attester_pubkey;
+
     let pk = PubKey(pk);
+
     let sig = Sig(sig);
     verify_signature(&pk, &msg, &sig)
 }
