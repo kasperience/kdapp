@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 use std::env;
 use std::sync::Once;
 use std::thread;
+
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 
 use ctrlc;
 
@@ -68,10 +70,13 @@ pub fn start_compaction(interval_secs: u64) {
         let db = DB.clone();
         thread::spawn(move || loop {
             thread::sleep(Duration::from_secs(interval_secs));
+
             let path = env::var("MERCHANT_DB_PATH").unwrap_or_else(|_| "merchant.db".to_string());
             let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
             let cp_path = format!("{path}.cp{ts}");
             let _ = db.checkpoint(cp_path);
+
+
         });
     });
 }
