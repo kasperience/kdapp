@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::episode::{Episode, EpisodeError as KdappEpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use crate::pki::p2pk_script;
 
@@ -37,9 +38,44 @@ pub struct Invoice {
     pub guardian_keys: Vec<PubKey>,
 }
 
+#[derive(Clone, Copy, Debug, BorshSerialize, BorshDeserialize, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SubStatus {
+    Active,
+    Paused,
+    Canceled,
+}
+
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct Subscription {
+    pub sub_id: u64,
+    pub id: u64,
+    pub customer_id: u64,
+    pub merchant_pubkey: PubKey,
+    pub amount_sompi: u64,
+    pub period_secs: u64,
+    pub next_run_ts: u64,
+    pub status: SubStatus,
+    pub memo: Option<String>,
+}
+
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum SubError {
+    #[error("unknown subscription")]
+    UnknownSubscription,
+    #[error("merchant key mismatch")]
+    MerchantKeyMismatch,
+    #[error("amount mismatch expected {expected} got {got}")]
+    AmountMismatch { expected: u64, got: u64 },
+    #[error("script mismatch")]
+    ScriptMismatch,
+    #[error("overlapping period")]
+    OverlappingPeriod,
+}
+
 #[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize)]
 pub struct ReceiptEpisode {
     invoices: BTreeMap<u64, Invoice>,
+    subscriptions: BTreeMap<u64, Subscription>,
 }
 
 impl ReceiptEpisode {
@@ -60,7 +96,7 @@ impl Episode for ReceiptEpisode {
     type CommandError = EpisodeError;
 
     fn initialize(_participants: Vec<PubKey>, _metadata: &PayloadMetadata) -> Self {
-        Self { invoices: BTreeMap::new() }
+        Self { invoices: BTreeMap::new(), subscriptions: BTreeMap::new() }
     }
 
     fn execute(

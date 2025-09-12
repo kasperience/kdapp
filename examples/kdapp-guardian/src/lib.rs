@@ -118,11 +118,21 @@ pub enum GuardianMsg {
     Confirm { episode_id: u64, seq: u64 },
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SubDisputeMsg {
+    pub sub_id: u64,
+    pub invoice_id: u64,
+    pub reason: String,
+    pub evidence_hash: Vec<u8>,
+    pub proposed_refund_tx: Option<Vec<u8>>,
+}
+
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct GuardianState {
     pub observed_payments: Vec<u64>,
     pub checkpoints: Vec<(u64, u64)>,
     pub disputes: Vec<u64>,
+    pub sub_disputes: Vec<(u64, u64)>,
     pub refund_signatures: Vec<(u64, kdapp::pki::Sig)>,
     pub last_seq: HashMap<u64, u64>,
     #[serde(skip)]
@@ -195,6 +205,12 @@ impl GuardianState {
         self.checkpoints.push((episode_id, seq));
         self.persist();
         false
+    }
+
+    pub fn record_sub_dispute(&mut self, sub_id: u64, invoice_id: u64, reason: String, evidence_hash: Vec<u8>) {
+        self.sub_disputes.push((sub_id, invoice_id));
+        info!("sub dispute recorded: {sub_id}/{invoice_id} reason={reason} evidence={:?}", evidence_hash);
+        self.persist();
     }
 
     pub fn sign_refund(&mut self, episode_id: u64, tx: &[u8], sk: &SecretKey) -> Sig {
