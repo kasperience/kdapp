@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 use axum::{
-    extract::{Json, State},
+    extract::{Json, Path, State},
     http::{HeaderMap, StatusCode},
     routing::{get, post},
     Router,
@@ -121,6 +121,8 @@ pub async fn serve(bind: String, state: AppState) -> Result<(), Box<dyn std::err
         .route("/ack", post(ack_invoice))
         .route("/cancel", post(cancel_invoice))
         .route("/subscribe", post(create_subscription))
+        .route("/subscriptions/:sub_id/charge", post(charge_subscription))
+        .route("/subscriptions/:sub_id/disputes", post(escalate_sub_dispute))
         .route("/invoices", get(list_invoices))
         .route("/subscriptions", get(list_subscriptions))
         .route("/watcher-config", post(set_watcher_config))
@@ -304,6 +306,43 @@ async fn create_subscription(
     Ok(StatusCode::ACCEPTED)
 }
 
+#[derive(Deserialize)]
+struct ChargePathReq {}
+
+async fn charge_subscription(
+    State(state): State<AppState>,
+    Path(sub_id): Path<u64>,
+    headers: HeaderMap,
+    _body: Json<ChargePathReq>,
+) -> Result<StatusCode, StatusCode> {
+    authorize(&headers, &state)?;
+    let cmd = MerchantCommand::ProcessSubscription { subscription_id: sub_id };
+    let msg = EpisodeMessage::UnsignedCommand { episode_id: state.episode_id, cmd };
+    if let Err(e) = state.router.forward::<ReceiptEpisode>(msg) {
+        log::warn!("forward failed: {e}");
+    }
+    Ok(StatusCode::ACCEPTED)
+}
+
+#[derive(Deserialize)]
+struct SubDisputeReq {
+    invoice_id: u64,
+    reason: String,
+    evidence_base64: Option<String>,
+}
+
+async fn escalate_sub_dispute(
+    State(state): State<AppState>,
+    Path(sub_id): Path<u64>,
+    headers: HeaderMap,
+    Json(req): Json<SubDisputeReq>,
+) -> Result<StatusCode, StatusCode> {
+    authorize(&headers, &state)?;
+    let _ = (sub_id, req.invoice_id, req.reason, req.evidence_base64);
+    // A real implementation would call ReceiptEpisode::escalate_sub_dispute and send TLVs
+    Ok(StatusCode::ACCEPTED)
+}
+
 #[derive(Serialize)]
 struct InvoiceOut {
     id: u64,
@@ -318,10 +357,11 @@ struct InvoiceOut {
 #[derive(Serialize)]
 struct SubscriptionOut {
     id: u64,
-    customer: String,
+    customer_id: u64,
     amount: u64,
-    interval: u64,
-    next_run: u64,
+    period_secs: u64,
+    next_run_ts: u64,
+    status: String,
 }
 
 async fn list_invoices(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Vec<InvoiceOut>>, StatusCode> {
@@ -348,11 +388,12 @@ async fn list_subscriptions(State(state): State<AppState>, headers: HeaderMap) -
     let out = subs
         .values()
         .map(|s| SubscriptionOut {
-            id: s.id,
-            customer: pk_to_hex(&s.customer),
-            amount: s.amount,
-            interval: s.interval,
-            next_run: s.next_run,
+            id: s.sub_id,
+            customer_id: s.customer_id,
+            amount: s.amount_sompi,
+            period_secs: s.period_secs,
+            next_run_ts: s.next_run_ts,
+            status: format!("{:?}", s.status),
         })
         .collect();
     Ok(Json(out))

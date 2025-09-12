@@ -1,4 +1,5 @@
 use blake2::{Blake2b512, Digest};
+use serde::{Deserialize, Serialize};
 
 /// Demo shared secret used for HMAC signing of TLV messages.
 /// In real deployments this should be negotiated out of band.
@@ -17,6 +18,10 @@ pub enum MsgType {
     Checkpoint = 5,
     Handshake = 6,
     Refund = 7,
+    SubCharge = 8,
+    SubChargeAck = 9,
+    SubDispute = 10,
+    SubDisputeResolve = 11,
 }
 
 impl MsgType {
@@ -30,9 +35,33 @@ impl MsgType {
             5 => Some(MsgType::Checkpoint),
             6 => Some(MsgType::Handshake),
             7 => Some(MsgType::Refund),
+            8 => Some(MsgType::SubCharge),
+            9 => Some(MsgType::SubChargeAck),
+            10 => Some(MsgType::SubDispute),
+            11 => Some(MsgType::SubDisputeResolve),
             _ => None,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SubChargeMsg {
+    pub sub_id: u64,
+    pub period_start_ts: u64,
+    pub period_end_ts: u64,
+    pub expected_amount: u64,
+    pub invoice_id: u64,
+    pub merchant_pubkey: Vec<u8>,
+    pub hmac: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SubDisputeMsg {
+    pub sub_id: u64,
+    pub invoice_id: u64,
+    pub reason: String,
+    pub evidence_hash: Vec<u8>,
+    pub proposed_refund_tx: Option<Vec<u8>>,
 }
 
 #[derive(Clone)]

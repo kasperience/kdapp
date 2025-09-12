@@ -5,6 +5,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use kaspa_consensus_core::Hash;
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 // Use a relative path so this module works when compiled
 // as part of the crate and when included from tests/fixtures.rs
 use super::storage;
@@ -74,6 +76,26 @@ pub enum MerchantError {
     SubscriptionNotFound,
 }
 
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum SubError {
+    #[error("unknown subscription")]
+    UnknownSubscription,
+    #[error("not active")]
+    NotActive,
+    #[error("not due yet")]
+    NotDueYet,
+    #[error("amount mismatch expected {expected} got {got}")]
+    AmountMismatch { expected: u64, got: u64 },
+    #[error("script mismatch")]
+    ScriptMismatch,
+    #[error("merchant key mismatch")]
+    MerchantKeyMismatch,
+    #[error("overlapping period")]
+    OverlappingPeriod,
+    #[error("ack timeout")]
+    AckTimeout,
+}
+
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub enum InvoiceStatus {
     Open,
@@ -95,13 +117,24 @@ pub struct Invoice {
     pub guardian_keys: Vec<PubKey>,
 }
 
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Copy, Debug, BorshSerialize, BorshDeserialize, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SubStatus {
+    Active,
+    Paused,
+    Canceled,
+}
+
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct Subscription {
+    pub sub_id: u64,
     pub id: u64,
-    pub customer: PubKey,
-    pub amount: u64,
-    pub interval: u64,
-    pub next_run: u64,
+    pub customer_id: u64,
+    pub merchant_pubkey: PubKey,
+    pub amount_sompi: u64,
+    pub period_secs: u64,
+    pub next_run_ts: u64,
+    pub status: SubStatus,
+    pub memo: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize)]
@@ -292,16 +325,30 @@ impl Episode for ReceiptEpisode {
                     return Err(EpisodeError::InvalidCommand(MerchantError::InvalidAmount));
                 }
                 // Require merchant auth for creating subscriptions
-                if let Some(pk) = authorization {
+                let merchant_pk = if let Some(pk) = authorization {
                     if !self.merchant_keys.contains(&pk) {
                         return Err(EpisodeError::Unauthorized);
                     }
+                    pk
                 } else {
                     return Err(EpisodeError::Unauthorized);
-                }
-                let info = self.customers.get_mut(customer).ok_or(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer))?;
+                };
+                let info = self
+                    .customers
+                    .get_mut(customer)
+                    .ok_or(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer))?;
                 let next_run = compute_next_run(metadata.accepting_time, *interval);
-                let sub = Subscription { id: *subscription_id, customer: *customer, amount: *amount, interval: *interval, next_run };
+                let sub = Subscription {
+                    sub_id: *subscription_id,
+                    id: *subscription_id,
+                    customer_id: 0,
+                    merchant_pubkey: merchant_pk,
+                    amount_sompi: *amount,
+                    period_secs: *interval,
+                    next_run_ts: next_run,
+                    status: SubStatus::Active,
+                    memo: None,
+                };
                 info.subscriptions.push(*subscription_id);
                 storage::put_customer(customer, info);
                 self.subscriptions.insert(*subscription_id, sub.clone());
@@ -313,8 +360,8 @@ impl Episode for ReceiptEpisode {
                     .subscriptions
                     .get_mut(subscription_id)
                     .ok_or(EpisodeError::InvalidCommand(MerchantError::SubscriptionNotFound))?;
-                let prev = sub.next_run;
-                sub.next_run = compute_next_run(metadata.accepting_time, sub.interval);
+                let prev = sub.next_run_ts;
+                sub.next_run_ts = compute_next_run(metadata.accepting_time, sub.period_secs);
                 storage::put_subscription(sub);
                 Ok(MerchantRollback::UndoProcessSubscription { subscription_id: *subscription_id, prev_next_run: prev })
             }
@@ -323,9 +370,9 @@ impl Episode for ReceiptEpisode {
                     .subscriptions
                     .remove(subscription_id)
                     .ok_or(EpisodeError::InvalidCommand(MerchantError::SubscriptionNotFound))?;
-                if let Some(info) = self.customers.get_mut(&sub.customer) {
+                if let Some(info) = self.customers.get_mut(&sub.merchant_pubkey) {
                     info.subscriptions.retain(|id| id != subscription_id);
-                    storage::put_customer(&sub.customer, info);
+                    storage::put_customer(&sub.merchant_pubkey, info);
                 }
                 storage::delete_subscription(*subscription_id);
                 Ok(MerchantRollback::UndoCancelSubscription { subscription: sub })
@@ -380,9 +427,9 @@ impl Episode for ReceiptEpisode {
             MerchantRollback::UndoCreateSubscription { subscription_id } => {
                 storage::delete_subscription(subscription_id);
                 if let Some(sub) = self.subscriptions.remove(&subscription_id) {
-                    if let Some(info) = self.customers.get_mut(&sub.customer) {
+                    if let Some(info) = self.customers.get_mut(&sub.merchant_pubkey) {
                         info.subscriptions.retain(|id| *id != subscription_id);
-                        storage::put_customer(&sub.customer, info);
+                        storage::put_customer(&sub.merchant_pubkey, info);
                     }
                     true
                 } else {
@@ -391,7 +438,7 @@ impl Episode for ReceiptEpisode {
             }
             MerchantRollback::UndoProcessSubscription { subscription_id, prev_next_run } => {
                 if let Some(sub) = self.subscriptions.get_mut(&subscription_id) {
-                    sub.next_run = prev_next_run;
+                    sub.next_run_ts = prev_next_run;
                     storage::put_subscription(sub);
                     true
                 } else {
@@ -399,8 +446,8 @@ impl Episode for ReceiptEpisode {
                 }
             }
             MerchantRollback::UndoCancelSubscription { subscription } => {
-                let id = subscription.id;
-                let customer = subscription.customer;
+                let id = subscription.sub_id;
+                let customer = subscription.merchant_pubkey;
                 self.subscriptions.insert(id, subscription.clone());
                 storage::put_subscription(&subscription);
                 if let Some(info) = self.customers.get_mut(&customer) {
@@ -412,6 +459,30 @@ impl Episode for ReceiptEpisode {
                 true
             }
         }
+    }
+}
+
+impl ReceiptEpisode {
+    /// Attempt to charge an active subscription. Validation is performed prior to
+    /// emitting any TLV messages. This is a simplified placeholder that updates
+    /// the next run timestamp and does not perform network I/O.
+    pub fn charge_subscription(&mut self, sub_id: u64, now: u64) -> Result<(), SubError> {
+        let sub = self.subscriptions.get_mut(&sub_id).ok_or(SubError::UnknownSubscription)?;
+        if sub.status != SubStatus::Active {
+            return Err(SubError::NotActive);
+        }
+        if now < sub.next_run_ts {
+            return Err(SubError::NotDueYet);
+        }
+        sub.next_run_ts = compute_next_run(now, sub.period_secs);
+        storage::put_subscription(sub);
+        Ok(())
+    }
+
+    /// Stub for escalating a subscription dispute to the guardian. The full
+    /// TLV/guardian integration is left as a TODO.
+    pub fn escalate_sub_dispute(&self, sub_id: u64, invoice_id: u64, reason: String, evidence_hash: Vec<u8>) {
+        let _ = (sub_id, invoice_id, reason, evidence_hash);
     }
 }
 
@@ -591,12 +662,12 @@ mod tests {
         let cmd = MerchantCommand::CreateSubscription { subscription_id: 5, customer: pk, amount: 10, interval: 5 };
         let _rb = ep.execute(&cmd, Some(pk), &metadata).expect("create sub");
         let next = metadata.accepting_time + 5;
-        assert_eq!(ep.subscriptions.get(&5).unwrap().next_run, next);
+        assert_eq!(ep.subscriptions.get(&5).unwrap().next_run_ts, next);
         // Process subscription -> next_run moves forward
         let mut md2 = metadata.clone();
         md2.accepting_time = next;
         let cmd = MerchantCommand::ProcessSubscription { subscription_id: 5 };
         let _rb = ep.execute(&cmd, None, &md2).expect("process sub");
-        assert_eq!(ep.subscriptions.get(&5).unwrap().next_run, next + 5);
+        assert_eq!(ep.subscriptions.get(&5).unwrap().next_run_ts, next + 5);
     }
 }
