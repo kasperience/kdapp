@@ -2477,6 +2477,7 @@ dependencies = [
  "blake2",
  "borsh",
  "clap",
+ "ctrlc",
  "env_logger",
  "faster-hex",
  "hex",

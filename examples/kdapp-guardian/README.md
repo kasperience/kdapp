@@ -12,16 +12,16 @@ cargo build -p kdapp-guardian --bin guardian-service
 
 ## Configuration
 
-The service is configured with a `GuardianConfig` either via a TOML file or command‑line flags.
+The service is configured via TOML or CLI flags:
 
-| Field | Description |
-| ----- | ----------- |
-| `listen_addr` | UDP socket for TLV messages from merchants and customers. |
-| `wrpc_url` | Kaspa wRPC endpoint used to watch the DAG for `OKCP` checkpoints. |
-| `mainnet` | Set to `true` to connect to mainnet (default is testnet‑10). |
-| `key_path` | Location of the guardian's secp256k1 private key. A new key is created on first run. **Keep this file secret.** |
-| `state_path` | Optional path used to persist dispute status and sequence counters. |
-| `http_port` | Port for health and metrics endpoints. Defaults to `listen_port + 1`. |
+| Flag | Description |
+| ---- | ----------- |
+| `--listen-addr` | UDP socket for TLV messages from merchants and customers. |
+| `--wrpc-url` | Kaspa wRPC endpoint used to watch the DAG for `OKCP` checkpoints. |
+| `--mainnet` | Set to `true` to connect to mainnet (default is testnet‑10). |
+| `--key-path` | Location of the guardian's secp256k1 private key. Created on first run. **Keep this file secret.** |
+| `--state-path` | Optional path used to persist dispute status and sequence counters. |
+| `--http-port` | Port for health and metrics endpoints. Defaults to `listen_port + 1`. |
 
 Example `guardian.toml`:
 
@@ -51,7 +51,7 @@ guardian-service --config guardian.toml
 Alternatively, configuration options can be supplied as flags:
 
 ```bash
-guardian-service --listen-addr 0.0.0.0:9650 --wrpc-url wss://node:16110 --key-path guardian.key
+guardian-service --listen-addr 0.0.0.0:9650 --wrpc-url wss://node:16110 --http-port 9651 --key-path guardian.key
 ```
 
 The UDP listener binds to `listen_addr`, the wRPC client connects to `wrpc_url`, and a small HTTP
@@ -73,6 +73,12 @@ curl http://127.0.0.1:9651/metrics
    resolution.
 4. **Refund signing** – the guardian signs the refund transaction and returns the signature in the
    TLV response. The watcher verifies this signature before broadcasting the refund.
+
+### Dispute example
+
+1. Merchant sends `Escalate` TLV with a refund transaction.
+2. Guardian validates and replies with `Confirm`.
+3. Merchant acknowledges resolution; guardian state persists to `state_path`.
 
 Guardians automatically scan the Kaspa DAG for compact `OKCP` checkpoints.  If an episode's
 sequence number skips or replays, the guardian opens a dispute and awaits an escalation message.

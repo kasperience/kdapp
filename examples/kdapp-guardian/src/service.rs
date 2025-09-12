@@ -28,6 +28,7 @@ pub struct GuardianConfig {
     pub key_path: String,
     pub state_path: Option<PathBuf>,
     pub log_level: String,
+    pub http_port: u16,
 }
 
 impl Default for GuardianConfig {
@@ -39,6 +40,7 @@ impl Default for GuardianConfig {
             key_path: "guardian.key".to_string(),
             state_path: Some(PathBuf::from("guardian.state")),
             log_level: "info".to_string(),
+            http_port: 9651,
         }
     }
 }
@@ -58,6 +60,8 @@ pub struct Cli {
     pub state_path: Option<PathBuf>,
     #[arg(long, default_value = "info")]
     pub log_level: String,
+    #[arg(long)]
+    pub http_port: Option<u16>,
     #[arg(long)]
     pub config: Option<String>,
 }
@@ -80,6 +84,9 @@ impl Cli {
             cfg.state_path = Some(v);
         }
         cfg.log_level = self.log_level;
+        if let Some(p) = self.http_port {
+            cfg.http_port = p;
+        }
         cfg
     }
 }
@@ -325,8 +332,8 @@ pub fn run(cfg: GuardianConfig) -> ServiceHandle {
     let http_addr = cfg
         .listen_addr
         .rsplit_once(':')
-        .and_then(|(host, port)| port.parse::<u16>().ok().map(|p| format!("{}:{}", host, p + 1)))
-        .unwrap_or_else(|| "127.0.0.1:9651".to_string());
+        .map(|(host, _)| format!("{}:{}", host, cfg.http_port))
+        .unwrap_or_else(|| format!("127.0.0.1:{}", cfg.http_port));
     let shutdown_http = shutdown.clone();
     let http_handle = thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("runtime");
