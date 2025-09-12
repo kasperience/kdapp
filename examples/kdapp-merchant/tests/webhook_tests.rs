@@ -1,14 +1,22 @@
 #[path = "../src/webhook.rs"]
 mod webhook;
 
-use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
-use axum::{routing::post, Router, extract::{State}, http::{HeaderMap, StatusCode}};
-use bytes::Bytes;
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    routing::post,
+    Router,
+};
+use axum::body::Bytes;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tokio::net::TcpListener;
-use webhook::{post_event, WebhookEvent, WebhookError};
+use webhook::{post_event, WebhookError, WebhookEvent};
 
 #[derive(Clone)]
 struct AppState {
@@ -16,11 +24,7 @@ struct AppState {
     secret: Vec<u8>,
 }
 
-async fn server_500_then_200(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> StatusCode {
+async fn server_500_then_200(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> StatusCode {
     let mut mac = Hmac::<Sha256>::new_from_slice(&state.secret).unwrap();
     mac.update(&body);
     let expected = hex::encode(mac.finalize().into_bytes());
@@ -34,11 +38,7 @@ async fn server_500_then_200(
     }
 }
 
-async fn server_400(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> StatusCode {
+async fn server_400(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> StatusCode {
     let mut mac = Hmac::<Sha256>::new_from_slice(&state.secret).unwrap();
     mac.update(&body);
     let expected = hex::encode(mac.finalize().into_bytes());
@@ -55,9 +55,7 @@ async fn retries_on_5xx() {
     let app = Router::new().route("/", post(server_500_then_200)).with_state(state);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::Server::from_tcp(listener).unwrap().serve(app.into_make_service()).await.unwrap();
-    });
+    tokio::spawn(async move { axum::serve(listener, app.into_make_service()).await.unwrap() });
 
     let event = WebhookEvent { event: "paid".into(), invoice_id: 1, amount: 100, timestamp: 1 };
     let url = format!("http://{}", addr);
@@ -72,15 +70,13 @@ async fn no_retry_on_4xx() {
     let app = Router::new().route("/", post(server_400)).with_state(state);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::Server::from_tcp(listener).unwrap().serve(app.into_make_service()).await.unwrap();
-    });
+    tokio::spawn(async move { axum::serve(listener, app.into_make_service()).await.unwrap() });
 
     let event = WebhookEvent { event: "paid".into(), invoice_id: 1, amount: 100, timestamp: 1 };
     let url = format!("http://{}", addr);
     let err = post_event(&url, b"topsecret", &event).await.unwrap_err();
     match err {
-        WebhookError::Http(400) => {},
+        WebhookError::Http(400) => {}
         other => panic!("unexpected error: {:?}", other),
     }
     assert_eq!(attempts.load(Ordering::SeqCst), 1);

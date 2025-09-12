@@ -36,9 +36,7 @@ pub async fn post_event(url: &str, secret: &[u8], event: &WebhookEvent) -> Resul
     mac.update(&body);
     let signature = encode(mac.finalize().into_bytes());
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(3)).build()?;
 
     for attempt in 1..=RETRY_DELAYS.len() + 1 {
         let res = client
@@ -51,10 +49,7 @@ pub async fn post_event(url: &str, secret: &[u8], event: &WebhookEvent) -> Resul
         match res {
             Ok(resp) => {
                 let status = resp.status();
-                info!(
-                    "webhook event={} invoice_id={} attempt={} status={}",
-                    event.event, event.invoice_id, attempt, status.as_u16()
-                );
+                info!("webhook event={} invoice_id={} attempt={} status={}", event.event, event.invoice_id, attempt, status.as_u16());
                 if status.is_success() {
                     return Ok(());
                 }
@@ -65,10 +60,7 @@ pub async fn post_event(url: &str, secret: &[u8], event: &WebhookEvent) -> Resul
                 return Err(WebhookError::Http(status.as_u16()));
             }
             Err(err) => {
-                info!(
-                    "webhook event={} invoice_id={} attempt={} status={}",
-                    event.event, event.invoice_id, attempt, err
-                );
+                info!("webhook event={} invoice_id={} attempt={} status={}", event.event, event.invoice_id, attempt, err);
                 if attempt <= RETRY_DELAYS.len() {
                     tokio::time::sleep(Duration::from_secs(RETRY_DELAYS[attempt - 1])).await;
                     continue;
