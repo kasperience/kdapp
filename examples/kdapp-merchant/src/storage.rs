@@ -119,7 +119,7 @@ pub fn load_subscriptions() -> BTreeMap<u64, Subscription> {
 
 pub fn put_subscription(sub: &Subscription) {
     let tree = DB.open_tree("subscriptions").expect("subscriptions tree");
-    let key = sub.id.to_be_bytes();
+    let key = sub.sub_id.to_be_bytes();
     let val = borsh::to_vec(sub).expect("serialize subscription");
     let _ = tree.insert(key, val);
 }

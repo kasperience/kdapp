@@ -128,7 +128,6 @@ pub enum SubStatus {
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct Subscription {
     pub sub_id: u64,
-    pub id: u64,
     pub customer_id: u64,
     pub merchant_pubkey: PubKey,
     pub amount_sompi: u64,
@@ -338,7 +337,6 @@ impl Episode for ReceiptEpisode {
                 let next_run = compute_next_run(metadata.accepting_time, *interval);
                 let sub = Subscription {
                     sub_id: *subscription_id,
-                    id: *subscription_id,
                     customer_id: 0,
                     merchant_pubkey: merchant_pk,
                     amount_sompi: *amount,
@@ -465,13 +463,24 @@ impl ReceiptEpisode {
     /// emitting any TLV messages. This is a simplified placeholder that updates
     /// the next run timestamp and does not perform network I/O.
     #[allow(dead_code)]
-    pub fn charge_subscription(&mut self, sub_id: u64, now: u64) -> Result<(), SubError> {
-        let sub = self.subscriptions.get_mut(&sub_id).ok_or(SubError::UnknownSubscription)?;
+    pub async fn charge_subscription(
+        &mut self,
+        sub_id: u64,
+    ) -> Result<(), EpisodeError<SubError>> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let sub = self
+            .subscriptions
+            .get_mut(&sub_id)
+            .ok_or(EpisodeError::InvalidCommand(SubError::UnknownSubscription))?;
         if sub.status != SubStatus::Active {
-            return Err(SubError::NotActive);
+            return Err(EpisodeError::InvalidCommand(SubError::NotActive));
         }
         if now < sub.next_run_ts {
-            return Err(SubError::NotDueYet);
+            return Err(EpisodeError::InvalidCommand(SubError::NotDueYet));
         }
         sub.next_run_ts = compute_next_run(now, sub.period_secs);
         storage::put_subscription(sub);

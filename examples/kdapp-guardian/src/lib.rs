@@ -4,6 +4,7 @@ use kdapp::pki::{sign_message, to_message, PubKey, Sig};
 use log::info;
 use secp256k1::SecretKey;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use std::{
     collections::HashMap,
     fs,
@@ -119,12 +120,26 @@ pub enum GuardianMsg {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SubDisputeMsg {
+pub struct SubDispute {
     pub sub_id: u64,
     pub invoice_id: u64,
     pub reason: String,
     pub evidence_hash: Vec<u8>,
     pub proposed_refund_tx: Option<Vec<u8>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SubDisputeResolve {
+    pub sub_id: u64,
+    pub invoice_id: u64,
+    pub guardian_sig: Vec<u8>,
+    pub refund_tx: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Error)]
+pub enum GuardianError {
+    #[error("invalid dispute")]
+    InvalidDispute,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -211,6 +226,19 @@ impl GuardianState {
         self.sub_disputes.push((sub_id, invoice_id));
         info!("sub dispute recorded: {sub_id}/{invoice_id} reason={reason} evidence={evidence_hash:?}");
         self.persist();
+    }
+
+    pub fn on_sub_dispute(
+        &mut self,
+        msg: SubDispute,
+    ) -> Result<SubDisputeResolve, GuardianError> {
+        self.record_sub_dispute(msg.sub_id, msg.invoice_id, msg.reason.clone(), msg.evidence_hash.clone());
+        Ok(SubDisputeResolve {
+            sub_id: msg.sub_id,
+            invoice_id: msg.invoice_id,
+            guardian_sig: Vec::new(),
+            refund_tx: msg.proposed_refund_tx,
+        })
     }
 
     pub fn sign_refund(&mut self, episode_id: u64, tx: &[u8], sk: &SecretKey) -> Sig {

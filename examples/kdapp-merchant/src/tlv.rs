@@ -45,7 +45,7 @@ impl MsgType {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct SubChargeMsg {
+pub struct SubCharge {
     pub sub_id: u64,
     pub period_start_ts: u64,
     pub period_end_ts: u64,
@@ -56,12 +56,27 @@ pub struct SubChargeMsg {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct SubDisputeMsg {
+pub struct SubChargeAck {
+    pub sub_id: u64,
+    pub ok: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SubDispute {
     pub sub_id: u64,
     pub invoice_id: u64,
     pub reason: String,
     pub evidence_hash: Vec<u8>,
     pub proposed_refund_tx: Option<Vec<u8>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SubDisputeResolve {
+    pub sub_id: u64,
+    pub invoice_id: u64,
+    pub guardian_sig: Vec<u8>,
+    pub refund_tx: Option<Vec<u8>>,
 }
 
 #[derive(Clone)]

@@ -14,6 +14,10 @@ pub enum MsgType {
     AckClose = 4,
     Checkpoint = 5,
     Handshake = 6,
+    SubCharge = 7,
+    SubChargeAck = 8,
+    SubDispute = 9,
+    SubDisputeResolve = 10,
 }
 
 impl MsgType {
@@ -26,6 +30,10 @@ impl MsgType {
             4 => Some(MsgType::AckClose),
             5 => Some(MsgType::Checkpoint),
             6 => Some(MsgType::Handshake),
+            7 => Some(MsgType::SubCharge),
+            8 => Some(MsgType::SubChargeAck),
+            9 => Some(MsgType::SubDispute),
+            10 => Some(MsgType::SubDisputeResolve),
             _ => None,
         }
     }

@@ -48,7 +48,6 @@ pub enum SubStatus {
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct Subscription {
     pub sub_id: u64,
-    pub id: u64,
     pub customer_id: u64,
     pub merchant_pubkey: PubKey,
     pub amount_sompi: u64,
@@ -56,6 +55,24 @@ pub struct Subscription {
     pub next_run_ts: u64,
     pub status: SubStatus,
     pub memo: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SubCharge {
+    pub sub_id: u64,
+    pub period_start_ts: u64,
+    pub period_end_ts: u64,
+    pub expected_amount: u64,
+    pub invoice_id: u64,
+    pub merchant_pubkey: Vec<u8>,
+    pub hmac: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SubChargeAck {
+    pub sub_id: u64,
+    pub ok: bool,
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -88,6 +105,30 @@ impl ReceiptEpisode {
     #[allow(dead_code)]
     pub fn invoice(&self, id: u64) -> Option<&Invoice> {
         self.invoices.get(&id)
+    }
+
+    #[allow(dead_code)]
+    pub fn on_sub_charge(&mut self, msg: SubCharge) -> Result<SubChargeAck, SubError> {
+        let sub = self
+            .subscriptions
+            .get(&msg.sub_id)
+            .ok_or(SubError::UnknownSubscription)?;
+        let expected_pk = sub.merchant_pubkey.0.serialize();
+        if msg.merchant_pubkey.as_slice() != expected_pk {
+            return Err(SubError::MerchantKeyMismatch);
+        }
+        if msg.expected_amount != sub.amount_sompi {
+            return Err(SubError::AmountMismatch {
+                expected: sub.amount_sompi,
+                got: msg.expected_amount,
+            });
+        }
+        if msg.period_start_ts != sub.next_run_ts
+            || msg.period_end_ts != sub.next_run_ts + sub.period_secs
+        {
+            return Err(SubError::OverlappingPeriod);
+        }
+        Ok(SubChargeAck { sub_id: msg.sub_id, ok: true, reason: None })
     }
 }
 
@@ -355,5 +396,67 @@ mod tests {
         ep.execute(&create, Some(merchant_pk), &metadata).unwrap();
         let err = ep.execute(&MerchantCommand::AckReceipt { invoice_id: 7 }, Some(merchant_pk), &metadata).unwrap_err();
         assert!(matches!(err, KdappEpisodeError::InvalidCommand(EpisodeError::InvoiceNotPaid)));
+    }
+
+    #[test]
+    fn sub_charge_happy_path() {
+        let (_sk, pk) = generate_keypair();
+        let mut ep = ReceiptEpisode::default();
+        let sub = Subscription {
+            sub_id: 1,
+            customer_id: 0,
+            merchant_pubkey: pk,
+            amount_sompi: 100,
+            period_secs: 10,
+            next_run_ts: 0,
+            status: SubStatus::Active,
+            memo: None,
+        };
+        ep.subscriptions.insert(1, sub);
+        let msg = SubCharge {
+            sub_id: 1,
+            period_start_ts: 0,
+            period_end_ts: 10,
+            expected_amount: 100,
+            invoice_id: 42,
+            merchant_pubkey: pk.0.serialize().to_vec(),
+            hmac: vec![],
+        };
+        let ack = ep.on_sub_charge(msg).expect("valid");
+        assert!(ack.ok);
+    }
+
+    #[test]
+    fn sub_charge_amount_mismatch() {
+        let (_sk, pk) = generate_keypair();
+        let mut ep = ReceiptEpisode::default();
+        let sub = Subscription {
+            sub_id: 2,
+            customer_id: 0,
+            merchant_pubkey: pk,
+            amount_sompi: 100,
+            period_secs: 10,
+            next_run_ts: 0,
+            status: SubStatus::Active,
+            memo: None,
+        };
+        ep.subscriptions.insert(2, sub);
+        let msg = SubCharge {
+            sub_id: 2,
+            period_start_ts: 0,
+            period_end_ts: 10,
+            expected_amount: 50,
+            invoice_id: 42,
+            merchant_pubkey: pk.0.serialize().to_vec(),
+            hmac: vec![],
+        };
+        let err = ep.on_sub_charge(msg).unwrap_err();
+        match err {
+            SubError::AmountMismatch { expected, got } => {
+                assert_eq!(expected, 100);
+                assert_eq!(got, 50);
+            }
+            _ => panic!("wrong error"),
+        }
     }
 }
