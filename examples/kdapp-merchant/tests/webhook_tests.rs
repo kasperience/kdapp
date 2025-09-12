@@ -6,13 +6,13 @@ use std::sync::{
     Arc,
 };
 
+use axum::body::Bytes;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     routing::post,
     Router,
 };
-use axum::body::Bytes;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tokio::net::TcpListener;
@@ -58,7 +58,7 @@ async fn retries_on_5xx() {
     tokio::spawn(async move { axum::serve(listener, app.into_make_service()).await.unwrap() });
 
     let event = WebhookEvent { event: "paid".into(), invoice_id: 1, amount: 100, timestamp: 1 };
-    let url = format!("http://{}", addr);
+    let url = format!("http://{addr}");
     post_event(&url, b"topsecret", &event).await.unwrap();
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
 }
@@ -73,11 +73,11 @@ async fn no_retry_on_4xx() {
     tokio::spawn(async move { axum::serve(listener, app.into_make_service()).await.unwrap() });
 
     let event = WebhookEvent { event: "paid".into(), invoice_id: 1, amount: 100, timestamp: 1 };
-    let url = format!("http://{}", addr);
+    let url = format!("http://{addr}");
     let err = post_event(&url, b"topsecret", &event).await.unwrap_err();
     match err {
         WebhookError::Http(400) => {}
-        other => panic!("unexpected error: {:?}", other),
+        other => panic!("unexpected error: {other:?}"),
     }
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }
