@@ -111,7 +111,12 @@ impl TcpRouter {
                     }
                     _ => warn!("router: reject NEW for ep {} (seq {}), last={:?}", msg.episode_id, msg.seq, entry.map(|i| i.seq)),
                 },
-                MsgType::Cmd | MsgType::Close | MsgType::Checkpoint => match entry {
+                MsgType::Cmd
+                | MsgType::Close
+                | MsgType::Checkpoint
+                | MsgType::SubCharge
+                | MsgType::SubDispute
+                | MsgType::SubDisputeResolve => match entry {
                     Some(info) if msg.seq == info.seq + 1 => accepted = true,
                     Some(info) if msg.seq == info.seq => {
                         let _ = stream.write_all(&info.ack);
@@ -120,7 +125,9 @@ impl TcpRouter {
                     Some(info) => warn!("router: out-of-order ep {} (got {}, want {})", msg.episode_id, msg.seq, info.seq + 1),
                     None => warn!("router: {} before NEW for ep {} (seq {})", msg.msg_type, msg.episode_id, msg.seq),
                 },
-                MsgType::Ack | MsgType::AckClose => info!("router: ignoring ack-type from tcp peer"),
+                MsgType::Ack | MsgType::AckClose | MsgType::SubChargeAck => {
+                    info!("router: ignoring ack-type from tcp peer")
+                }
                 MsgType::Refund => {
                     // Refund messages are not routed to the engine via TCP router
                     info!("router: ignoring refund-type from tcp peer");

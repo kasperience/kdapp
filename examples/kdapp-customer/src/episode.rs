@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
+use crate::pki::p2pk_script;
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::episode::{Episode, EpisodeError as KdappEpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use crate::pki::p2pk_script;
 
 // Must mirror the wire shape used by kdapp-merchant to ensure Borsh compatibility
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
@@ -59,6 +59,7 @@ pub struct Subscription {
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum SubError {
     #[error("unknown subscription")]
     UnknownSubscription,
@@ -123,10 +124,7 @@ impl Episode for ReceiptEpisode {
                 if authorization != Some(*payer) {
                     return Err(KdappEpisodeError::InvalidSignature);
                 }
-                let inv = self
-                    .invoices
-                    .get_mut(invoice_id)
-                    .ok_or(KdappEpisodeError::InvalidCommand(EpisodeError::UnknownInvoice))?;
+                let inv = self.invoices.get_mut(invoice_id).ok_or(KdappEpisodeError::InvalidCommand(EpisodeError::UnknownInvoice))?;
                 if inv.status != InvoiceStatus::Open {
                     return Err(KdappEpisodeError::InvalidCommand(EpisodeError::InvoiceNotOpen));
                 }
@@ -137,10 +135,7 @@ impl Episode for ReceiptEpisode {
                 } else {
                     inv.payer = Some(*payer);
                 }
-                let outs = metadata
-                    .tx_outputs
-                    .as_ref()
-                    .ok_or(KdappEpisodeError::InvalidCommand(EpisodeError::ScriptMismatch))?;
+                let outs = metadata.tx_outputs.as_ref().ok_or(KdappEpisodeError::InvalidCommand(EpisodeError::ScriptMismatch))?;
                 let expected = p2pk_script(inv.merchant_pubkey);
                 let mut matched = false;
                 for o in outs {
@@ -160,20 +155,14 @@ impl Episode for ReceiptEpisode {
                 inv.status = InvoiceStatus::Paid;
             }
             MerchantCommand::AckReceipt { invoice_id } => {
-                let inv = self
-                    .invoices
-                    .get_mut(invoice_id)
-                    .ok_or(KdappEpisodeError::InvalidCommand(EpisodeError::UnknownInvoice))?;
+                let inv = self.invoices.get_mut(invoice_id).ok_or(KdappEpisodeError::InvalidCommand(EpisodeError::UnknownInvoice))?;
                 if inv.status != InvoiceStatus::Paid {
                     return Err(KdappEpisodeError::InvalidCommand(EpisodeError::InvoiceNotPaid));
                 }
                 inv.status = InvoiceStatus::Acked;
             }
             MerchantCommand::CancelInvoice { invoice_id } => {
-                let inv = self
-                    .invoices
-                    .get_mut(invoice_id)
-                    .ok_or(KdappEpisodeError::InvalidCommand(EpisodeError::UnknownInvoice))?;
+                let inv = self.invoices.get_mut(invoice_id).ok_or(KdappEpisodeError::InvalidCommand(EpisodeError::UnknownInvoice))?;
                 if inv.status != InvoiceStatus::Open {
                     return Err(KdappEpisodeError::InvalidCommand(EpisodeError::InvoiceNotOpen));
                 }
@@ -209,10 +198,10 @@ pub enum EpisodeError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaspa_consensus_core::Hash;
-    use kdapp::episode::{PayloadMetadata, TxOutputInfo, EpisodeError as KdappEpisodeError};
-    use kdapp::pki::generate_keypair;
     use crate::pki::p2pk_script;
+    use kaspa_consensus_core::Hash;
+    use kdapp::episode::{EpisodeError as KdappEpisodeError, PayloadMetadata, TxOutputInfo};
+    use kdapp::pki::generate_keypair;
 
     fn md() -> PayloadMetadata {
         PayloadMetadata {
@@ -299,10 +288,7 @@ mod tests {
         let script = p2pk_script(merchant_pk);
         paid_md.tx_outputs = Some(vec![TxOutputInfo { value: 25, script_version: 0, script_bytes: Some(script) }]);
         let cmd = MerchantCommand::MarkPaid { invoice_id: 4, payer: payer1 };
-        assert!(matches!(
-            ep.execute(&cmd, Some(merchant_pk), &paid_md),
-            Err(KdappEpisodeError::InvalidSignature)
-        ));
+        assert!(matches!(ep.execute(&cmd, Some(merchant_pk), &paid_md), Err(KdappEpisodeError::InvalidSignature)));
     }
 
     #[test]
@@ -367,9 +353,7 @@ mod tests {
 
         let create = MerchantCommand::CreateInvoice { invoice_id: 7, amount: 10, memo: None, guardian_keys: vec![] };
         ep.execute(&create, Some(merchant_pk), &metadata).unwrap();
-        let err = ep
-            .execute(&MerchantCommand::AckReceipt { invoice_id: 7 }, Some(merchant_pk), &metadata)
-            .unwrap_err();
+        let err = ep.execute(&MerchantCommand::AckReceipt { invoice_id: 7 }, Some(merchant_pk), &metadata).unwrap_err();
         assert!(matches!(err, KdappEpisodeError::InvalidCommand(EpisodeError::InvoiceNotPaid)));
     }
 }

@@ -77,6 +77,7 @@ pub enum MerchantError {
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum SubError {
     #[error("unknown subscription")]
     UnknownSubscription,
@@ -333,10 +334,7 @@ impl Episode for ReceiptEpisode {
                 } else {
                     return Err(EpisodeError::Unauthorized);
                 };
-                let info = self
-                    .customers
-                    .get_mut(customer)
-                    .ok_or(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer))?;
+                let info = self.customers.get_mut(customer).ok_or(EpisodeError::InvalidCommand(MerchantError::UnknownCustomer))?;
                 let next_run = compute_next_run(metadata.accepting_time, *interval);
                 let sub = Subscription {
                     sub_id: *subscription_id,
@@ -466,6 +464,7 @@ impl ReceiptEpisode {
     /// Attempt to charge an active subscription. Validation is performed prior to
     /// emitting any TLV messages. This is a simplified placeholder that updates
     /// the next run timestamp and does not perform network I/O.
+    #[allow(dead_code)]
     pub fn charge_subscription(&mut self, sub_id: u64, now: u64) -> Result<(), SubError> {
         let sub = self.subscriptions.get_mut(&sub_id).ok_or(SubError::UnknownSubscription)?;
         if sub.status != SubStatus::Active {
@@ -481,6 +480,7 @@ impl ReceiptEpisode {
 
     /// Stub for escalating a subscription dispute to the guardian. The full
     /// TLV/guardian integration is left as a TODO.
+    #[allow(dead_code)]
     pub fn escalate_sub_dispute(&self, sub_id: u64, invoice_id: u64, reason: String, evidence_hash: Vec<u8>) {
         let _ = (sub_id, invoice_id, reason, evidence_hash);
     }

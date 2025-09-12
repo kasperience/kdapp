@@ -209,7 +209,7 @@ impl GuardianState {
 
     pub fn record_sub_dispute(&mut self, sub_id: u64, invoice_id: u64, reason: String, evidence_hash: Vec<u8>) {
         self.sub_disputes.push((sub_id, invoice_id));
-        info!("sub dispute recorded: {sub_id}/{invoice_id} reason={reason} evidence={:?}", evidence_hash);
+        info!("sub dispute recorded: {sub_id}/{invoice_id} reason={reason} evidence={evidence_hash:?}");
         self.persist();
     }
 

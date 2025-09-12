@@ -266,10 +266,7 @@ pub fn run(cfg: GuardianConfig) -> ServiceHandle {
     info!("Listen: {}  wRPC: {}  mainnet: {}", cfg.listen_addr, cfg.wrpc_url, cfg.mainnet);
     let sock = UdpSocket::bind(&cfg.listen_addr).expect("bind guardian service");
     sock.set_nonblocking(true).expect("nonblocking");
-    let state_path = cfg
-        .state_path
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("guardian.state"));
+    let state_path = cfg.state_path.clone().unwrap_or_else(|| PathBuf::from("guardian.state"));
     let state = Arc::new(Mutex::new(GuardianState::load(&state_path)));
 
     let shutdown = Arc::new(AtomicBool::new(false));
