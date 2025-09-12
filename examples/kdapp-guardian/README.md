@@ -1,85 +1,84 @@
-# kdapp-guardian
+# OnlyKAS Guardian
 
-Minimal guardian service that watches checkpoint anchors and helps resolve disputes by co-signing refunds.
+The guardian is a lightweight watchtower that observes OnlyKAS programs and helps resolve disputes.
+It watches the Kaspa DAG for checkpoint anchors, tracks episode sequences, and co‑signs refunds
+when a customer or merchant escalates a dispute.
 
-## Quickstart
+## Installation
 
-- Create a config file (TOML):
-
-  ```toml
-  # config.toml
-  listen_addr = "127.0.0.1:9650"      # UDP for guardian TLV
-  wrpc_url = "wss://node:16110"       # Kaspa wRPC endpoint (testnet-10 or mainnet)
-  mainnet = false                      # false = testnet-10
-  key_path = "guardian.key"            # will be created if missing
-  log_level = "info"                   # log verbosity
-  # state_path = "guardian_state.json"   # optional persisted state file
-  ```
-
-- Run the service:
-
-  ```sh
-  cargo run -p kdapp-guardian --bin guardian-service -- --config config.toml
-  ```
-
-  On startup it prints the guardian public key (hex). Use this when configuring merchants/customers.
-
-## What it does
-
-- UDP TLV listener: accepts `Handshake`, `Escalate`, and `Confirm` messages signed with a shared HMAC key.
-- Anchor watcher (wRPC): connects to Kaspa and scans accepted virtual blocks for compact OKCP checkpoint records (prefix `KMCP`).
-  - Tracks per-episode sequences and marks an episode as disputed if a replay or gap is seen.
-- Refund co-sign: upon a valid `Escalate` that includes a refund transaction, the guardian signs the refund with its private key.
-
-## HTTP endpoints
-
-- Health: `GET http://<host>:<listen_port+1>/healthz` → `ok`
-- Metrics: `GET http://<host>:<listen_port+1>/metrics`
-
-Example metrics JSON:
-
-```json
-{
-  "valid": 12,
-  "invalid": 1,
-  "disputes_open": 2,
-  "disputes_closed": 5,
-  "refunds_signed": 1
-}
+```bash
+cargo build -p kdapp-guardian --bin guardian-service
 ```
 
-Fields:
-- valid/invalid: count of accepted vs rejected guardian TLV messages (HMAC/ordering).
-- disputes_open: number of currently open disputes (episodes with sequence discrepancies or escalations).
-- disputes_closed: historical count of disputes that were resolved.
-- refunds_signed: refunds the guardian has co-signed (size of the signature store).
+## Configuration
 
-## End-to-end on testnet
+The service is configured with a `GuardianConfig` either via a TOML file or command‑line flags.
 
-1) Start the guardian (see Quickstart). Note the printed guardian public key (hex).
+| Field | Description |
+| ----- | ----------- |
+| `listen_addr` | UDP socket for TLV messages from merchants and customers. |
+| `wrpc_url` | Kaspa wRPC endpoint used to watch the DAG for `OKCP` checkpoints. |
+| `mainnet` | Set to `true` to connect to mainnet (default is testnet‑10). |
+| `key_path` | Location of the guardian's secp256k1 private key. A new key is created on first run. **Keep this file secret.** |
+| `state_path` | Optional path used to persist dispute status and sequence counters. |
+| `http_port` | Port for health and metrics endpoints. Defaults to `listen_port + 1`. |
 
-2) Run kdapp-merchant and include the guardian address/key so disputes are forwarded to the guardian:
+Example `guardian.toml`:
 
-   ```sh
-   cargo run -p kdapp-merchant -- \
-     --guardian-addr 127.0.0.1:9650 \
-     --guardian-key <guardian_pubkey_hex> \
-     create --episode-id 42 --invoice-id 1 --amount 1000
-   # then open a dispute by canceling the invoice before it is paid
-   cargo run -p kdapp-merchant -- cancel --episode-id 42 --invoice-id 1
-   ```
+```toml
+listen_addr = "127.0.0.1:9650"
+wrpc_url = "wss://node:16110"
+mainnet = false
+key_path = "guardian.key"
+state_path = "guardian.state"
+http_port = 9651
+```
 
-   After the cancel, the guardian signs the refund. In guardian logs you should see:
+The guardian writes its key file if one does not exist.  The file permissions are restricted to the
+current user on Unix systems.  The `state_path` stores open disputes and sequence numbers so the
+guardian can recover after restarts.
 
-   - `guardian: co-signed refund for episode 42`.
+Generate the config file manually or by copying the example above.
 
-## Troubleshooting
+## Running
 
-- wrpc connect errors: verify `wrpc_url` and network (`mainnet=false` uses testnet-10).
-- unknown episode warnings: a refund was escalated for an episode the guardian hasn’t observed yet; once checkpoints arrive (or another escalate occurs) the dispute will be tracked.
+Start the service with a config file:
 
-## Keys & Permissions
+```bash
+guardian-service --config guardian.toml
+```
 
-- The guardian creates `guardian.key` on first run if it doesn't exist.
-- On Unix, the file permissions are tightened to `0600` (owner read/write).
-- On Windows, permission tightening is skipped; manage ACLs using the OS tools if needed.
+Alternatively, configuration options can be supplied as flags:
+
+```bash
+guardian-service --listen-addr 0.0.0.0:9650 --wrpc-url wss://node:16110 --key-path guardian.key
+```
+
+The UDP listener binds to `listen_addr`, the wRPC client connects to `wrpc_url`, and a small HTTP
+server exposes metrics on `http_port`.
+
+Check the health and metrics endpoints:
+
+```bash
+curl http://127.0.0.1:9651/healthz
+curl http://127.0.0.1:9651/metrics
+```
+
+## Guardian workflow
+
+1. **Handshake** – merchants and customers establish a shared HMAC channel with the guardian.
+2. **Escalate** – when a payment is disputed, an escalation TLV is sent to the guardian with a
+   refund transaction.
+3. **Confirm** – once the refund is co‑signed by the guardian, the merchant acknowledges the
+   resolution.
+4. **Refund signing** – the guardian signs the refund transaction and returns the signature in the
+   TLV response. The watcher verifies this signature before broadcasting the refund.
+
+Guardians automatically scan the Kaspa DAG for compact `OKCP` checkpoints.  If an episode's
+sequence number skips or replays, the guardian opens a dispute and awaits an escalation message.
+
+## Next steps
+
+See the [merchant README](../kdapp-merchant/README.md) for integrating a merchant with a guardian and
+processing customer payments.  The [top‑level README](../../README.md) describes the repository
+layout and provides broader context for OnlyKAS.
