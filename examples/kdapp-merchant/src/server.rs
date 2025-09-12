@@ -19,7 +19,8 @@ use sha2::Sha256;
 use crate::episode::{MerchantCommand, ReceiptEpisode};
 use crate::sim_router::SimRouter;
 use crate::storage;
-use crate::watcher;
+use crate::tlv::Attestation;
+use crate::watcher::{self, AttestationSummary};
 
 #[derive(Clone, Default)]
 pub struct WatcherRuntimeOverrides {
@@ -127,6 +128,8 @@ pub async fn serve(bind: String, state: AppState) -> Result<(), Box<dyn std::err
         .route("/subscriptions", get(list_subscriptions))
         .route("/watcher-config", post(set_watcher_config))
         .route("/mempool-metrics", get(mempool_metrics))
+        .route("/attestations", get(list_attestations))
+        .route("/attest", post(submit_attestation))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app).await?;
@@ -433,6 +436,15 @@ async fn mempool_metrics() -> Result<Json<MempoolMetrics>, StatusCode> {
     } else {
         Err(StatusCode::SERVICE_UNAVAILABLE)
     }
+}
+
+async fn list_attestations() -> Json<Vec<AttestationSummary>> {
+    Json(watcher::attestation_summaries())
+}
+
+async fn submit_attestation(Json(att): Json<Attestation>) -> Result<StatusCode, StatusCode> {
+    watcher::ingest_attestation(att).map_err(|_| StatusCode::BAD_REQUEST)?;
+    Ok(StatusCode::ACCEPTED)
 }
 
 fn parse_public_key(hex: &str) -> Option<PubKey> {
