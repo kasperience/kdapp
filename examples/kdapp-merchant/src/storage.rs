@@ -7,7 +7,6 @@ use std::thread;
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use ctrlc;
 
 use super::episode::{CustomerInfo, Invoice, Subscription};
 use kdapp::pki::PubKey;
@@ -58,8 +57,10 @@ static FLUSH_WORKER: Lazy<()> = Lazy::new(|| {
     });
 });
 
+#[cfg_attr(test, allow(dead_code))]
 static COMPACT_ONCE: Once = Once::new();
 
+#[cfg_attr(test, allow(dead_code))]
 pub fn start_compaction(interval_secs: u64) {
     COMPACT_ONCE.call_once(|| {
         let db = DB.clone();

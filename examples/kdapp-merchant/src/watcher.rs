@@ -133,8 +133,10 @@ pub struct AttestationSummary {
     pub last_updated_ts: u64,
 }
 
-static ATTEST_CACHE: Lazy<Arc<StdMutex<HashMap<[u8; 32], Vec<(u64, Attestation)>>>>> =
-    Lazy::new(|| Arc::new(StdMutex::new(HashMap::new())));
+type AttestCacheInner = HashMap<[u8; 32], Vec<(u64, Attestation)>>;
+type AttestCache = Arc<StdMutex<AttestCacheInner>>;
+
+static ATTEST_CACHE: Lazy<AttestCache> = Lazy::new(|| Arc::new(StdMutex::new(HashMap::new())));
 
 #[derive(Debug, Error)]
 pub enum AttestationError {
@@ -151,7 +153,7 @@ pub fn ingest_attestation(att: Attestation) -> Result<(), AttestationError> {
     let mut cache = ATTEST_CACHE.lock().expect("attest cache lock");
     let mut remove_root = false;
     {
-        let entry = cache.entry(root).or_insert_with(Vec::new);
+        let entry = cache.entry(root).or_default();
         if entry.iter().any(|(_, a)| a.attester_pubkey == att.attester_pubkey) {
             // duplicate key, skip
         } else {

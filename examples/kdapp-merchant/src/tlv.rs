@@ -190,6 +190,7 @@ struct AttestationSigData {
     attester_pubkey: PubKey,
 }
 
+#[allow(dead_code)]
 pub fn sign_attestation(sk: &SecretKey, att: &mut Attestation) {
     let secp = Secp256k1::signing_only();
     let pk = PublicKey::from_secret_key(&secp, sk);
