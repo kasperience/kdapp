@@ -30,6 +30,7 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 rand = { workspace = true }
 hmac = "0.12"
 hex = "0.4"
+ctrlc = "3.4"
 
 [dev-dependencies]
 

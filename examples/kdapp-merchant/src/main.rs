@@ -54,6 +54,9 @@ struct Args {
     /// Guardian public key (hex, repeatable)
     #[arg(long = "guardian-key")]
     guardian_public_key: Vec<String>,
+    /// Interval in seconds to run sled compaction
+    #[arg(long)]
+    sled_compact_interval: Option<u64>,
     #[command(subcommand)]
     command: Option<CliCmd>,
 }
@@ -350,8 +353,11 @@ async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx:
 
 fn main() {
     env_logger::init();
-    storage::init();
     let args = Args::parse();
+    storage::init();
+    if let Some(int) = args.sled_compact_interval {
+        storage::start_compaction(int);
+    }
     let guardians: Vec<(String, PubKey)> = args
         .guardian_addr
         .iter()
