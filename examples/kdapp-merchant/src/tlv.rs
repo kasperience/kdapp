@@ -1,8 +1,8 @@
 use blake2::{Blake2b512, Digest};
-use serde::{Deserialize, Serialize};
 use borsh::{BorshDeserialize, BorshSerialize};
 use kdapp::pki::{sign_message, to_message, verify_signature, PubKey, Sig};
-use secp256k1::{PublicKey, SecretKey, Secp256k1};
+use secp256k1::{PublicKey, Secp256k1, SecretKey};
+use serde::{Deserialize, Serialize};
 
 /// Demo shared secret used for HMAC signing of TLV messages.
 /// In real deployments this should be negotiated out of band.
@@ -177,7 +177,6 @@ pub struct Attestation {
 
     pub attester_pubkey: PubKey,
 
-
     pub signature: Vec<u8>,
 }
 
@@ -189,7 +188,6 @@ struct AttestationSigData {
     congestion_ratio: f64,
 
     attester_pubkey: PubKey,
-
 }
 
 pub fn sign_attestation(sk: &SecretKey, att: &mut Attestation) {
@@ -197,7 +195,6 @@ pub fn sign_attestation(sk: &SecretKey, att: &mut Attestation) {
     let pk = PublicKey::from_secret_key(&secp, sk);
 
     att.attester_pubkey = PubKey(pk);
-
 
     let data = AttestationSigData {
         root_hash: att.root_hash,
@@ -212,12 +209,6 @@ pub fn sign_attestation(sk: &SecretKey, att: &mut Attestation) {
 }
 
 pub fn verify_attestation(att: &Attestation) -> bool {
-
-    let pk = match PublicKey::from_slice(&att.attester_pubkey) {
-        Ok(k) => k,
-        Err(_) => return false,
-    };
-
     let sig = match secp256k1::ecdsa::Signature::from_der(&att.signature) {
         Ok(s) => s,
         Err(_) => return false,
@@ -231,10 +222,6 @@ pub fn verify_attestation(att: &Attestation) -> bool {
     };
     let msg = to_message(&data);
 
-    let pk = att.attester_pubkey;
-
-    let pk = PubKey(pk);
-
     let sig = Sig(sig);
-    verify_signature(&pk, &msg, &sig)
+    verify_signature(&att.attester_pubkey, &msg, &sig)
 }

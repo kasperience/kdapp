@@ -7,7 +7,6 @@ use std::thread;
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-
 use ctrlc;
 
 use super::episode::{CustomerInfo, Invoice, Subscription};
@@ -25,11 +24,7 @@ pub static DB: Lazy<Db> = Lazy::new(|| {
     #[cfg(not(test))]
     {
         let path = env::var("MERCHANT_DB_PATH").unwrap_or_else(|_| "merchant.db".to_string());
-        sled::Config::new()
-            .path(&path)
-            .flush_every_ms(Some(500))
-            .open()
-            .unwrap_or_else(|e| panic!("failed to open {path}: {e}"))
+        sled::Config::new().path(&path).flush_every_ms(Some(500)).open().unwrap_or_else(|e| panic!("failed to open {path}: {e}"))
     }
 });
 
@@ -74,9 +69,32 @@ pub fn start_compaction(interval_secs: u64) {
             let path = env::var("MERCHANT_DB_PATH").unwrap_or_else(|_| "merchant.db".to_string());
             let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
             let cp_path = format!("{path}.cp{ts}");
-            let _ = db.checkpoint(cp_path);
-
-
+            // Sled does not expose a checkpoint API. Create a snapshot by
+            // opening a new DB at cp_path and copying known trees.
+            if let Ok(cp_db) = sled::Config::new().path(&cp_path).open() {
+                if let Ok(src) = db.open_tree("invoices") {
+                    if let Ok(dst) = cp_db.open_tree("invoices") {
+                        for kv in src.iter().flatten() {
+                            let _ = dst.insert(kv.0, kv.1);
+                        }
+                    }
+                }
+                if let Ok(src) = db.open_tree("customers") {
+                    if let Ok(dst) = cp_db.open_tree("customers") {
+                        for kv in src.iter().flatten() {
+                            let _ = dst.insert(kv.0, kv.1);
+                        }
+                    }
+                }
+                if let Ok(src) = db.open_tree("subscriptions") {
+                    if let Ok(dst) = cp_db.open_tree("subscriptions") {
+                        for kv in src.iter().flatten() {
+                            let _ = dst.insert(kv.0, kv.1);
+                        }
+                    }
+                }
+                let _ = cp_db.flush();
+            }
         });
     });
 }

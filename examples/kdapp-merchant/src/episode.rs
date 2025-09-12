@@ -463,19 +463,10 @@ impl ReceiptEpisode {
     /// emitting any TLV messages. This is a simplified placeholder that updates
     /// the next run timestamp and does not perform network I/O.
     #[allow(dead_code)]
-    pub async fn charge_subscription(
-        &mut self,
-        sub_id: u64,
-    ) -> Result<(), EpisodeError<SubError>> {
+    pub async fn charge_subscription(&mut self, sub_id: u64) -> Result<(), EpisodeError<SubError>> {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let sub = self
-            .subscriptions
-            .get_mut(&sub_id)
-            .ok_or(EpisodeError::InvalidCommand(SubError::UnknownSubscription))?;
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let sub = self.subscriptions.get_mut(&sub_id).ok_or(EpisodeError::InvalidCommand(SubError::UnknownSubscription))?;
         if sub.status != SubStatus::Active {
             return Err(EpisodeError::InvalidCommand(SubError::NotActive));
         }

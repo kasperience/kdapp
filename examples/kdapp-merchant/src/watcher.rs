@@ -1,12 +1,12 @@
 use std::collections::{HashMap, VecDeque};
 use std::net::UdpSocket;
-use std::sync::{Arc, RwLock, Mutex as StdMutex};
+use std::sync::{Arc, Mutex as StdMutex, RwLock};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use once_cell::sync::Lazy;
-use tokio::sync::Mutex;
 use thiserror::Error;
+use tokio::sync::Mutex;
 
 #[cfg(feature = "okcp_relay")]
 use crate::sim_router::EngineChannel;
@@ -33,7 +33,7 @@ use secp256k1::Keypair;
 use serde::Serialize;
 
 use crate::server::WatcherRuntimeOverrides;
-use crate::tlv::{Attestation, MsgType, TlvMsg, DEMO_HMAC_KEY, verify_attestation};
+use crate::tlv::{verify_attestation, Attestation, MsgType, TlvMsg, DEMO_HMAC_KEY};
 
 pub const MIN_FEE: u64 = 5_000;
 const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KMCP");
@@ -133,8 +133,8 @@ pub struct AttestationSummary {
     pub last_updated_ts: u64,
 }
 
-static ATTEST_CACHE: Lazy<Arc<StdMutex<HashMap<[u8; 32], Vec<(u64, Attestation)>>>>>
-    = Lazy::new(|| Arc::new(StdMutex::new(HashMap::new())));
+static ATTEST_CACHE: Lazy<Arc<StdMutex<HashMap<[u8; 32], Vec<(u64, Attestation)>>>>> =
+    Lazy::new(|| Arc::new(StdMutex::new(HashMap::new())));
 
 #[derive(Debug, Error)]
 pub enum AttestationError {
@@ -158,9 +158,7 @@ pub fn ingest_attestation(att: Attestation) -> Result<(), AttestationError> {
             info!(
                 "attestation root={} key={} fee_bucket={} cong={}",
                 hex::encode(att.root_hash),
-
                 hex::encode(att.attester_pubkey.0.serialize()),
-
                 att.fee_bucket,
                 att.congestion_ratio
             );

@@ -4,7 +4,6 @@ use kdapp::pki::{sign_message, to_message, PubKey, Sig};
 use log::info;
 use secp256k1::SecretKey;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use std::{
     collections::HashMap,
     fs,
@@ -12,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
+use thiserror::Error;
 
 pub mod metrics;
 pub mod service;
@@ -228,10 +228,7 @@ impl GuardianState {
         self.persist();
     }
 
-    pub fn on_sub_dispute(
-        &mut self,
-        msg: SubDispute,
-    ) -> Result<SubDisputeResolve, GuardianError> {
+    pub fn on_sub_dispute(&mut self, msg: SubDispute) -> Result<SubDisputeResolve, GuardianError> {
         self.record_sub_dispute(msg.sub_id, msg.invoice_id, msg.reason.clone(), msg.evidence_hash.clone());
         Ok(SubDisputeResolve {
             sub_id: msg.sub_id,

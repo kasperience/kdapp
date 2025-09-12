@@ -109,23 +109,15 @@ impl ReceiptEpisode {
 
     #[allow(dead_code)]
     pub fn on_sub_charge(&mut self, msg: SubCharge) -> Result<SubChargeAck, SubError> {
-        let sub = self
-            .subscriptions
-            .get(&msg.sub_id)
-            .ok_or(SubError::UnknownSubscription)?;
+        let sub = self.subscriptions.get(&msg.sub_id).ok_or(SubError::UnknownSubscription)?;
         let expected_pk = sub.merchant_pubkey.0.serialize();
         if msg.merchant_pubkey.as_slice() != expected_pk {
             return Err(SubError::MerchantKeyMismatch);
         }
         if msg.expected_amount != sub.amount_sompi {
-            return Err(SubError::AmountMismatch {
-                expected: sub.amount_sompi,
-                got: msg.expected_amount,
-            });
+            return Err(SubError::AmountMismatch { expected: sub.amount_sompi, got: msg.expected_amount });
         }
-        if msg.period_start_ts != sub.next_run_ts
-            || msg.period_end_ts != sub.next_run_ts + sub.period_secs
-        {
+        if msg.period_start_ts != sub.next_run_ts || msg.period_end_ts != sub.next_run_ts + sub.period_secs {
             return Err(SubError::OverlappingPeriod);
         }
         Ok(SubChargeAck { sub_id: msg.sub_id, ok: true, reason: None })
