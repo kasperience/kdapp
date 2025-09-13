@@ -1,7 +1,12 @@
-use ratatui::{prelude::*, widgets::*};
-use crate::app::{App, Focus};
-use crate::models::invoice_to_string;
-use crate::logo;
+use ratatui::{
+    prelude::*,
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+};
+use crate::{
+    app::{App, Focus, WatcherConfigModal, WatcherField},
+    logo,
+    models::invoice_to_string,
+};
 
 pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     let size = f.size();
@@ -34,6 +39,10 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     };
     let status = Paragraph::new(text).style(Style::default().fg(color));
     f.render_widget(status, chunks[6]);
+
+    if let Some(modal) = &app.watcher_config {
+        render_watcher_modal(f, modal);
+    }
 }
 
 fn panel_block(title: &str, focused: bool) -> Block {
@@ -52,6 +61,7 @@ fn render_actions<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         Line::raw("n: new invoice"),
         Line::raw("p: simulate pay"),
         Line::raw("a: acknowledge"),
+        Line::raw("w: watcher config"),
         Line::raw("arrows: navigate"),
     ];
     f.render_widget(Paragraph::new(items).block(block), area);
@@ -83,4 +93,48 @@ fn render_guardian<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 fn render_webhooks<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let block = panel_block("Webhooks", app.focus == Focus::Webhooks);
     f.render_widget(Paragraph::new("None").block(block), area);
+}
+
+fn render_watcher_modal<B: Backend>(f: &mut Frame<B>, modal: &WatcherConfigModal) {
+    let area = centered_rect(60, 40, f.size());
+    f.render_widget(Clear, area);
+    let block = Block::default().title("Watcher Config").borders(Borders::ALL);
+    let mode_line = Line::raw(format!("Mode: {}", modal.mode.as_str()));
+    let max_style = if modal.field == WatcherField::MaxFee {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+    let th_style = if modal.field == WatcherField::CongestionThreshold {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+    let max_line = Line::styled(format!("max_fee: {}", modal.max_fee), max_style);
+    let th_line = Line::styled(
+        format!("congestion_threshold: {}", modal.congestion_threshold),
+        th_style,
+    );
+    let buttons = Line::raw("[Apply] [Cancel]");
+    let paragraph = Paragraph::new(vec![mode_line, max_line, th_line, buttons]).block(block);
+    f.render_widget(paragraph, area);
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }

@@ -91,30 +91,47 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
         if event::poll(std::time::Duration::from_millis(100))? {
             if let event::Event::Key(key) = event::read()? {
                 let mut app = app.lock().await;
-                match Action::from_key(key) {
-                    Action::Quit => return Ok(()),
-                    Action::Refresh => app.refresh().await,
-                    Action::FocusNext => app.focus_next(),
-                    Action::FocusPrev => app.focus_prev(),
-                    Action::SelectNext => app.select_next(),
-                    Action::SelectPrev => app.select_prev(),
-                    Action::NewInvoice => {
-                        if let Some(amount_s) = prompt("amount_sompi") {
-                            if let Ok(amount) = amount_s.parse::<u64>() {
-                                let memo = prompt("memo").unwrap_or_default();
-                                app.create_invoice(amount, memo).await;
-                            } else {
-                                app.set_status("invalid amount".into(), Color::Red);
+                if let Some(modal) = app.watcher_config.as_mut() {
+                    match key.code {
+                        event::KeyCode::Esc => app.close_watcher_config(),
+                        event::KeyCode::Enter => {
+                            app.submit_watcher_config().await;
+                        }
+                        event::KeyCode::Tab => modal.toggle_mode(),
+                        event::KeyCode::Up | event::KeyCode::Down => modal.toggle_field(),
+                        event::KeyCode::Backspace => modal.backspace(),
+                        event::KeyCode::Char(c) => modal.input_char(c),
+                        _ => {}
+                    }
+                } else {
+                    match Action::from_key(key) {
+                        Action::Quit => return Ok(()),
+                        Action::Refresh => app.refresh().await,
+                        Action::FocusNext => app.focus_next(),
+                        Action::FocusPrev => app.focus_prev(),
+                        Action::SelectNext => app.select_next(),
+                        Action::SelectPrev => app.select_prev(),
+                        Action::NewInvoice => {
+                            if let Some(amount_s) = prompt("amount_sompi") {
+                                if let Ok(amount) = amount_s.parse::<u64>() {
+                                    let memo = prompt("memo").unwrap_or_default();
+                                    app.create_invoice(amount, memo).await;
+                                } else {
+                                    app.set_status("invalid amount".into(), Color::Red);
+                                }
                             }
                         }
+                        Action::SimulatePay => {
+                            app.simulate_payment().await;
+                        }
+                        Action::Acknowledge => {
+                            app.acknowledge_invoice().await;
+                        }
+                        Action::WatcherConfig => {
+                            app.open_watcher_config();
+                        }
+                        Action::None => {}
                     }
-                    Action::SimulatePay => {
-                        app.simulate_payment().await;
-                    }
-                    Action::Acknowledge => {
-                        app.acknowledge_invoice().await;
-                    }
-                    Action::None => {}
                 }
             }
         }
