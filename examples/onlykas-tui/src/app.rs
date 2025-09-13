@@ -1,6 +1,8 @@
 use crate::models::{Invoice, Mempool, GuardianMetrics, Webhook};
 use reqwest::Client;
-use serde_json::Value;
+use serde_json::{json, Value};
+use ratatui::style::Color;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -9,6 +11,12 @@ pub enum Focus {
     Watcher,
     Guardian,
     Webhooks,
+}
+
+pub struct StatusMessage {
+    pub msg: String,
+    pub color: Color,
+    time: Instant,
 }
 
 pub struct App {
@@ -22,6 +30,7 @@ pub struct App {
     pub webhooks: Vec<Webhook>,
     pub focus: Focus,
     pub selection: usize,
+    pub status: Option<StatusMessage>,
     client: Client,
 }
 
@@ -38,6 +47,7 @@ impl App {
             webhooks: Vec::new(),
             focus: Focus::Actions,
             selection: 0,
+            status: None,
             client: Client::new(),
         }
     }
@@ -107,4 +117,98 @@ impl App {
             _ => {}
         }
     }
+
+    pub fn tick(&mut self) {
+        if let Some(status) = &self.status {
+            if status.time.elapsed() > Duration::from_secs(3) {
+                self.status = None;
+            }
+        }
+    }
+
+    pub fn set_status(&mut self, msg: String, color: Color) {
+        self.status = Some(StatusMessage { msg, color, time: Instant::now() });
+    }
+
+    fn selected_invoice_id(&self) -> Option<u64> {
+        self.invoices.get(self.selection).and_then(|inv| {
+            inv.get("id")
+                .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        })
+    }
+
+    pub async fn create_invoice(&mut self, amount_sompi: u64, memo: String) {
+        let body = json!({ "amount_sompi": amount_sompi, "memo": memo });
+        match self
+            .client
+            .post(format!("{}/invoice", self.merchant_url))
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                self.set_status("Invoice created".into(), Color::Green);
+                self.refresh().await;
+            }
+            Ok(resp) => {
+                self.set_status(format!("Error: {}", resp.status()), Color::Red);
+            }
+            Err(e) => {
+                self.set_status(format!("Error: {e}"), Color::Red);
+            }
+        }
+    }
+
+    pub async fn simulate_payment(&mut self) {
+        if !self.mock_l1 {
+            self.set_status("Real mode: external L1 payment required.".into(), Color::Yellow);
+            return;
+        }
+        if let Some(id) = self.selected_invoice_id() {
+            let body = json!({ "invoice_id": id });
+            match self
+                .client
+                .post(format!("{}/pay", self.merchant_url))
+                .json(&body)
+                .send()
+                .await
+            {
+                Ok(resp) if resp.status().is_success() => {
+                    self.set_status("Payment simulated".into(), Color::Green);
+                    self.refresh().await;
+                }
+                Ok(resp) => {
+                    self.set_status(format!("Error: {}", resp.status()), Color::Red);
+                }
+                Err(e) => {
+                    self.set_status(format!("Error: {e}"), Color::Red);
+                }
+            }
+        }
+    }
+
+    pub async fn acknowledge_invoice(&mut self) {
+        if let Some(id) = self.selected_invoice_id() {
+            let body = json!({ "invoice_id": id });
+            match self
+                .client
+                .post(format!("{}/ack", self.merchant_url))
+                .json(&body)
+                .send()
+                .await
+            {
+                Ok(resp) if resp.status().is_success() => {
+                    self.set_status("Invoice acknowledged".into(), Color::Green);
+                    self.refresh().await;
+                }
+                Ok(resp) => {
+                    self.set_status(format!("Error: {}", resp.status()), Color::Red);
+                }
+                Err(e) => {
+                    self.set_status(format!("Error: {e}"), Color::Red);
+                }
+            }
+        }
+    }
 }
+

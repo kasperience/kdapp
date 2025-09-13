@@ -84,7 +84,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -> Result<(), Box<dyn Error>> {
     loop {
         {
-            let app = app.lock().await;
+            let mut app = app.lock().await;
+            app.tick();
             terminal.draw(|f| ui::draw(f, &app))?;
         }
         if event::poll(std::time::Duration::from_millis(100))? {
@@ -97,10 +98,43 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                     Action::FocusPrev => app.focus_prev(),
                     Action::SelectNext => app.select_next(),
                     Action::SelectPrev => app.select_prev(),
+                    Action::NewInvoice => {
+                        if let Some(amount_s) = prompt("amount_sompi") {
+                            if let Ok(amount) = amount_s.parse::<u64>() {
+                                let memo = prompt("memo").unwrap_or_default();
+                                app.create_invoice(amount, memo).await;
+                            } else {
+                                app.set_status("invalid amount".into(), Color::Red);
+                            }
+                        }
+                    }
+                    Action::SimulatePay => {
+                        app.simulate_payment().await;
+                    }
+                    Action::Acknowledge => {
+                        app.acknowledge_invoice().await;
+                    }
                     Action::None => {}
                 }
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
+}
+
+fn prompt(msg: &str) -> Option<String> {
+    use std::io::{self, Write};
+    if disable_raw_mode().is_err() {
+        return None;
+    }
+    let mut stdout = std::io::stdout();
+    let _ = write!(stdout, "{}: ", msg);
+    let _ = stdout.flush();
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input).is_err() {
+        let _ = enable_raw_mode();
+        return None;
+    }
+    let _ = enable_raw_mode();
+    Some(input.trim().to_string())
 }
