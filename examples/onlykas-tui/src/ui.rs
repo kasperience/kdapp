@@ -24,7 +24,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         ])
         .split(size);
 
-    let header = Paragraph::new(logo::onlykas_logo()).alignment(Alignment::Center);
+    let header = logo::onlykas_logo();
     f.render_widget(header, chunks[0]);
 
     render_actions(f, app, chunks[1]);
