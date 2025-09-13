@@ -1,8 +1,8 @@
-use crate::models::{GuardianMetrics, Invoice, Mempool, Webhook};
+use crate::models::{GuardianMetrics, Invoice, Mempool, WebhookEvent};
 use ratatui::style::Color;
 use reqwest::Client;
 use serde_json::{json, Value};
-use std::time::{Duration, Instant};
+use std::{collections::VecDeque, time::{Duration, Instant}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -100,7 +100,7 @@ pub struct App {
     pub invoices: Vec<Invoice>,
     pub watcher: Mempool,
     pub guardian: GuardianMetrics,
-    pub webhooks: Vec<Webhook>,
+    pub webhooks: VecDeque<WebhookEvent>,
     pub focus: Focus,
     pub selection: usize,
     pub status: Option<StatusMessage>,
@@ -118,12 +118,19 @@ impl App {
             invoices: Vec::new(),
             watcher: Value::Null,
             guardian: Value::Null,
-            webhooks: Vec::new(),
+            webhooks: VecDeque::new(),
             focus: Focus::Actions,
             selection: 0,
             status: None,
             watcher_config: None,
             client: Client::new(),
+        }
+    }
+
+    pub fn push_webhook(&mut self, event: WebhookEvent) {
+        self.webhooks.push_front(event);
+        if self.webhooks.len() > 100 {
+            self.webhooks.pop_back();
         }
     }
 

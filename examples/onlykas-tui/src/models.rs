@@ -1,13 +1,16 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 
 pub type Invoice = Value;
 pub type Mempool = Value;
 pub type GuardianMetrics = Value;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Webhook {
-    pub url: String,
+#[derive(Debug, Clone, Deserialize)]
+pub struct WebhookEvent {
+    pub event: String,
+    pub id: String,
+    pub ts: u64,
+    pub details: Value,
 }
 
 pub fn invoice_to_string(inv: &Invoice) -> String {

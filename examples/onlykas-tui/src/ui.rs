@@ -88,7 +88,19 @@ fn render_guardian<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
 fn render_webhooks<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let block = panel_block("Webhooks", app.focus == Focus::Webhooks);
-    f.render_widget(Paragraph::new("None").block(block), area);
+    if app.webhooks.is_empty() {
+        f.render_widget(Paragraph::new("None").block(block), area);
+    } else {
+        let items: Vec<ListItem> = app
+            .webhooks
+            .iter()
+            .map(|w| {
+                ListItem::new(format!("{} id={} ts={} {}", w.event, w.id, w.ts, w.details))
+            })
+            .collect();
+        let list = List::new(items).block(block);
+        f.render_widget(list, area);
+    }
 }
 
 fn render_watcher_modal<B: Backend>(f: &mut Frame<B>, modal: &WatcherConfigModal) {
