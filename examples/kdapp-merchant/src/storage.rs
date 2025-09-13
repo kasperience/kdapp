@@ -1,12 +1,12 @@
 use once_cell::sync::Lazy;
 use sled::Db;
 use std::collections::BTreeMap;
+#[cfg(not(test))]
 use std::env;
 use std::sync::Once;
 use std::thread;
 
 use std::time::Duration;
-
 
 use super::episode::{CustomerInfo, Invoice, Subscription};
 use kdapp::pki::PubKey;
@@ -66,8 +66,8 @@ pub fn start_compaction(interval_ms: u64) {
         let db = DB.clone();
         thread::spawn(move || loop {
             thread::sleep(Duration::from_millis(interval_ms));
-            if let Err(e) = db.checkpoint() {
-                log::error!("Checkpoint failed: {e}");
+            if let Err(e) = db.flush() {
+                log::error!("Flush failed: {e}");
             }
         });
     });
