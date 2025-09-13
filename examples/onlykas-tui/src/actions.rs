@@ -12,6 +12,8 @@ pub enum Action {
     Acknowledge,
     Dispute,
     WatcherConfig,
+    ChargeSub,
+    ToggleList,
     None,
 }
 
@@ -25,6 +27,8 @@ impl Action {
             KeyCode::Char('a') => Action::Acknowledge,
             KeyCode::Char('d') => Action::Dispute,
             KeyCode::Char('w') => Action::WatcherConfig,
+            KeyCode::Char('s') => Action::ChargeSub,
+            KeyCode::Tab => Action::ToggleList,
             KeyCode::Left => Action::FocusPrev,
             KeyCode::Right => Action::FocusNext,
             KeyCode::Up => Action::SelectPrev,

@@ -178,6 +178,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                         Action::FocusPrev => app.focus_prev(),
                         Action::SelectNext => app.select_next(),
                         Action::SelectPrev => app.select_prev(),
+                        Action::ToggleList => app.toggle_list_mode(),
                         Action::NewInvoice => {
                             if let Some(amount_s) = prompt("amount_sompi") {
                                 if let Ok(amount) = amount_s.parse::<u64>() {
@@ -199,6 +200,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                         }
                         Action::WatcherConfig => {
                             app.open_watcher_config();
+                        }
+                        Action::ChargeSub => {
+                            app.charge_subscription().await;
                         }
                         Action::None => {}
                     }
