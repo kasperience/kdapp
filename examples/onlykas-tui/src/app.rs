@@ -13,6 +13,84 @@ pub enum Focus {
     Webhooks,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatcherMode {
+    Static,
+    Congestion,
+}
+
+impl WatcherMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            WatcherMode::Static => "Static",
+            WatcherMode::Congestion => "Congestion",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum WatcherField {
+    MaxFee,
+    CongestionThreshold,
+}
+
+pub struct WatcherConfigModal {
+    pub mode: WatcherMode,
+    pub max_fee: String,
+    pub congestion_threshold: String,
+    pub field: WatcherField,
+}
+
+impl Default for WatcherConfigModal {
+    fn default() -> Self {
+        Self {
+            mode: WatcherMode::Static,
+            max_fee: String::new(),
+            congestion_threshold: String::new(),
+            field: WatcherField::MaxFee,
+        }
+    }
+}
+
+impl WatcherConfigModal {
+    pub fn toggle_mode(&mut self) {
+        self.mode = match self.mode {
+            WatcherMode::Static => WatcherMode::Congestion,
+            WatcherMode::Congestion => WatcherMode::Static,
+        };
+    }
+    pub fn toggle_field(&mut self) {
+        self.field = match self.field {
+            WatcherField::MaxFee => WatcherField::CongestionThreshold,
+            WatcherField::CongestionThreshold => WatcherField::MaxFee,
+        };
+    }
+    pub fn input_char(&mut self, c: char) {
+        match self.field {
+            WatcherField::MaxFee => {
+                if c.is_ascii_digit() {
+                    self.max_fee.push(c);
+                }
+            }
+            WatcherField::CongestionThreshold => {
+                if c.is_ascii_digit() || (c == '.' && !self.congestion_threshold.contains('.')) {
+                    self.congestion_threshold.push(c);
+                }
+            }
+        }
+    }
+    pub fn backspace(&mut self) {
+        match self.field {
+            WatcherField::MaxFee => {
+                self.max_fee.pop();
+            }
+            WatcherField::CongestionThreshold => {
+                self.congestion_threshold.pop();
+            }
+        }
+    }
+}
+
 pub struct StatusMessage {
     pub msg: String,
     pub color: Color,
@@ -31,6 +109,7 @@ pub struct App {
     pub focus: Focus,
     pub selection: usize,
     pub status: Option<StatusMessage>,
+    pub watcher_config: Option<WatcherConfigModal>,
     client: Client,
 }
 
@@ -48,6 +127,7 @@ impl App {
             focus: Focus::Actions,
             selection: 0,
             status: None,
+            watcher_config: None,
             client: Client::new(),
         }
     }
@@ -207,6 +287,58 @@ impl App {
                 Err(e) => {
                     self.set_status(format!("Error: {e}"), Color::Red);
                 }
+            }
+        }
+    }
+
+    pub fn open_watcher_config(&mut self) {
+        self.watcher_config = Some(WatcherConfigModal::default());
+    }
+
+    pub fn close_watcher_config(&mut self) {
+        self.watcher_config = None;
+    }
+
+    pub async fn submit_watcher_config(&mut self) {
+        if let Some(cfg) = self.watcher_config.take() {
+            if let (Ok(max_fee), Ok(th)) = (
+                cfg.max_fee.parse::<u64>(),
+                cfg.congestion_threshold.parse::<f32>(),
+            ) {
+                if th < 0.0 || th > 1.0 {
+                    self.set_status("invalid config".into(), Color::Red);
+                    self.watcher_config = Some(cfg);
+                    return;
+                }
+                let body = json!({
+                    "mode": match cfg.mode {
+                        WatcherMode::Static => "static",
+                        WatcherMode::Congestion => "congestion",
+                    },
+                    "max_fee": max_fee,
+                    "congestion_threshold": th,
+                });
+                match self
+                    .client
+                    .post(format!("{}/watcher-config", self.merchant_url))
+                    .json(&body)
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.status().is_success() => {
+                        self.set_status("Watcher config updated".into(), Color::Green);
+                        self.refresh().await;
+                    }
+                    Ok(resp) => {
+                        self.set_status(format!("Error: {}", resp.status()), Color::Red);
+                    }
+                    Err(e) => {
+                        self.set_status(format!("Error: {e}"), Color::Red);
+                    }
+                }
+            } else {
+                self.set_status("invalid config".into(), Color::Red);
+                self.watcher_config = Some(cfg);
             }
         }
     }
