@@ -34,8 +34,5 @@ pub fn invoice_to_string(inv: &Invoice) -> String {
 }
 
 pub fn subscription_to_string(sub: &Subscription) -> String {
-    format!(
-        "{} amt {} int {} next {}",
-        sub.id, sub.amount_sompi, sub.interval, sub.next_charge_ts
-    )
+    format!("{} amt {} int {} next {}", sub.id, sub.amount_sompi, sub.interval, sub.next_charge_ts)
 }
