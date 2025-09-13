@@ -5,7 +5,7 @@ use std::env;
 use std::sync::Once;
 use std::thread;
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 
 use super::episode::{CustomerInfo, Invoice, Subscription};
@@ -61,40 +61,13 @@ static FLUSH_WORKER: Lazy<()> = Lazy::new(|| {
 static COMPACT_ONCE: Once = Once::new();
 
 #[cfg_attr(test, allow(dead_code))]
-pub fn start_compaction(interval_secs: u64) {
+pub fn start_compaction(interval_ms: u64) {
     COMPACT_ONCE.call_once(|| {
         let db = DB.clone();
         thread::spawn(move || loop {
-            thread::sleep(Duration::from_secs(interval_secs));
-
-            let path = env::var("MERCHANT_DB_PATH").unwrap_or_else(|_| "merchant.db".to_string());
-            let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-            let cp_path = format!("{path}.cp{ts}");
-            // Sled does not expose a checkpoint API. Create a snapshot by
-            // opening a new DB at cp_path and copying known trees.
-            if let Ok(cp_db) = sled::Config::new().path(&cp_path).open() {
-                if let Ok(src) = db.open_tree("invoices") {
-                    if let Ok(dst) = cp_db.open_tree("invoices") {
-                        for kv in src.iter().flatten() {
-                            let _ = dst.insert(kv.0, kv.1);
-                        }
-                    }
-                }
-                if let Ok(src) = db.open_tree("customers") {
-                    if let Ok(dst) = cp_db.open_tree("customers") {
-                        for kv in src.iter().flatten() {
-                            let _ = dst.insert(kv.0, kv.1);
-                        }
-                    }
-                }
-                if let Ok(src) = db.open_tree("subscriptions") {
-                    if let Ok(dst) = cp_db.open_tree("subscriptions") {
-                        for kv in src.iter().flatten() {
-                            let _ = dst.insert(kv.0, kv.1);
-                        }
-                    }
-                }
-                let _ = cp_db.flush();
+            thread::sleep(Duration::from_millis(interval_ms));
+            if let Err(e) = db.checkpoint() {
+                log::error!("Checkpoint failed: {e}");
             }
         });
     });

@@ -54,9 +54,9 @@ struct Args {
     /// Guardian public key (hex, repeatable)
     #[arg(long = "guardian-key")]
     guardian_public_key: Vec<String>,
-    /// Interval in seconds to run sled compaction
-    #[arg(long)]
-    sled_compact_interval: Option<u64>,
+    /// Interval in milliseconds to run sled compaction
+    #[arg(long, default_value_t = 300_000)]
+    sled_compact_interval: u64,
     #[command(subcommand)]
     command: Option<CliCmd>,
 }
@@ -355,8 +355,8 @@ fn main() {
     env_logger::init();
     let args = Args::parse();
     storage::init();
-    if let Some(int) = args.sled_compact_interval {
-        storage::start_compaction(int);
+    if args.sled_compact_interval > 0 {
+        storage::start_compaction(args.sled_compact_interval);
     }
     let guardians: Vec<(String, PubKey)> = args
         .guardian_addr
