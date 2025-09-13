@@ -194,6 +194,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                         Action::Acknowledge => {
                             app.acknowledge_invoice().await;
                         }
+                        Action::Dispute => {
+                            app.dispute_invoice().await;
+                        }
                         Action::WatcherConfig => {
                             app.open_watcher_config();
                         }

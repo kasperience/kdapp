@@ -61,6 +61,7 @@ fn render_actions<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         Line::raw("n: new invoice"),
         Line::raw("p: simulate pay"),
         Line::raw("a: acknowledge"),
+        Line::raw("d: dispute"),
         Line::raw("w: watcher config"),
         Line::raw("arrows: navigate"),
     ];
@@ -83,7 +84,20 @@ fn render_watcher<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
 fn render_guardian<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let block = panel_block("Guardian", app.focus == Focus::Guardian);
-    f.render_widget(Paragraph::new(format!("{}", app.guardian)).block(block), area);
+    let text = if let Some(obj) = app.guardian.as_object() {
+        let disputes = obj
+            .get("disputes_open")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let refunds = obj
+            .get("refunds_signed")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        format!("disputes_open: {}\nrefunds_signed: {}", disputes, refunds)
+    } else {
+        format!("{}", app.guardian)
+    };
+    f.render_widget(Paragraph::new(text).block(block), area);
 }
 
 fn render_webhooks<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
