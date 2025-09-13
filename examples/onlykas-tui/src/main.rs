@@ -6,12 +6,52 @@ mod ui;
 
 use actions::Action;
 use app::App;
+use axum::{body::Bytes, extract::State, http::{HeaderMap, StatusCode}, routing::post, Router};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{event, execute};
+use hmac::{Hmac, Mac};
 use ratatui::{prelude::*, Terminal};
+use sha2::Sha256;
 use std::error::Error;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
+use models::WebhookEvent;
+
+#[derive(Clone)]
+struct WebhookState {
+    secret: Vec<u8>,
+    tx: mpsc::UnboundedSender<WebhookEvent>,
+}
+
+async fn webhook(
+    State(state): State<WebhookState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> StatusCode {
+    let sig_hex = match headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
+        Some(s) => s,
+        None => return StatusCode::UNAUTHORIZED,
+    };
+    let sig = match hex::decode(sig_hex) {
+        Ok(v) => v,
+        Err(_) => return StatusCode::UNAUTHORIZED,
+    };
+    let mut mac = match Hmac::<Sha256>::new_from_slice(&state.secret) {
+        Ok(m) => m,
+        Err(_) => return StatusCode::UNAUTHORIZED,
+    };
+    mac.update(&body);
+    if mac.verify_slice(&sig).is_err() {
+        return StatusCode::UNAUTHORIZED;
+    }
+    match serde_json::from_slice::<WebhookEvent>(&body) {
+        Ok(event) => {
+            let _ = state.tx.send(event);
+            StatusCode::OK
+        }
+        Err(_) => StatusCode::BAD_REQUEST,
+    }
+}
 
 struct Args {
     merchant_url: String,
@@ -41,7 +81,39 @@ fn parse_args() -> Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = parse_args();
-    let app = Arc::new(Mutex::new(App::new(args.merchant_url, args.guardian_url, args.webhook_secret, args.mock_l1)));
+    let app = Arc::new(Mutex::new(App::new(
+        args.merchant_url,
+        args.guardian_url,
+        args.webhook_secret.clone(),
+        args.mock_l1,
+    )));
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    {
+        let app = Arc::clone(&app);
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                let mut app = app.lock().await;
+                app.push_webhook(event);
+            }
+        });
+    }
+
+    let secret = hex::decode(args.webhook_secret).unwrap_or_default();
+    let state = WebhookState { secret, tx };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
+    {
+        let mut app = app.lock().await;
+        app.set_status(
+            format!("webhook listening: http://127.0.0.1:{}/hook", port),
+            Color::Green,
+        );
+    }
+    tokio::spawn(async move {
+        let router = Router::new().route("/hook", post(webhook)).with_state(state);
+        let _ = axum::serve(listener, router).await;
+    });
 
     // background refresh task
     {
