@@ -27,7 +27,12 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     render_guardian(f, app, chunks[4]);
     render_webhooks(f, app, chunks[5]);
 
-    let status = Paragraph::new(format!("focus: {:?}", app.focus));
+    let (text, color) = if let Some(status) = &app.status {
+        (status.msg.clone(), status.color)
+    } else {
+        (format!("focus: {:?}", app.focus), Color::White)
+    };
+    let status = Paragraph::new(text).style(Style::default().fg(color));
     f.render_widget(status, chunks[6]);
 }
 
@@ -44,6 +49,9 @@ fn render_actions<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let items = vec![
         Line::raw("q: quit"),
         Line::raw("r: refresh"),
+        Line::raw("n: new invoice"),
+        Line::raw("p: simulate pay"),
+        Line::raw("a: acknowledge"),
         Line::raw("arrows: navigate"),
     ];
     f.render_widget(Paragraph::new(items).block(block), area);
