@@ -69,11 +69,7 @@ fn render_actions<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
 
 fn render_invoices<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let block = panel_block("Invoices", app.focus == Focus::Invoices);
-    let items: Vec<ListItem> = app
-        .invoices
-        .iter()
-        .map(|i| ListItem::new(invoice_to_string(i)))
-        .collect();
+    let items: Vec<ListItem> = app.invoices.iter().map(|i| ListItem::new(invoice_to_string(i))).collect();
     let mut state = ListState::default();
     state.select(Some(app.selection));
     let list = List::new(items).block(block).highlight_style(Style::default().bg(Color::Blue));

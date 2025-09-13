@@ -1,4 +1,4 @@
-use crate::models::{Invoice, Mempool, GuardianMetrics, Webhook};
+use crate::models::{GuardianMetrics, Invoice, Mempool, Webhook};
 use reqwest::Client;
 use serde_json::{json, Value};
 use ratatui::style::Color;

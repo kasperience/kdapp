@@ -1,17 +1,17 @@
-mod app;
-mod ui;
 mod actions;
-mod models;
+mod app;
 mod logo;
+mod models;
+mod ui;
 
-use std::sync::Arc;
 use actions::Action;
 use app::App;
-use tokio::sync::Mutex;
-use std::error::Error;
-use crossterm::terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::{execute, event};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::{event, execute};
 use ratatui::{prelude::*, Terminal};
+use std::error::Error;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 struct Args {
     merchant_url: String,
@@ -41,12 +41,7 @@ fn parse_args() -> Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = parse_args();
-    let app = Arc::new(Mutex::new(App::new(
-        args.merchant_url,
-        args.guardian_url,
-        args.webhook_secret,
-        args.mock_l1,
-    )));
+    let app = Arc::new(Mutex::new(App::new(args.merchant_url, args.guardian_url, args.webhook_secret, args.mock_l1)));
 
     // background refresh task
     {
