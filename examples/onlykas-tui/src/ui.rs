@@ -1,7 +1,7 @@
 use crate::{
-    app::{App, Focus, WatcherConfigModal, WatcherField},
+    app::{App, Focus, ListMode, WatcherConfigModal, WatcherField},
     logo,
-    models::invoice_to_string,
+    models::{invoice_to_string, subscription_to_string},
 };
 use ratatui::{
     prelude::*,
@@ -27,7 +27,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     f.render_widget(header, chunks[0]);
 
     render_actions(f, app, chunks[1]);
-    render_invoices(f, app, chunks[2]);
+    render_items(f, app, chunks[2]);
     render_watcher(f, app, chunks[3]);
     render_guardian(f, app, chunks[4]);
     render_webhooks(f, app, chunks[5]);
@@ -58,19 +58,36 @@ fn render_actions<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let items = vec![
         Line::raw("q: quit"),
         Line::raw("r: refresh"),
+        Line::raw("tab: toggle list"),
         Line::raw("n: new invoice"),
         Line::raw("p: simulate pay"),
         Line::raw("a: acknowledge"),
         Line::raw("d: dispute"),
+        Line::raw("s: charge sub"),
         Line::raw("w: watcher config"),
         Line::raw("arrows: navigate"),
     ];
     f.render_widget(Paragraph::new(items).block(block), area);
 }
 
-fn render_invoices<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
-    let block = panel_block("Invoices", app.focus == Focus::Invoices);
-    let items: Vec<ListItem> = app.invoices.iter().map(|i| ListItem::new(invoice_to_string(i))).collect();
+fn render_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+    let title = match app.list_mode {
+        ListMode::Invoices => "Invoices",
+        ListMode::Subscriptions => "Subscriptions",
+    };
+    let block = panel_block(title, app.focus == Focus::Invoices);
+    let items: Vec<ListItem> = match app.list_mode {
+        ListMode::Invoices => app
+            .invoices
+            .iter()
+            .map(|i| ListItem::new(invoice_to_string(i)))
+            .collect(),
+        ListMode::Subscriptions => app
+            .subscriptions
+            .iter()
+            .map(|s| ListItem::new(subscription_to_string(s)))
+            .collect(),
+    };
     let mut state = ListState::default();
     state.select(Some(app.selection));
     let list = List::new(items).block(block).highlight_style(Style::default().bg(Color::Blue));

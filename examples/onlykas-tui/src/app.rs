@@ -1,4 +1,4 @@
-use crate::models::{GuardianMetrics, Invoice, Mempool, WebhookEvent};
+use crate::models::{GuardianMetrics, Invoice, Mempool, Subscription, WebhookEvent};
 use ratatui::style::Color;
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -11,6 +11,12 @@ pub enum Focus {
     Watcher,
     Guardian,
     Webhooks,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListMode {
+    Invoices,
+    Subscriptions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +104,8 @@ pub struct App {
     pub webhook_secret: String,
     pub mock_l1: bool,
     pub invoices: Vec<Invoice>,
+    pub subscriptions: Vec<Subscription>,
+    pub list_mode: ListMode,
     pub watcher: Mempool,
     pub guardian: GuardianMetrics,
     pub webhooks: VecDeque<WebhookEvent>,
@@ -116,6 +124,8 @@ impl App {
             webhook_secret,
             mock_l1,
             invoices: Vec::new(),
+            subscriptions: Vec::new(),
+            list_mode: ListMode::Invoices,
             watcher: Value::Null,
             guardian: Value::Null,
             webhooks: VecDeque::new(),
@@ -139,6 +149,11 @@ impl App {
             if let Ok(resp) = self.client.get(format!("{}/invoices", self.merchant_url)).send().await {
                 if let Ok(data) = resp.json::<Vec<Invoice>>().await {
                     self.invoices = data;
+                }
+            }
+            if let Ok(resp) = self.client.get(format!("{}/subscriptions", self.merchant_url)).send().await {
+                if let Ok(data) = resp.json::<Vec<Subscription>>().await {
+                    self.subscriptions = data;
                 }
             }
             if let Ok(resp) = self.client.get(format!("{}/mempool", self.merchant_url)).send().await {
@@ -178,25 +193,35 @@ impl App {
         self.selection = 0;
     }
 
+    pub fn toggle_list_mode(&mut self) {
+        self.list_mode = match self.list_mode {
+            ListMode::Invoices => ListMode::Subscriptions,
+            ListMode::Subscriptions => ListMode::Invoices,
+        };
+        self.selection = 0;
+    }
+
     pub fn select_next(&mut self) {
-        match self.focus {
-            Focus::Invoices => {
-                if !self.invoices.is_empty() {
-                    self.selection = (self.selection + 1).min(self.invoices.len().saturating_sub(1));
-                }
+        if let Focus::Invoices = self.focus {
+            let len = match self.list_mode {
+                ListMode::Invoices => self.invoices.len(),
+                ListMode::Subscriptions => self.subscriptions.len(),
+            };
+            if len > 0 {
+                self.selection = (self.selection + 1).min(len.saturating_sub(1));
             }
-            _ => {}
         }
     }
 
     pub fn select_prev(&mut self) {
-        match self.focus {
-            Focus::Invoices => {
-                if !self.invoices.is_empty() && self.selection > 0 {
-                    self.selection -= 1;
-                }
+        if let Focus::Invoices = self.focus {
+            let len = match self.list_mode {
+                ListMode::Invoices => self.invoices.len(),
+                ListMode::Subscriptions => self.subscriptions.len(),
+            };
+            if len > 0 && self.selection > 0 {
+                self.selection -= 1;
             }
-            _ => {}
         }
     }
 
@@ -213,9 +238,22 @@ impl App {
     }
 
     fn selected_invoice_id(&self) -> Option<u64> {
-        self.invoices
-            .get(self.selection)
-            .and_then(|inv| inv.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))))
+        if let ListMode::Invoices = self.list_mode {
+            self.invoices.get(self.selection).and_then(|inv| {
+                inv.get("id")
+                    .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            })
+        } else {
+            None
+        }
+    }
+
+    fn selected_subscription_id(&self) -> Option<u64> {
+        if let ListMode::Subscriptions = self.list_mode {
+            self.subscriptions.get(self.selection).map(|s| s.id)
+        } else {
+            None
+        }
     }
 
     pub async fn create_invoice(&mut self, amount_sompi: u64, memo: String) {
@@ -327,6 +365,28 @@ impl App {
                 self.refresh().await;
             } else {
                 self.set_status("Error: dispute failed".into(), Color::Red);
+            }
+        }
+    }
+
+    pub async fn charge_subscription(&mut self) {
+        if let Some(id) = self.selected_subscription_id() {
+            match self
+                .client
+                .post(format!("{}/subscriptions/{}/charge", self.merchant_url, id))
+                .send()
+                .await
+            {
+                Ok(resp) if resp.status().is_success() => {
+                    self.set_status("Subscription charged".into(), Color::Green);
+                    self.refresh().await;
+                }
+                Ok(resp) => {
+                    self.set_status(format!("Error: {}", resp.status()), Color::Red);
+                }
+                Err(e) => {
+                    self.set_status(format!("Error: {e}"), Color::Red);
+                }
             }
         }
     }
