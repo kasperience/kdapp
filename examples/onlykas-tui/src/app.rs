@@ -274,6 +274,63 @@ impl App {
         }
     }
 
+    pub async fn dispute_invoice(&mut self) {
+        if let Some(id) = self.selected_invoice_id() {
+            let status = self
+                .invoices
+                .get(self.selection)
+                .and_then(|inv| inv.get("status").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            if status != "Paid" && status != "Acked" {
+                self.set_status("invoice not paid/acked".into(), Color::Yellow);
+                return;
+            }
+            let body = json!({ "invoice_id": id, "reason": "demo" });
+            let mut success = false;
+            if !self.guardian_url.is_empty() {
+                match self
+                    .client
+                    .post(format!("{}/disputes", self.guardian_url))
+                    .json(&body)
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.status().is_success() => {
+                        success = true;
+                    }
+                    _ => {}
+                }
+            }
+            if !success {
+                match self
+                    .client
+                    .post(format!("{}/disputes", self.merchant_url))
+                    .json(&body)
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.status().is_success() => {
+                        success = true;
+                    }
+                    Ok(resp) => {
+                        self.set_status(format!("Error: {}", resp.status()), Color::Red);
+                        return;
+                    }
+                    Err(e) => {
+                        self.set_status(format!("Error: {e}"), Color::Red);
+                        return;
+                    }
+                }
+            }
+            if success {
+                self.set_status("Dispute opened".into(), Color::Green);
+                self.refresh().await;
+            } else {
+                self.set_status("Error: dispute failed".into(), Color::Red);
+            }
+        }
+    }
+
     pub fn open_watcher_config(&mut self) {
         self.watcher_config = Some(WatcherConfigModal::default());
     }

@@ -10,6 +10,7 @@ pub enum Action {
     NewInvoice,
     SimulatePay,
     Acknowledge,
+    Dispute,
     WatcherConfig,
     None,
 }
@@ -22,6 +23,7 @@ impl Action {
             KeyCode::Char('n') => Action::NewInvoice,
             KeyCode::Char('p') => Action::SimulatePay,
             KeyCode::Char('a') => Action::Acknowledge,
+            KeyCode::Char('d') => Action::Dispute,
             KeyCode::Char('w') => Action::WatcherConfig,
             KeyCode::Left => Action::FocusPrev,
             KeyCode::Right => Action::FocusNext,
