@@ -1,7 +1,7 @@
 use crate::models::{GuardianMetrics, Invoice, Mempool, Webhook};
+use ratatui::style::Color;
 use reqwest::Client;
 use serde_json::{json, Value};
-use ratatui::style::Color;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,12 +43,7 @@ pub struct WatcherConfigModal {
 
 impl Default for WatcherConfigModal {
     fn default() -> Self {
-        Self {
-            mode: WatcherMode::Static,
-            max_fee: String::new(),
-            congestion_threshold: String::new(),
-            field: WatcherField::MaxFee,
-        }
+        Self { mode: WatcherMode::Static, max_fee: String::new(), congestion_threshold: String::new(), field: WatcherField::MaxFee }
     }
 }
 
@@ -211,21 +206,14 @@ impl App {
     }
 
     fn selected_invoice_id(&self) -> Option<u64> {
-        self.invoices.get(self.selection).and_then(|inv| {
-            inv.get("id")
-                .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
-        })
+        self.invoices
+            .get(self.selection)
+            .and_then(|inv| inv.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))))
     }
 
     pub async fn create_invoice(&mut self, amount_sompi: u64, memo: String) {
         let body = json!({ "amount_sompi": amount_sompi, "memo": memo });
-        match self
-            .client
-            .post(format!("{}/invoice", self.merchant_url))
-            .json(&body)
-            .send()
-            .await
-        {
+        match self.client.post(format!("{}/invoice", self.merchant_url)).json(&body).send().await {
             Ok(resp) if resp.status().is_success() => {
                 self.set_status("Invoice created".into(), Color::Green);
                 self.refresh().await;
@@ -246,13 +234,7 @@ impl App {
         }
         if let Some(id) = self.selected_invoice_id() {
             let body = json!({ "invoice_id": id });
-            match self
-                .client
-                .post(format!("{}/pay", self.merchant_url))
-                .json(&body)
-                .send()
-                .await
-            {
+            match self.client.post(format!("{}/pay", self.merchant_url)).json(&body).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     self.set_status("Payment simulated".into(), Color::Green);
                     self.refresh().await;
@@ -270,13 +252,7 @@ impl App {
     pub async fn acknowledge_invoice(&mut self) {
         if let Some(id) = self.selected_invoice_id() {
             let body = json!({ "invoice_id": id });
-            match self
-                .client
-                .post(format!("{}/ack", self.merchant_url))
-                .json(&body)
-                .send()
-                .await
-            {
+            match self.client.post(format!("{}/ack", self.merchant_url)).json(&body).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     self.set_status("Invoice acknowledged".into(), Color::Green);
                     self.refresh().await;
@@ -301,10 +277,7 @@ impl App {
 
     pub async fn submit_watcher_config(&mut self) {
         if let Some(cfg) = self.watcher_config.take() {
-            if let (Ok(max_fee), Ok(th)) = (
-                cfg.max_fee.parse::<u64>(),
-                cfg.congestion_threshold.parse::<f32>(),
-            ) {
+            if let (Ok(max_fee), Ok(th)) = (cfg.max_fee.parse::<u64>(), cfg.congestion_threshold.parse::<f32>()) {
                 if th < 0.0 || th > 1.0 {
                     self.set_status("invalid config".into(), Color::Red);
                     self.watcher_config = Some(cfg);
@@ -318,13 +291,7 @@ impl App {
                     "max_fee": max_fee,
                     "congestion_threshold": th,
                 });
-                match self
-                    .client
-                    .post(format!("{}/watcher-config", self.merchant_url))
-                    .json(&body)
-                    .send()
-                    .await
-                {
+                match self.client.post(format!("{}/watcher-config", self.merchant_url)).json(&body).send().await {
                     Ok(resp) if resp.status().is_success() => {
                         self.set_status("Watcher config updated".into(), Color::Green);
                         self.refresh().await;
@@ -343,4 +310,3 @@ impl App {
         }
     }
 }
-
