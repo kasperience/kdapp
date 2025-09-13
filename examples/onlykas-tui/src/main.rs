@@ -6,16 +6,22 @@ mod ui;
 
 use actions::Action;
 use app::App;
-use axum::{body::Bytes, extract::State, http::{HeaderMap, StatusCode}, routing::post, Router};
+use axum::{
+    body::Bytes,
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    routing::post,
+    Router,
+};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{event, execute};
 use hmac::{Hmac, Mac};
+use models::WebhookEvent;
 use ratatui::{prelude::*, Terminal};
 use sha2::Sha256;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
-use models::WebhookEvent;
 
 #[derive(Clone)]
 struct WebhookState {
@@ -23,11 +29,7 @@ struct WebhookState {
     tx: mpsc::UnboundedSender<WebhookEvent>,
 }
 
-async fn webhook(
-    State(state): State<WebhookState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> StatusCode {
+async fn webhook(State(state): State<WebhookState>, headers: HeaderMap, body: Bytes) -> StatusCode {
     let sig_hex = match headers.get("X-Signature").and_then(|v| v.to_str().ok()) {
         Some(s) => s,
         None => return StatusCode::UNAUTHORIZED,
@@ -81,12 +83,7 @@ fn parse_args() -> Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = parse_args();
-    let app = Arc::new(Mutex::new(App::new(
-        args.merchant_url,
-        args.guardian_url,
-        args.webhook_secret.clone(),
-        args.mock_l1,
-    )));
+    let app = Arc::new(Mutex::new(App::new(args.merchant_url, args.guardian_url, args.mock_l1)));
 
     let (tx, mut rx) = mpsc::unbounded_channel();
     {
@@ -105,10 +102,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let port = listener.local_addr()?.port();
     {
         let mut app = app.lock().await;
-        app.set_status(
-            format!("webhook listening: http://127.0.0.1:{}/hook", port),
-            Color::Green,
-        );
+        app.set_status(format!("webhook listening: http://127.0.0.1:{port}/hook"), Color::Green);
     }
     tokio::spawn(async move {
         let router = Router::new().route("/hook", post(webhook)).with_state(state);
@@ -143,7 +137,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut stdout = std::io::stdout();
     execute!(stdout, event::DisableMouseCapture, LeaveAlternateScreen)?;
     if let Err(e) = res {
-        eprintln!("{:?}", e);
+        eprintln!("{e:?}");
     }
     Ok(())
 }
@@ -219,7 +213,7 @@ fn prompt(msg: &str) -> Option<String> {
         return None;
     }
     let mut stdout = std::io::stdout();
-    let _ = write!(stdout, "{}: ", msg);
+    let _ = write!(stdout, "{msg}: ");
     let _ = stdout.flush();
     let mut input = String::new();
     if io::stdin().read_line(&mut input).is_err() {

@@ -2,7 +2,10 @@ use crate::models::{GuardianMetrics, Invoice, Mempool, Subscription, WebhookEven
 use ratatui::style::Color;
 use reqwest::Client;
 use serde_json::{json, Value};
-use std::{collections::VecDeque, time::{Duration, Instant}};
+use std::{
+    collections::VecDeque,
+    time::{Duration, Instant},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -34,7 +37,7 @@ impl WatcherMode {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WatcherField {
     MaxFee,
     CongestionThreshold,
@@ -101,7 +104,6 @@ pub struct StatusMessage {
 pub struct App {
     pub merchant_url: String,
     pub guardian_url: String,
-    pub webhook_secret: String,
     pub mock_l1: bool,
     pub invoices: Vec<Invoice>,
     pub subscriptions: Vec<Subscription>,
@@ -117,11 +119,10 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(merchant_url: String, guardian_url: String, webhook_secret: String, mock_l1: bool) -> Self {
+    pub fn new(merchant_url: String, guardian_url: String, mock_l1: bool) -> Self {
         Self {
             merchant_url,
             guardian_url,
-            webhook_secret,
             mock_l1,
             invoices: Vec::new(),
             subscriptions: Vec::new(),
@@ -239,10 +240,9 @@ impl App {
 
     fn selected_invoice_id(&self) -> Option<u64> {
         if let ListMode::Invoices = self.list_mode {
-            self.invoices.get(self.selection).and_then(|inv| {
-                inv.get("id")
-                    .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
-            })
+            self.invoices
+                .get(self.selection)
+                .and_then(|inv| inv.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))))
         } else {
             None
         }
@@ -314,11 +314,7 @@ impl App {
 
     pub async fn dispute_invoice(&mut self) {
         if let Some(id) = self.selected_invoice_id() {
-            let status = self
-                .invoices
-                .get(self.selection)
-                .and_then(|inv| inv.get("status").and_then(|v| v.as_str()))
-                .unwrap_or("");
+            let status = self.invoices.get(self.selection).and_then(|inv| inv.get("status").and_then(|v| v.as_str())).unwrap_or("");
             if status != "Paid" && status != "Acked" {
                 self.set_status("invoice not paid/acked".into(), Color::Yellow);
                 return;
@@ -326,13 +322,7 @@ impl App {
             let body = json!({ "invoice_id": id, "reason": "demo" });
             let mut success = false;
             if !self.guardian_url.is_empty() {
-                match self
-                    .client
-                    .post(format!("{}/disputes", self.guardian_url))
-                    .json(&body)
-                    .send()
-                    .await
-                {
+                match self.client.post(format!("{}/disputes", self.guardian_url)).json(&body).send().await {
                     Ok(resp) if resp.status().is_success() => {
                         success = true;
                     }
@@ -340,13 +330,7 @@ impl App {
                 }
             }
             if !success {
-                match self
-                    .client
-                    .post(format!("{}/disputes", self.merchant_url))
-                    .json(&body)
-                    .send()
-                    .await
-                {
+                match self.client.post(format!("{}/disputes", self.merchant_url)).json(&body).send().await {
                     Ok(resp) if resp.status().is_success() => {
                         success = true;
                     }
@@ -371,12 +355,7 @@ impl App {
 
     pub async fn charge_subscription(&mut self) {
         if let Some(id) = self.selected_subscription_id() {
-            match self
-                .client
-                .post(format!("{}/subscriptions/{}/charge", self.merchant_url, id))
-                .send()
-                .await
-            {
+            match self.client.post(format!("{}/subscriptions/{}/charge", self.merchant_url, id)).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     self.set_status("Subscription charged".into(), Color::Green);
                     self.refresh().await;
@@ -402,7 +381,7 @@ impl App {
     pub async fn submit_watcher_config(&mut self) {
         if let Some(cfg) = self.watcher_config.take() {
             if let (Ok(max_fee), Ok(th)) = (cfg.max_fee.parse::<u64>(), cfg.congestion_threshold.parse::<f32>()) {
-                if th < 0.0 || th > 1.0 {
+                if !(0.0..=1.0).contains(&th) {
                     self.set_status("invalid config".into(), Color::Red);
                     self.watcher_config = Some(cfg);
                     return;

@@ -6,9 +6,10 @@ use crate::{
 use ratatui::{
     prelude::*,
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    Frame,
 };
 
-pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
+pub fn draw(f: &mut Frame, app: &App) {
     let size = f.size();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -53,7 +54,7 @@ fn panel_block(title: &str, focused: bool) -> Block {
     block
 }
 
-fn render_actions<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_actions(f: &mut Frame, app: &App, area: Rect) {
     let block = panel_block("Actions", app.focus == Focus::Actions);
     let items = vec![
         Line::raw("q: quit"),
@@ -70,23 +71,15 @@ fn render_actions<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(items).block(block), area);
 }
 
-fn render_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_items(f: &mut Frame, app: &App, area: Rect) {
     let title = match app.list_mode {
         ListMode::Invoices => "Invoices",
         ListMode::Subscriptions => "Subscriptions",
     };
     let block = panel_block(title, app.focus == Focus::Invoices);
     let items: Vec<ListItem> = match app.list_mode {
-        ListMode::Invoices => app
-            .invoices
-            .iter()
-            .map(|i| ListItem::new(invoice_to_string(i)))
-            .collect(),
-        ListMode::Subscriptions => app
-            .subscriptions
-            .iter()
-            .map(|s| ListItem::new(subscription_to_string(s)))
-            .collect(),
+        ListMode::Invoices => app.invoices.iter().map(|i| ListItem::new(invoice_to_string(i))).collect(),
+        ListMode::Subscriptions => app.subscriptions.iter().map(|s| ListItem::new(subscription_to_string(s))).collect(),
     };
     let mut state = ListState::default();
     state.select(Some(app.selection));
@@ -94,47 +87,36 @@ fn render_items<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     f.render_stateful_widget(list, area, &mut state);
 }
 
-fn render_watcher<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_watcher(f: &mut Frame, app: &App, area: Rect) {
     let block = panel_block("Watcher", app.focus == Focus::Watcher);
     f.render_widget(Paragraph::new(format!("{}", app.watcher)).block(block), area);
 }
 
-fn render_guardian<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_guardian(f: &mut Frame, app: &App, area: Rect) {
     let block = panel_block("Guardian", app.focus == Focus::Guardian);
     let text = if let Some(obj) = app.guardian.as_object() {
-        let disputes = obj
-            .get("disputes_open")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let refunds = obj
-            .get("refunds_signed")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        format!("disputes_open: {}\nrefunds_signed: {}", disputes, refunds)
+        let disputes = obj.get("disputes_open").and_then(|v| v.as_i64()).unwrap_or(0);
+        let refunds = obj.get("refunds_signed").and_then(|v| v.as_i64()).unwrap_or(0);
+        format!("disputes_open: {disputes}\nrefunds_signed: {refunds}")
     } else {
         format!("{}", app.guardian)
     };
     f.render_widget(Paragraph::new(text).block(block), area);
 }
 
-fn render_webhooks<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn render_webhooks(f: &mut Frame, app: &App, area: Rect) {
     let block = panel_block("Webhooks", app.focus == Focus::Webhooks);
     if app.webhooks.is_empty() {
         f.render_widget(Paragraph::new("None").block(block), area);
     } else {
-        let items: Vec<ListItem> = app
-            .webhooks
-            .iter()
-            .map(|w| {
-                ListItem::new(format!("{} id={} ts={} {}", w.event, w.id, w.ts, w.details))
-            })
-            .collect();
+        let items: Vec<ListItem> =
+            app.webhooks.iter().map(|w| ListItem::new(format!("{} id={} ts={} {}", w.event, w.id, w.ts, w.details))).collect();
         let list = List::new(items).block(block);
         f.render_widget(list, area);
     }
 }
 
-fn render_watcher_modal<B: Backend>(f: &mut Frame<B>, modal: &WatcherConfigModal) {
+fn render_watcher_modal(f: &mut Frame, modal: &WatcherConfigModal) {
     let area = centered_rect(60, 40, f.size());
     f.render_widget(Clear, area);
     let block = Block::default().title("Watcher Config").borders(Borders::ALL);
