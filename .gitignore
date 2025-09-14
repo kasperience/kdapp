@@ -34,8 +34,9 @@ web-root
 # Example local sled database directories (avoid committing state)
 examples/kdapp-merchant/merchant.db/
 # Autopilot local DB/logs (root)
-merchant-live.db/
+merchant-live.db
 merchant-proxy.db/
+merchant.db/
 merchant-serve.out
 merchant-serve.err
 merchant-proxy.out
