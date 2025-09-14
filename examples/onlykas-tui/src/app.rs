@@ -216,15 +216,15 @@ impl App {
                     }
                 }
             } else if let Ok(resp) = self.get("/mempool-metrics").send().await {
-                    if resp.status().is_success() {
-                        if let Ok(data) = resp.json::<Mempool>().await {
-                            self.watcher = data;
-                        }
-                    } else if resp.status().as_u16() == 401 {
-                        self.set_status("Unauthorized: set API key".into(), Color::Yellow);
-                        self.require_api_key_prompt();
+                if resp.status().is_success() {
+                    if let Ok(data) = resp.json::<Mempool>().await {
+                        self.watcher = data;
                     }
+                } else if resp.status().as_u16() == 401 {
+                    self.set_status("Unauthorized: set API key".into(), Color::Yellow);
+                    self.require_api_key_prompt();
                 }
+            }
         }
         if !self.guardian_url.is_empty() {
             if let Ok(resp) = self.client.get(format!("{}/metrics", self.guardian_url)).send().await {
