@@ -17,8 +17,8 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScree
 use crossterm::{event, execute};
 use hmac::{Hmac, Mac};
 use models::WebhookEvent;
-use serde_json::Value;
 use ratatui::{prelude::*, Terminal};
+use serde_json::Value;
 use sha2::Sha256;
 use std::error::Error;
 use std::sync::Arc;
@@ -48,12 +48,7 @@ async fn webhook(State(state): State<WebhookState>, headers: HeaderMap, body: By
         return StatusCode::UNAUTHORIZED;
     }
     // Accept flexible payloads from merchant; map to TUI's WebhookEvent
-    let now_ts = || {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-    };
+    let now_ts = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
     match serde_json::from_slice::<Value>(&body) {
         Ok(v) => {
             let (event, id, ts) = if let Some(obj) = v.as_object() {
@@ -114,13 +109,7 @@ fn parse_args() -> Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = parse_args();
-    let app = Arc::new(Mutex::new(App::new(
-        args.merchant_url,
-        args.guardian_url,
-        args.watcher_url,
-        args.api_key,
-        args.mock_l1,
-    )));
+    let app = Arc::new(Mutex::new(App::new(args.merchant_url, args.guardian_url, args.watcher_url, args.api_key, args.mock_l1)));
 
     let (tx, mut rx) = mpsc::unbounded_channel();
     {
@@ -191,8 +180,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
             if let event::Event::Key(key) = event::read()? {
                 // Global shortcuts (work even when a modal is open)
                 if matches!(key.code, event::KeyCode::Char('q'))
-                    || (matches!(key.code, event::KeyCode::Char('c'))
-                        && key.modifiers.contains(event::KeyModifiers::CONTROL))
+                    || (matches!(key.code, event::KeyCode::Char('c')) && key.modifiers.contains(event::KeyModifiers::CONTROL))
                 {
                     return Ok(());
                 }
@@ -206,10 +194,16 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                             event::KeyCode::Esc => a.cancel_api_key_modal(),
                             event::KeyCode::Enter => {
                                 a.submit_api_key();
-                                if a.api_key.is_some() { a.refresh().await; }
+                                if a.api_key.is_some() {
+                                    a.refresh().await;
+                                }
                             }
-                            event::KeyCode::Backspace => { modal.value.pop(); }
-                            event::KeyCode::Char(c) => { modal.value.push(c); }
+                            event::KeyCode::Backspace => {
+                                modal.value.pop();
+                            }
+                            event::KeyCode::Char(c) => {
+                                modal.value.push(c);
+                            }
                             _ => {}
                         }
                         handled = true;
@@ -228,14 +222,18 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                         handled = true;
                     }
                 }
-                if handled { continue; }
+                if handled {
+                    continue;
+                }
 
                 // No modal: derive action without lock
                 match Action::from_key(key) {
                     Action::Quit => return Ok(()),
                     Action::Refresh => {
                         let app2 = app.clone();
-                        tokio::spawn(async move { App::refresh_task(app2).await; });
+                        tokio::spawn(async move {
+                            App::refresh_task(app2).await;
+                        });
                     }
                     Action::FocusNext => {
                         let mut a = app.lock().await;
@@ -262,7 +260,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                             let memo = prompt("memo").unwrap_or_default();
                             if let Ok(amount) = amount_s.parse::<u64>() {
                                 let app2 = app.clone();
-                                tokio::spawn(async move { App::create_invoice_task(app2, amount, memo).await; });
+                                tokio::spawn(async move {
+                                    App::create_invoice_task(app2, amount, memo).await;
+                                });
                             } else {
                                 let mut a = app.lock().await;
                                 a.set_status("invalid amount".into(), Color::Red);
@@ -271,22 +271,49 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                     }
                     Action::SimulatePay => {
                         // capture selected id then spawn
-                        let id = { let a = app.lock().await; a.selected_invoice_id() };
-                        if let Some(invoice_id) = id { let app2 = app.clone(); tokio::spawn(async move { App::simulate_payment_task(app2, invoice_id).await; }); }
+                        let id = {
+                            let a = app.lock().await;
+                            a.selected_invoice_id()
+                        };
+                        if let Some(invoice_id) = id {
+                            let app2 = app.clone();
+                            tokio::spawn(async move {
+                                App::simulate_payment_task(app2, invoice_id).await;
+                            });
+                        }
                     }
                     Action::Acknowledge => {
-                        let id = { let a = app.lock().await; a.selected_invoice_id() };
-                        if let Some(invoice_id) = id { let app2 = app.clone(); tokio::spawn(async move { App::ack_task(app2, invoice_id).await; }); }
+                        let id = {
+                            let a = app.lock().await;
+                            a.selected_invoice_id()
+                        };
+                        if let Some(invoice_id) = id {
+                            let app2 = app.clone();
+                            tokio::spawn(async move {
+                                App::ack_task(app2, invoice_id).await;
+                            });
+                        }
                     }
                     Action::Dispute => {
                         // keep simple for now: reuse existing method synchronously
                         let mut a = app.lock().await;
                         a.dispute_invoice().await;
                     }
-                    Action::WatcherConfig => { let mut a = app.lock().await; a.open_watcher_config(); }
+                    Action::WatcherConfig => {
+                        let mut a = app.lock().await;
+                        a.open_watcher_config();
+                    }
                     Action::ChargeSub => {
-                        let id = { let a = app.lock().await; a.selected_subscription_id() };
-                        if let Some(sub_id) = id { let app2 = app.clone(); tokio::spawn(async move { App::charge_sub_task(app2, sub_id).await; }); }
+                        let id = {
+                            let a = app.lock().await;
+                            a.selected_subscription_id()
+                        };
+                        if let Some(sub_id) = id {
+                            let app2 = app.clone();
+                            tokio::spawn(async move {
+                                App::charge_sub_task(app2, sub_id).await;
+                            });
+                        }
                     }
                     Action::None => {}
                 }
