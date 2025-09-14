@@ -89,8 +89,8 @@ if ($Mainnet) { $netArgs += "--mainnet" }
 
 if (-not $env:RUST_LOG) { $env:RUST_LOG = 'info,kdapp=info,kdapp_merchant=info' }
 
-# Start merchant server
-$merchantArgs = @("run","-p","kdapp-merchant","--","serve",
+# Start merchant server + proxy in one process (shared engine)
+$merchantArgs = @("run","-p","kdapp-merchant","--","serve-proxy",
   "--bind","127.0.0.1:$MerchantPort",
   "--episode-id","$EpisodeId",
   "--api-key","$ApiKey",
@@ -98,6 +98,8 @@ $merchantArgs = @("run","-p","kdapp-merchant","--","serve",
   "--webhook-url","http://127.0.0.1:$WebhookPort/hook",
   "--webhook-secret","$WebhookSecret"
 )
+if ($WrpcUrl -and $WrpcUrl -ne 'wss://node:port') { $merchantArgs += @("--wrpc-url", $WrpcUrl) }
+if ($Mainnet) { $merchantArgs += "--mainnet" }
 Start-Process -FilePath cargo -ArgumentList $merchantArgs -NoNewWindow -RedirectStandardOutput merchant-serve.out -RedirectStandardError merchant-serve.err
 
 Start-Sleep -Seconds 2

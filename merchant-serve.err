@@ -1,10 +1,7 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.60s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.80s
      Running `target\debug\kdapp-merchant.exe serve --bind 127.0.0.1:3000 --episode-id 42 --api-key faefcadee5cd017f634461263051410e --merchant-private-key 8a2e24424d942645aefcf41505935d70da56b9b8a257f3cb29153f77585d89c6 --webhook-url http://127.0.0.1:9655/hook --webhook-secret 88ffcf0b79b3c4ca492fbd15c215b0815c619fe3377f3c52466162dc4b2697f9`
-[2025-09-14T10:46:06Z INFO  kdapp_merchant] merchant pubkey: 02d391590b44f58cd6870738ab6ccd71af6bc1e7b19c997d9b3af5e4442fb7a2d4
-[2025-09-14T10:46:06Z INFO  kdapp_merchant::handler] episode 42 initialized; merchant_keys=[PublicKey(d4a2b72f44e4f53a9b7d999cb1e7c16baf71cd6cab380787d68cf5440b5991d386aa81d1125079f339bdcaf3f7e5c895c678a7d77b74b5c41398060e115c292e)]
-ack failed for ep 0 seq 0
-ack failed for ep 42 seq 1
-[2025-09-14T10:46:06Z INFO  kdapp_merchant::handler] checkpoint sent: ep=42 seq=1 hash=ba325b7f8fdf2fd0b0b420c05442b66ab06c78e4d0a33aa19905e8b9294b8665
-[2025-09-14T10:46:21Z WARN  kdapp::engine] Episode 42: Command AckReceipt { invoice_id: 1 } rejected: invalid command: invoice not found
-[2025-09-14T10:46:21Z WARN  kdapp::engine] Episode 42: Command AckReceipt { invoice_id: 1 } rejected: invalid command: invoice not found
-error: process didn't exit successfully: `target\debug\kdapp-merchant.exe serve --bind 127.0.0.1:3000 --episode-id 42 --api-key faefcadee5cd017f634461263051410e --merchant-private-key 8a2e24424d942645aefcf41505935d70da56b9b8a257f3cb29153f77585d89c6 --webhook-url http://127.0.0.1:9655/hook --webhook-secret 88ffcf0b79b3c4ca492fbd15c215b0815c619fe3377f3c52466162dc4b2697f9` (exit code: 0xffffffff)
+
+thread 'main' panicked at examples\kdapp-merchant\src\storage.rs:26:93:
+failed to open merchant-live.db: IO error: could not acquire lock on "merchant-live.db\\db": Os { code: 33, kind: Uncategorized, message: "Proces nie może uzyskać dostępu do pliku, ponieważ inny proces zablokował jego część." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: process didn't exit successfully: `target\debug\kdapp-merchant.exe serve --bind 127.0.0.1:3000 --episode-id 42 --api-key faefcadee5cd017f634461263051410e --merchant-privateerror: process didn't exit successfully: `target\debug\kdapp-merchant.exe serve --bind 127.0.0.1:3000 --episode-id 42 --api-key faefcadee5cd017f634461263051410e --merchant-private-key 8a2e24424d942645aefcf41505935d70da56b9b8a257f3cb29153f77585d89c6 --webhook-url http://127.0.0.1:9655/hook --webhook-secret 88ffcf0b79b3c4ca492fbd15c215b0815c619fe3377f3c52466162dc4b2697f9` (exit code: 0xffffffff)

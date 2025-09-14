@@ -75,24 +75,28 @@ NET_ARGS=()
 
 LOG_PREFIX="$SCRIPT_DIR"
 
-# Start merchant server
+# Start merchant server + proxy in one process (shared engine)
 if [[ "${DEBUG:-0}" == "1" ]]; then
-  cargo run -p kdapp-merchant -- serve \
+  cargo run -p kdapp-merchant -- serve-proxy \
     --bind 127.0.0.1:"$MERCHANT_PORT" \
     --episode-id "$EPISODE_ID" \
     --api-key "$API_KEY" \
     --merchant-private-key "$MERCHANT_SK" \
     --webhook-url "http://127.0.0.1:$WEBHOOK_PORT/hook" \
     --webhook-secret "$WEBHOOK_SECRET" \
+    ${WRPC_URL:+--wrpc-url "$WRPC_URL"} \
+    ${NET_ARGS[@]:-} \
     2>&1 | tee -a "$LOG_PREFIX/merchant-serve.log" &
 else
-  cargo run -p kdapp-merchant -- serve \
+  cargo run -p kdapp-merchant -- serve-proxy \
     --bind 127.0.0.1:"$MERCHANT_PORT" \
     --episode-id "$EPISODE_ID" \
     --api-key "$API_KEY" \
     --merchant-private-key "$MERCHANT_SK" \
     --webhook-url "http://127.0.0.1:$WEBHOOK_PORT/hook" \
     --webhook-secret "$WEBHOOK_SECRET" \
+    ${WRPC_URL:+--wrpc-url "$WRPC_URL"} \
+    ${NET_ARGS[@]:-} \
     > "$LOG_PREFIX/merchant-serve.out" 2> "$LOG_PREFIX/merchant-serve.err" &
 fi
 sleep 1

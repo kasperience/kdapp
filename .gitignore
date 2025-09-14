@@ -33,6 +33,21 @@ web-root
 **/db-*
 # Example local sled database directories (avoid committing state)
 examples/kdapp-merchant/merchant.db/
+# Autopilot local DB/logs (root)
+merchant-live.db/
+merchant-proxy.db/
+merchant-serve.out
+merchant-serve.err
+merchant-proxy.out
+merchant-proxy.err
+merchant-serve.log
+merchant-proxy.log
+watcher.out
+watcher.err
+watcher.log
+guardian.out
+guardian.err
+guardian.log
 analyzer-target
 .DS_Store
 *.code-workspace

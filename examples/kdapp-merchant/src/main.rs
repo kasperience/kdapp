@@ -180,6 +180,30 @@ enum CliCmd {
         #[arg(long)]
         webhook_secret: Option<String>,
     },
+    /// Run the HTTP server and the wRPC proxy in a single process (shared engine)
+    #[command(name = "serve-proxy")]
+    ServeProxy {
+        #[arg(long, default_value = "127.0.0.1:3000")]
+        bind: String,
+        #[arg(long)]
+        episode_id: u32,
+        #[arg(long)]
+        api_key: String,
+        #[arg(long)]
+        merchant_private_key: Option<String>,
+        /// Maximum fee in sompis for anchoring transactions
+        #[arg(long)]
+        max_fee: Option<u64>,
+        /// Defer anchoring when congestion ratio exceeds this value
+        #[arg(long)]
+        congestion_threshold: Option<f64>,
+        /// URL to POST invoice state updates
+        #[arg(long)]
+        webhook_url: Option<String>,
+        /// Secret used for HMAC signatures on webhook payloads (hex)
+        #[arg(long)]
+        webhook_secret: Option<String>,
+    },
     /// Build and broadcast an on-chain transaction carrying a command
     OnchainCreate {
         #[arg(long)]
@@ -566,6 +590,68 @@ fn main() {
             rt.block_on(async {
                 server::serve(bind, state).await.expect("server");
             });
+        }
+        CliCmd::ServeProxy { bind, episode_id, api_key, merchant_private_key, max_fee, congestion_threshold, webhook_url, webhook_secret } => {
+            // Local router for HTTP endpoints
+            let router = SimRouter::new(EngineChannel::Local(tx.clone()));
+            let (sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
+                Some(sk) => {
+                    let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &sk));
+                    (sk, pk)
+                }
+                None => generate_keypair(),
+            };
+            log::info!("merchant pubkey: {pk}");
+            // Ensure episode exists for immediate command handling
+            let _ = router.forward::<ReceiptEpisode>(EpisodeMessage::NewEpisode { episode_id, participants: vec![pk] });
+            scheduler::start(router.clone(), episode_id);
+            let secret = webhook_secret.and_then(|h| {
+                let mut buf = vec![0u8; h.len() / 2 + h.len() % 2];
+                if faster_hex::hex_decode(h.as_bytes(), &mut buf).is_ok() { Some(buf) } else { None }
+            });
+            let state = server::AppState::new(
+                Arc::new(router),
+                episode_id,
+                sk,
+                pk,
+                api_key,
+                max_fee,
+                congestion_threshold,
+                webhook_url,
+                secret,
+            );
+
+            // Spawn HTTP server in a thread with its own runtime
+            let bind_clone = bind.clone();
+            let http_handle = std::thread::spawn(move || {
+                let rt = Runtime::new().expect("runtime");
+                rt.block_on(async {
+                    server::serve(bind_clone, state).await.expect("server");
+                });
+            });
+
+            // Derive routing ids for proxy listener and start it in this process
+            let ids = match (args.prefix, args.pattern.as_deref().and_then(parse_pattern)) {
+                (Some(pref), Some(pat)) => (pref as PrefixType, pat),
+                _ => program_id::derive_routing_ids(&pk),
+            };
+            let (prefix, pattern) = ids;
+            log::info!("prefix=0x{prefix:08x}, pattern={pattern:?}");
+            let network = if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+            let exit = Arc::new(AtomicBool::new(false));
+            let engines = std::iter::once((prefix, (pattern, tx.clone()))).collect();
+            let wrpc_url = args.wrpc_url.clone();
+            let proxy_handle = std::thread::spawn(move || {
+                let rt = Runtime::new().expect("runtime");
+                rt.block_on(async move {
+                    let kaspad = proxy::connect_client(network, wrpc_url).await.expect("kaspad connect");
+                    proxy::run_listener(kaspad, engines, exit).await;
+                });
+            });
+
+            // Wait for both to finish (Ctrl+C will terminate the process)
+            let _ = http_handle.join();
+            let _ = proxy_handle.join();
         }
         CliCmd::RegisterCustomer { customer_private_key } => {
             let (sk, pk) = match customer_private_key.and_then(|h| parse_secret_key(&h)) {
