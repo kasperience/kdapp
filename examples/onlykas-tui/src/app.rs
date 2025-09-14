@@ -336,6 +336,10 @@ impl App {
                 self.set_status("Invoice created".into(), Color::Green);
                 self.refresh().await;
             }
+            Ok(resp) if resp.status().as_u16() == 401 => {
+                self.set_status("Unauthorized: set API key".into(), Color::Red);
+                self.require_api_key_prompt();
+            }
             Ok(resp) => {
                 self.set_status(format!("Error: {}", resp.status()), Color::Red);
             }
@@ -592,6 +596,11 @@ impl App {
             Ok(resp) if resp.status().is_success() => {
                 let mut a = app.lock().await;
                 a.set_status("Invoice created".into(), Color::Green);
+            }
+            Ok(resp) if resp.status().as_u16() == 401 => {
+                let mut a = app.lock().await;
+                a.set_status("Unauthorized: set API key".into(), Color::Red);
+                a.require_api_key_prompt();
             }
             Ok(resp) => {
                 let mut a = app.lock().await;
