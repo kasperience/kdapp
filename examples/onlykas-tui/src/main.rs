@@ -247,19 +247,11 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                     }
                     Action::SelectNext => {
                         let mut a = app.lock().await;
-                        if a.focus == app::Focus::Invoices {
-                            a.select_next();
-                        } else {
-                            a.focus_next();
-                        }
+                        a.select_next();
                     }
                     Action::SelectPrev => {
                         let mut a = app.lock().await;
-                        if a.focus == app::Focus::Invoices {
-                            a.select_prev();
-                        } else {
-                            a.focus_prev();
-                        }
+                        a.select_prev();
                     }
                     Action::ToggleList => {
                         let mut a = app.lock().await;
