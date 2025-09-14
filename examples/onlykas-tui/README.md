@@ -76,10 +76,12 @@ cd examples/onlykas-tui
 MAINNET=0 ./autopilot.sh               # auto-resolve node
 # or specify explicitly:
 WRPC_URL=wss://node:port MAINNET=0 ./autopilot.sh
+# stop all onlykas processes launched by autopilot:
+./autopilot.sh --stop
 ```
 
 Notes:
-- Scripts generate a demo API key, webhook secret, and private keys; they run the merchant with `MERCHANT_DB_PATH=merchant-live.db`.
+- Scripts generate a demo API key, webhook secret, and private keys; by default they set `MERCHANT_DB_PATH` to a WSL/Linux‑friendly location under `$XDG_DATA_HOME/onlykas/merchant-live.db` or `~/.local/share/onlykas/merchant-live.db`.
 - Watcher starts automatically and serves metrics; TUI is launched with `--watcher-url` so the Watcher panel is populated.
 - Guardian starts automatically and is wired via `--guardian-url` for the Guardian panel.
 - Enable logs: set `DEBUG=1` for Bash or pass `-Debug` to the PowerShell script. Logs tail in the console (PS) or go to `*.log`/`*.out` files.

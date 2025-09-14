@@ -5,6 +5,16 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ENV_FILE="$SCRIPT_DIR/.env"
 EXAMPLE_FILE="$SCRIPT_DIR/.env.example"
 
+# Simple arg parsing for maintenance commands (e.g., --stop)
+STOP=0
+for arg in "$@"; do
+  case "$arg" in
+    --stop|stop)
+      STOP=1
+      ;;
+  esac
+done
+
 # Load .env if present; otherwise create from example
 if [[ -f "$ENV_FILE" ]]; then
   set -a; source "$ENV_FILE"; set +a
@@ -39,7 +49,7 @@ MERCHANT_PORT=${MERCHANT_PORT:-${MERCHANT_PORT:-3000}}
 WEBHOOK_PORT=${WEBHOOK_PORT:-${WEBHOOK_PORT:-9655}}
 WATCHER_PORT=${WATCHER_PORT:-${WATCHER_PORT:-9591}}
 GUARDIAN_PORT=${GUARDIAN_PORT:-${GUARDIAN_PORT:-9650}}
-MERCHANT_DB_PATH=${MERCHANT_DB_PATH:-${MERCHANT_DB_PATH:-merchant-live.db}}
+MERCHANT_DB_PATH=${MERCHANT_DB_PATH:-${MERCHANT_DB_PATH:-}}
 
 # WRPC_URL optional: if empty, kdapp proxy uses built-in resolver pool
 
@@ -68,6 +78,12 @@ if [[ -z "${API_KEY:-}" ]]; then API_KEY=$(hex 16); append_env API_KEY "$API_KEY
 if [[ -z "${WEBHOOK_SECRET:-}" ]]; then WEBHOOK_SECRET=$(hex 32); append_env WEBHOOK_SECRET "$WEBHOOK_SECRET"; fi
 if [[ -z "${MERCHANT_SK:-}" ]]; then MERCHANT_SK=$(hex 32); append_env MERCHANT_SK "$MERCHANT_SK"; fi
 if [[ -z "${KASPA_SK:-}" ]]; then KASPA_SK=$(hex 32); append_env KASPA_SK "$KASPA_SK"; fi
+# Choose a WSL/Linux-friendly default DB location if unset
+if [[ -z "${MERCHANT_DB_PATH:-}" ]]; then
+  DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
+  MERCHANT_DB_PATH="$DATA_HOME/onlykas/merchant-live.db"
+fi
+mkdir -p "$(dirname "$MERCHANT_DB_PATH")"
 append_env MERCHANT_DB_PATH "$MERCHANT_DB_PATH" >/dev/null 2>&1 || true
 if [[ -n "${WRPC_URL:-}" && "$WRPC_URL" != "wss://node:port" ]]; then
   append_env WRPC_URL "$WRPC_URL" >/dev/null 2>&1 || true
@@ -86,6 +102,19 @@ NET_ARGS=()
 [[ "$MAINNET" == "1" ]] && NET_ARGS+=("--mainnet")
 
 LOG_PREFIX="$SCRIPT_DIR"
+
+# Maintenance: stop previously started processes and exit
+if [[ "$STOP" == "1" ]]; then
+  pkill -f 'kdapp-merchant( |$)' 2>/dev/null || true
+  pkill -f 'onlykas-tui( |$)' 2>/dev/null || true
+  pkill -f 'guardian-service( |$)' 2>/dev/null || true
+  # Best-effort: also stop cargo-wrapped processes if still around
+  pkill -f 'cargo run -p kdapp-merchant' 2>/dev/null || true
+  pkill -f 'cargo run -p onlykas-tui' 2>/dev/null || true
+  pkill -f 'cargo run -p kdapp-guardian' 2>/dev/null || true
+  echo "Stopped onlykas processes"
+  exit 0
+fi
 
 # Start merchant server + proxy in one process (shared engine)
 if [[ "${DEBUG:-0}" == "1" ]]; then
