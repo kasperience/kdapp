@@ -12,7 +12,7 @@ pub fn render_logo() -> Paragraph<'static> {
     // Find the split point using the first line, then convert to a character
     // column index so we can safely style per-char on all lines without
     // splitting at a potentially invalid UTF-8 byte boundary.
-    let k_byte_index = LOGO[0].find("█  ██  ███").unwrap_or(0);
+    let k_byte_index = LOGO[0].find("█   ██  ███").unwrap_or(0);
     let k_col = LOGO[0].char_indices().position(|(i, _)| i == k_byte_index).unwrap_or(0);
 
     let white = Style::default().fg(Color::White).bg(Color::Black).add_modifier(Modifier::BOLD);
