@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
 pub enum Action {
     Quit,
@@ -19,6 +19,9 @@ pub enum Action {
 
 impl Action {
     pub fn from_key(key: KeyEvent) -> Action {
+        if key.kind != KeyEventKind::Press {
+            return Action::None;
+        }
         match key.code {
             KeyCode::Char('q') => Action::Quit,
             KeyCode::Char('r') => Action::Refresh,
