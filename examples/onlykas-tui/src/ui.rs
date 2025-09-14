@@ -60,12 +60,7 @@ fn panel_block(title: &str, focused: bool) -> Block {
 
 fn render_actions(f: &mut Frame, app: &App, area: Rect) {
     let block = panel_block("Actions", app.focus == Focus::Actions);
-    let mut items = vec![
-        Line::raw("q: quit"),
-        Line::raw("r: refresh"),
-        Line::raw("tab: toggle list"),
-        Line::raw("n: new invoice"),
-    ];
+    let mut items = vec![Line::raw("q: quit"), Line::raw("r: refresh"), Line::raw("tab: toggle list"), Line::raw("n: new invoice")];
     if app.mock_l1 {
         items.push(Line::raw("p: simulate pay"));
     }
@@ -98,7 +93,7 @@ fn render_items(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_watcher(f: &mut Frame, app: &App, area: Rect) {
     let block = panel_block("Watcher", app.focus == Focus::Watcher);
-    f.render_widget(Paragraph::new(format!("{}", app.watcher)).block(block), area);
+    f.render_widget(Paragraph::new(app.watcher.to_string()).block(block), area);
 }
 
 fn render_guardian(f: &mut Frame, app: &App, area: Rect) {
@@ -108,7 +103,7 @@ fn render_guardian(f: &mut Frame, app: &App, area: Rect) {
         let refunds = obj.get("refunds_signed").and_then(|v| v.as_i64()).unwrap_or(0);
         format!("disputes_open: {disputes}\nrefunds_signed: {refunds}")
     } else {
-        format!("{}", app.guardian)
+        app.guardian.to_string()
     };
     f.render_widget(Paragraph::new(text).block(block), area);
 }
@@ -145,7 +140,7 @@ fn render_api_key_modal(f: &mut Frame, modal: &ApiKeyModal) {
     f.render_widget(Clear, area);
     let block = Block::default().title("Enter API Key").borders(Borders::ALL);
     let hint = Line::raw("Enter the merchant API key (Esc to cancel)");
-    let input = Line::raw(format!("{}", modal.value));
+    let input = Line::raw(modal.value.to_string());
     let paragraph = Paragraph::new(vec![hint, input]).block(block);
     f.render_widget(paragraph, area);
 }

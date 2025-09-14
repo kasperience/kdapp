@@ -129,7 +129,13 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(merchant_url: String, guardian_url: String, watcher_url: Option<String>, api_key: Option<String>, mock_l1: bool) -> Self {
+    pub fn new(
+        merchant_url: String,
+        guardian_url: String,
+        watcher_url: Option<String>,
+        api_key: Option<String>,
+        mock_l1: bool,
+    ) -> Self {
         Self {
             merchant_url,
             guardian_url,
@@ -202,15 +208,14 @@ impl App {
             }
             // Watcher metrics: prefer watcher_url if provided; otherwise fallback to merchant proxy endpoint
             if let Some(url) = &self.watcher_url {
-                if let Ok(resp) = self.client.get(format!("{}/mempool", url)).send().await {
+                if let Ok(resp) = self.client.get(format!("{url}/mempool")).send().await {
                     if resp.status().is_success() {
                         if let Ok(data) = resp.json::<Mempool>().await {
                             self.watcher = data;
                         }
                     }
                 }
-            } else {
-                if let Ok(resp) = self.get("/mempool-metrics").send().await {
+            } else if let Ok(resp) = self.get("/mempool-metrics").send().await {
                     if resp.status().is_success() {
                         if let Ok(data) = resp.json::<Mempool>().await {
                             self.watcher = data;
@@ -220,7 +225,6 @@ impl App {
                         self.require_api_key_prompt();
                     }
                 }
-            }
         }
         if !self.guardian_url.is_empty() {
             if let Ok(resp) = self.client.get(format!("{}/metrics", self.guardian_url)).send().await {
@@ -315,6 +319,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn create_invoice(&mut self, amount_sompi: u64, memo: String) {
         // Merchant API expects: { invoice_id, amount, memo }
         // Ask server to assign an ID if 0; otherwise user can provide a specific ID.
@@ -340,6 +345,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn simulate_payment(&mut self) {
         if !self.mock_l1 {
             self.set_status("Real mode: external L1 payment required.".into(), Color::Yellow);
@@ -366,6 +372,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn acknowledge_invoice(&mut self) {
         if let Some(id) = self.selected_invoice_id() {
             let body = json!({ "invoice_id": id });
@@ -429,9 +436,10 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn charge_subscription(&mut self) {
         if let Some(id) = self.selected_subscription_id() {
-            match self.post(&format!("/subscriptions/{}/charge", id)).json(&json!({})).send().await {
+            match self.post(&format!("/subscriptions/{id}/charge")).json(&json!({})).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     self.set_status("Subscription charged".into(), Color::Green);
                     self.refresh().await;
@@ -521,7 +529,11 @@ impl App {
 
 // ---------- Async tasks that avoid holding the app lock across awaits ----------
 fn header_api(rb: reqwest::RequestBuilder, api_key: &Option<String>) -> reqwest::RequestBuilder {
-    if let Some(k) = api_key { rb.header("x-api-key", k) } else { rb }
+    if let Some(k) = api_key {
+        rb.header("x-api-key", k)
+    } else {
+        rb
+    }
 }
 
 impl App {
@@ -621,7 +633,9 @@ impl App {
             let a = app.lock().await;
             (a.client.clone(), a.merchant_url.clone(), a.api_key.clone(), a.mock_l1)
         };
-        if !mock { return; }
+        if !mock {
+            return;
+        }
         let body = json!({ "invoice_id": invoice_id });
         match header_api(client.post(format!("{merchant_url}/pay")), &api_key).json(&body).send().await {
             Ok(resp) if resp.status().is_success() => {
@@ -645,10 +659,7 @@ impl App {
             let a = app.lock().await;
             (a.client.clone(), a.merchant_url.clone(), a.api_key.clone())
         };
-        match header_api(client.post(format!("{merchant_url}/subscriptions/{sub_id}/charge")), &api_key)
-            .json(&json!({}))
-            .send()
-            .await
+        match header_api(client.post(format!("{merchant_url}/subscriptions/{sub_id}/charge")), &api_key).json(&json!({})).send().await
         {
             Ok(resp) if resp.status().is_success() => {
                 let mut a = app.lock().await;
@@ -666,6 +677,7 @@ impl App {
         App::refresh_task(app.clone()).await;
     }
 
+    #[allow(dead_code)]
     pub async fn submit_watcher_config_task(app: Arc<AsyncMutex<App>>, mode: WatcherMode, max_fee: u64, threshold: f32) {
         let (client, merchant_url, api_key) = {
             let a = app.lock().await;

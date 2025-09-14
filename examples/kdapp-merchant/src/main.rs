@@ -591,7 +591,16 @@ fn main() {
                 server::serve(bind, state).await.expect("server");
             });
         }
-        CliCmd::ServeProxy { bind, episode_id, api_key, merchant_private_key, max_fee, congestion_threshold, webhook_url, webhook_secret } => {
+        CliCmd::ServeProxy {
+            bind,
+            episode_id,
+            api_key,
+            merchant_private_key,
+            max_fee,
+            congestion_threshold,
+            webhook_url,
+            webhook_secret,
+        } => {
             // Local router for HTTP endpoints
             let router = SimRouter::new(EngineChannel::Local(tx.clone()));
             let (sk, pk) = match merchant_private_key.and_then(|h| parse_secret_key(&h)) {
@@ -607,7 +616,11 @@ fn main() {
             scheduler::start(router.clone(), episode_id);
             let secret = webhook_secret.and_then(|h| {
                 let mut buf = vec![0u8; h.len() / 2 + h.len() % 2];
-                if faster_hex::hex_decode(h.as_bytes(), &mut buf).is_ok() { Some(buf) } else { None }
+                if faster_hex::hex_decode(h.as_bytes(), &mut buf).is_ok() {
+                    Some(buf)
+                } else {
+                    None
+                }
             });
             let state = server::AppState::new(
                 Arc::new(router),
@@ -637,7 +650,8 @@ fn main() {
             };
             let (prefix, pattern) = ids;
             log::info!("prefix=0x{prefix:08x}, pattern={pattern:?}");
-            let network = if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+            let network =
+                if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let exit = Arc::new(AtomicBool::new(false));
             let engines = std::iter::once((prefix, (pattern, tx.clone()))).collect();
             let wrpc_url = args.wrpc_url.clone();
@@ -805,14 +819,15 @@ fn main() {
             let sk = parse_secret_key(&kaspa_private_key).expect("invalid private key hex");
             let keypair = Keypair::from_secret_key(&secp256k1::Secp256k1::new(), &sk);
             let addr = addr_for_keypair(&keypair, args.mainnet);
-            let network = if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+            let network =
+                if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let rt = Runtime::new().expect("runtime");
             let sum = rt.block_on(async {
                 let kaspad = proxy::connect_client(network, args.wrpc_url.clone()).await.expect("kaspad connect");
                 let utxos = utxos_for_address(&kaspad, &addr).await.expect("load utxos");
                 utxos.into_iter().map(|(_, e)| e.amount).sum::<u64>()
             });
-            println!("{}: {} sompi", addr, sum);
+            println!("{addr}: {sum} sompi");
         }
     }
 
