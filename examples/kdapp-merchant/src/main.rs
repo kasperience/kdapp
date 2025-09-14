@@ -264,6 +264,18 @@ enum CliCmd {
         #[arg(long)]
         merchant_public_key: String,
     },
+    /// Derive a Kaspa address from a 32-byte private key (hex)
+    KaspaAddr {
+        /// 32-byte secp256k1 private key in hex
+        #[arg(long)]
+        kaspa_private_key: String,
+    },
+    /// Query the balance (sum of UTXOs) for the Kaspa private key
+    Balance {
+        /// 32-byte secp256k1 private key in hex
+        #[arg(long)]
+        kaspa_private_key: String,
+    },
 }
 
 fn parse_secret_key(hex: &str) -> Option<SecretKey> {
@@ -528,6 +540,8 @@ fn main() {
                 None => generate_keypair(),
             };
             log::info!("merchant pubkey: {pk}");
+            // Ensure the episode exists so commands can be accepted immediately
+            let _ = router.forward::<ReceiptEpisode>(EpisodeMessage::NewEpisode { episode_id, participants: vec![pk] });
             scheduler::start(router.clone(), episode_id);
             let secret = webhook_secret.and_then(|h| {
                 let mut buf = vec![0u8; h.len() / 2 + h.len() % 2];
@@ -694,6 +708,25 @@ fn main() {
             let pk = parse_public_key(&merchant_public_key).expect("invalid public key hex");
             let addr = addr_for_pubkey(&pk, args.mainnet);
             println!("{addr}");
+        }
+        CliCmd::KaspaAddr { kaspa_private_key } => {
+            let sk = parse_secret_key(&kaspa_private_key).expect("invalid private key hex");
+            let keypair = Keypair::from_secret_key(&secp256k1::Secp256k1::new(), &sk);
+            let addr = addr_for_keypair(&keypair, args.mainnet);
+            println!("{addr}");
+        }
+        CliCmd::Balance { kaspa_private_key } => {
+            let sk = parse_secret_key(&kaspa_private_key).expect("invalid private key hex");
+            let keypair = Keypair::from_secret_key(&secp256k1::Secp256k1::new(), &sk);
+            let addr = addr_for_keypair(&keypair, args.mainnet);
+            let network = if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+            let rt = Runtime::new().expect("runtime");
+            let sum = rt.block_on(async {
+                let kaspad = proxy::connect_client(network, args.wrpc_url.clone()).await.expect("kaspad connect");
+                let utxos = utxos_for_address(&kaspad, &addr).await.expect("load utxos");
+                utxos.into_iter().map(|(_, e)| e.amount).sum::<u64>()
+            });
+            println!("{}: {} sompi", addr, sum);
         }
     }
 
