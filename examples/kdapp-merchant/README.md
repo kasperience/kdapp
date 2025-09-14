@@ -150,6 +150,11 @@ callbacks:
 
 Webhook events fire in order: `invoice_created` → `invoice_paid` → `invoice_acked`.
 
+## Storage and concurrency
+
+- The merchant stores state in a local sled database directory (default `./merchant.db`). Server-style commands (`serve`, `serve-proxy`, `demo`) open the database and hold an exclusive file lock. When running multiple server processes, set a unique `MERCHANT_DB_PATH` per process to avoid lock contention.
+- Commands that do not rely on storage (e.g., `addr`, `kaspa-addr`, `balance`, `router-udp`, `router-tcp`, `proxy`, `watcher`, `onchain-*`) skip DB initialization and are not affected by the file lock.
+
 ## Pay-per-invoice flow
 
 1. Merchant creates an invoice (`POST /invoice`).

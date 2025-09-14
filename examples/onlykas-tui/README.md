@@ -83,6 +83,7 @@ Notes:
 - Watcher starts automatically and serves metrics; TUI is launched with `--watcher-url` so the Watcher panel is populated.
 - Guardian starts automatically and is wired via `--guardian-url` for the Guardian panel.
 - Enable logs: set `DEBUG=1` for Bash or pass `-Debug` to the PowerShell script. Logs tail in the console (PS) or go to `*.log`/`*.out` files.
+- Non-storage kdapp-merchant subcommands (e.g., `addr`, `kaspa-addr`, `balance`, `router-udp`, `router-tcp`, `proxy`, `watcher`, `onchain-*`) do not open the sled DB and can run while the server holds the DB lock. For server-style commands (`serve`, `serve-proxy`, `demo`) use a unique `MERCHANT_DB_PATH` per process to avoid file lock contention.
 
 ### .env Configuration (Persist Secrets)
 - A template lives at `examples/onlykas-tui/.env.example`. Copy it to `.env` and set ports if needed (`MERCHANT_PORT`, `WEBHOOK_PORT`, `WATCHER_PORT`, `GUARDIAN_PORT`).
@@ -130,3 +131,4 @@ Use `Left`/`Right` to change panels and `Up`/`Down` to navigate items within the
 - Watcher panel shows `null` if the watcher is not running or TUI is not pointed to it. Either run `kdapp-merchant watcher --http-port <P>` and start TUI with `--watcher-url http://127.0.0.1:<P>`, or expose metrics from the merchant process itself.
 - Rust logs: set `RUST_LOG=info,kdapp=info,kdapp_merchant=info` on servers. Use the autopilot `DEBUG`/`-Debug` options to stream logs.
  - If mempool metrics show unavailable, ensure your wRPC URL is reachable and consider running the watcher process for anchoring checkpoints.
+- Sled DB lock: If you see an error like "could not acquire lock on merchant-live.db", another process is using the same DB directory. Either stop the other process or set `MERCHANT_DB_PATH` to a unique path for each server process. Non-storage subcommands skip DB initialization and are not affected.

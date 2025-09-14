@@ -49,6 +49,7 @@ Running multiple processes on one machine (Windows)
     - `setx MERCHANT_DB_PATH merchant-udp.db` then start: `cargo run -p kdapp-merchant -- router-udp --bind 127.0.0.1:9530`
     - In a new shell: `setx MERCHANT_DB_PATH merchant-tcp.db` then start: `cargo run -p kdapp-merchant -- router-tcp --bind 127.0.0.1:9531`
   - Or run one from a different working directory so `merchant.db` resolves to different folders.
+ - Commands that do not use storage (e.g., `addr`, `kaspa-addr`, `balance`, `router-udp`, `router-tcp`, `proxy`, `watcher`, `onchain-*`) skip DB initialization and are not subject to the lock; server-style commands (`serve`, `serve-proxy`, `demo`) require a unique DB path per process.
 
 CLI subcommands (M0)
 - `demo` — run the default in-process demo.
