@@ -111,6 +111,7 @@ pub struct ApiKeyModal {
 pub struct App {
     pub merchant_url: String,
     pub guardian_url: String,
+    pub watcher_url: Option<String>,
     pub api_key: Option<String>,
     pub mock_l1: bool,
     pub invoices: Vec<Invoice>,
@@ -128,10 +129,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(merchant_url: String, guardian_url: String, api_key: Option<String>, mock_l1: bool) -> Self {
+    pub fn new(merchant_url: String, guardian_url: String, watcher_url: Option<String>, api_key: Option<String>, mock_l1: bool) -> Self {
         Self {
             merchant_url,
             guardian_url,
+            watcher_url,
             api_key,
             mock_l1,
             invoices: Vec::new(),
@@ -198,15 +200,25 @@ impl App {
                     self.require_api_key_prompt();
                 }
             }
-            // Align with merchant server: expose mempool metrics at /mempool-metrics
-            if let Ok(resp) = self.get("/mempool-metrics").send().await {
-                if resp.status().is_success() {
-                    if let Ok(data) = resp.json::<Mempool>().await {
-                        self.watcher = data;
+            // Watcher metrics: prefer watcher_url if provided; otherwise fallback to merchant proxy endpoint
+            if let Some(url) = &self.watcher_url {
+                if let Ok(resp) = self.client.get(format!("{}/mempool", url)).send().await {
+                    if resp.status().is_success() {
+                        if let Ok(data) = resp.json::<Mempool>().await {
+                            self.watcher = data;
+                        }
                     }
-                } else if resp.status().as_u16() == 401 {
-                    self.set_status("Unauthorized: set API key".into(), Color::Yellow);
-                    self.require_api_key_prompt();
+                }
+            } else {
+                if let Ok(resp) = self.get("/mempool-metrics").send().await {
+                    if resp.status().is_success() {
+                        if let Ok(data) = resp.json::<Mempool>().await {
+                            self.watcher = data;
+                        }
+                    } else if resp.status().as_u16() == 401 {
+                        self.set_status("Unauthorized: set API key".into(), Color::Yellow);
+                        self.require_api_key_prompt();
+                    }
                 }
             }
         }

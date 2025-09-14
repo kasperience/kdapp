@@ -37,6 +37,7 @@ MAINNET=${MAINNET:-${MAINNET:-0}}
 EPISODE_ID=${EPISODE_ID:-${EPISODE_ID:-42}}
 MERCHANT_PORT=${MERCHANT_PORT:-${MERCHANT_PORT:-3000}}
 WEBHOOK_PORT=${WEBHOOK_PORT:-${WEBHOOK_PORT:-9655}}
+WATCHER_PORT=${WATCHER_PORT:-${WATCHER_PORT:-9591}}
 GUARDIAN_PORT=${GUARDIAN_PORT:-${GUARDIAN_PORT:-9650}}
 MERCHANT_DB_PATH=${MERCHANT_DB_PATH:-${MERCHANT_DB_PATH:-merchant-live.db}}
 
@@ -63,6 +64,7 @@ append_env MAINNET "$MAINNET" >/dev/null 2>&1 || true
 append_env EPISODE_ID "$EPISODE_ID" >/dev/null 2>&1 || true
 append_env MERCHANT_PORT "$MERCHANT_PORT" >/dev/null 2>&1 || true
 append_env WEBHOOK_PORT "$WEBHOOK_PORT" >/dev/null 2>&1 || true
+append_env WATCHER_PORT "$WATCHER_PORT" >/dev/null 2>&1 || true
 append_env GUARDIAN_PORT "$GUARDIAN_PORT" >/dev/null 2>&1 || true
 
 export MERCHANT_DB_PATH
@@ -95,8 +97,37 @@ else
 fi
 sleep 1
 
-# Note: proxy is not started here to avoid DB locking with the server on Windows.
-# If you need it, run in a separate shell with a different MERCHANT_DB_PATH.
+# Start watcher (UDP + HTTP metrics)
+if [[ "${DEBUG:-0}" == "1" ]]; then
+  cargo run -p kdapp-merchant -- watcher \
+    --bind 127.0.0.1:9590 \
+    --kaspa-private-key "$KASPA_SK" \
+    ${WRPC_URL:+--wrpc-url "$WRPC_URL"} \
+    ${NET_ARGS[@]:-} \
+    --http-port "$WATCHER_PORT" \
+    2>&1 | tee -a "$LOG_PREFIX/watcher.log" &
+else
+  cargo run -p kdapp-merchant -- watcher \
+    --bind 127.0.0.1:9590 \
+    --kaspa-private-key "$KASPA_SK" \
+    ${WRPC_URL:+--wrpc-url "$WRPC_URL"} \
+    ${NET_ARGS[@]:-} \
+    --http-port "$WATCHER_PORT" \
+    > "$LOG_PREFIX/watcher.out" 2> "$LOG_PREFIX/watcher.err" &
+fi
+sleep 1
+
+# Start guardian (optional demo service)
+if [[ "${DEBUG:-0}" == "1" ]]; then
+  cargo run -p kdapp-guardian --bin guardian-service -- \
+    --listen-addr 127.0.0.1:"$GUARDIAN_PORT" \
+    2>&1 | tee -a "$LOG_PREFIX/guardian.log" &
+else
+  cargo run -p kdapp-guardian --bin guardian-service -- \
+    --listen-addr 127.0.0.1:"$GUARDIAN_PORT" \
+    > "$LOG_PREFIX/guardian.out" 2> "$LOG_PREFIX/guardian.err" &
+fi
+sleep 1
 
 echo "API key:        $API_KEY"
 echo "Webhook secret: $WEBHOOK_SECRET"
@@ -113,6 +144,7 @@ fi
 exec cargo run -p onlykas-tui -- \
   --merchant-url http://127.0.0.1:"$MERCHANT_PORT" \
   --guardian-url http://127.0.0.1:"$GUARDIAN_PORT" \
+  --watcher-url http://127.0.0.1:"$WATCHER_PORT" \
   --webhook-secret "$WEBHOOK_SECRET" \
   --api-key "$API_KEY" \
   --webhook-port "$WEBHOOK_PORT"

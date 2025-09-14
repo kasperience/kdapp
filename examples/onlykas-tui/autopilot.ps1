@@ -4,6 +4,7 @@ param(
   [int]$EpisodeId = 42,
   [int]$MerchantPort = 3000,
   [int]$WebhookPort = 9655,
+  [int]$WatcherPort = 9591,
   [int]$GuardianPort = 9650,
   [switch]$Debug,
   [switch]$Stop
@@ -101,8 +102,23 @@ Start-Process -FilePath cargo -ArgumentList $merchantArgs -NoNewWindow -Redirect
 
 Start-Sleep -Seconds 2
 
-# Note: proxy is not started here to avoid sled DB lock conflicts on Windows.
-# If needed, run it manually in another shell and set MERCHANT_DB_PATH to a different directory.
+# Start watcher (UDP listener + optional HTTP metrics)
+$watcherArgs = @("run","-p","kdapp-merchant","--","watcher",
+  "--bind","127.0.0.1:9590",
+  "--kaspa-private-key",$KaspaSk,
+  "--http-port",$WatcherPort
+)
+if ($WrpcUrl -and $WrpcUrl -ne 'wss://node:port') { $watcherArgs += @("--wrpc-url", $WrpcUrl) }
+if ($Mainnet) { $watcherArgs += "--mainnet" }
+Start-Process -FilePath cargo -ArgumentList $watcherArgs -NoNewWindow -RedirectStandardOutput watcher.out -RedirectStandardError watcher.err
+
+# Start guardian
+$guardianArgs = @("run","-p","kdapp-guardian","--bin","guardian-service","--",
+  "--listen-addr","127.0.0.1:$GuardianPort"
+)
+Start-Process -FilePath cargo -ArgumentList $guardianArgs -NoNewWindow -RedirectStandardOutput guardian.out -RedirectStandardError guardian.err
+
+Start-Sleep -Seconds 2
 
 # Optionally start a guardian demo (no-op metrics)
 # $guardianArgs = @("run","-p","kdapp-guardian","--bin","guardian-service","--","--listen-addr","127.0.0.1:$GuardianPort")
@@ -130,8 +146,10 @@ $tuiArgs = @("run","-p","onlykas-tui","--",
 if ($Debug) {
   Start-Job -ScriptBlock { Get-Content -Path 'merchant-serve.out' -Wait } | Out-Null
   Start-Job -ScriptBlock { Get-Content -Path 'merchant-serve.err' -Wait } | Out-Null
-  Start-Job -ScriptBlock { Get-Content -Path 'merchant-proxy.out' -Wait } | Out-Null
-  Start-Job -ScriptBlock { Get-Content -Path 'merchant-proxy.err' -Wait } | Out-Null
+  Start-Job -ScriptBlock { Get-Content -Path 'watcher.out' -Wait } | Out-Null
+  Start-Job -ScriptBlock { Get-Content -Path 'watcher.err' -Wait } | Out-Null
+  Start-Job -ScriptBlock { Get-Content -Path 'guardian.out' -Wait } | Out-Null
+  Start-Job -ScriptBlock { Get-Content -Path 'guardian.err' -Wait } | Out-Null
 }
 # Run TUI in the same window so keypresses and environment apply here
 & cargo @tuiArgs

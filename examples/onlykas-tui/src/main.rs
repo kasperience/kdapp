@@ -80,6 +80,7 @@ async fn webhook(State(state): State<WebhookState>, headers: HeaderMap, body: By
 struct Args {
     merchant_url: String,
     guardian_url: String,
+    watcher_url: Option<String>,
     webhook_secret: String,
     api_key: Option<String>,
     webhook_port: Option<u16>,
@@ -90,6 +91,7 @@ fn parse_args() -> Args {
     let mut merchant_url = String::new();
     let mut guardian_url = String::new();
     let mut webhook_secret = String::new();
+    let mut watcher_url: Option<String> = None;
     let mut api_key: Option<String> = None;
     let mut mock_l1 = false;
     let mut webhook_port: Option<u16> = None;
@@ -98,6 +100,7 @@ fn parse_args() -> Args {
         match arg.as_str() {
             "--merchant-url" => merchant_url = args.next().unwrap_or_default(),
             "--guardian-url" => guardian_url = args.next().unwrap_or_default(),
+            "--watcher-url" => watcher_url = args.next(),
             "--webhook-secret" => webhook_secret = args.next().unwrap_or_default(),
             "--api-key" => api_key = args.next(),
             "--webhook-port" => webhook_port = args.next().and_then(|s| s.parse().ok()),
@@ -105,7 +108,7 @@ fn parse_args() -> Args {
             _ => {}
         }
     }
-    Args { merchant_url, guardian_url, webhook_secret, api_key, webhook_port, mock_l1 }
+    Args { merchant_url, guardian_url, watcher_url, webhook_secret, api_key, webhook_port, mock_l1 }
 }
 
 #[tokio::main]
@@ -114,6 +117,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let app = Arc::new(Mutex::new(App::new(
         args.merchant_url,
         args.guardian_url,
+        args.watcher_url,
         args.api_key,
         args.mock_l1,
     )));

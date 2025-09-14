@@ -1,0 +1,8 @@
+    Blocking waiting for file lock on build directory
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.22s
+     Running `target\debug\kdapp-merchant.exe proxy --merchant-private-key 8a2e24424d942645aefcf41505935d70da56b9b8a257f3cb29153f77585d89c6`
+
+thread 'main' panicked at examples\kdapp-merchant\src\storage.rs:26:93:
+failed to open merchant-live.db: IO error: could not acquire lock on "merchant-live.db\\db": Os { code: 33, kind: Uncategorized, message: "Proces nie może uzyskać dostępu do pliku, ponieważ inny proces zablokował jego część." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: process didn't exit successfully: `target\debug\kdapp-merchant.exe proxy --merchant-private-key 8a2e24424d942645aefcf41505935d70da56b9b8a257f3cb29153f77585d89c6` (exit code: 0xc0000409, STATUS_STACK_BUFFER_OVERRUN)
