@@ -52,6 +52,18 @@ KASPA_SK=${KASPA_SK:-${KASPA_SK:-}}
 mkdir -p "$SCRIPT_DIR"
 touch "$ENV_FILE"
 
+# Load persisted .env so Windows/WSL use the same secrets
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC2046
+  set -a; . "$ENV_FILE" 2>/dev/null; set +a
+fi
+
+# Normalize in case CRLF snuck in from Windows edits
+API_KEY=${API_KEY%%[$'\r\n']}
+WEBHOOK_SECRET=${WEBHOOK_SECRET%%[$'\r\n']}
+MERCHANT_SK=${MERCHANT_SK%%[$'\r\n']}
+KASPA_SK=${KASPA_SK%%[$'\r\n']}
+
 if [[ -z "${API_KEY:-}" ]]; then API_KEY=$(hex 16); append_env API_KEY "$API_KEY"; fi
 if [[ -z "${WEBHOOK_SECRET:-}" ]]; then WEBHOOK_SECRET=$(hex 32); append_env WEBHOOK_SECRET "$WEBHOOK_SECRET"; fi
 if [[ -z "${MERCHANT_SK:-}" ]]; then MERCHANT_SK=$(hex 32); append_env MERCHANT_SK "$MERCHANT_SK"; fi

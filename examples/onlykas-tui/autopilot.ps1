@@ -74,6 +74,12 @@ if ($envmap.ContainsKey('WEBHOOK_SECRET')) { $WebhookSecret = $envmap['WEBHOOK_S
 if ($envmap.ContainsKey('MERCHANT_SK')) { $MerchantSk = $envmap['MERCHANT_SK'] } else { $MerchantSk = New-Hex -Bytes 32; Append-EnvLine -Path $EnvPath -Key 'MERCHANT_SK' -Value $MerchantSk }
 if ($envmap.ContainsKey('KASPA_SK')) { $KaspaSk = $envmap['KASPA_SK'] } else { $KaspaSk = New-Hex -Bytes 32; Append-EnvLine -Path $EnvPath -Key 'KASPA_SK' -Value $KaspaSk }
 
+# Defensive trim to avoid hidden CR/LF or spaces from environment/files
+$ApiKey = ($ApiKey | ForEach-Object { $_.Trim() })
+$WebhookSecret = ($WebhookSecret | ForEach-Object { $_.Trim() })
+$MerchantSk = ($MerchantSk | ForEach-Object { $_.Trim() })
+$KaspaSk = ($KaspaSk | ForEach-Object { $_.Trim() })
+
 if ($envmap.ContainsKey('MERCHANT_DB_PATH')) { $env:MERCHANT_DB_PATH = $envmap['MERCHANT_DB_PATH'] } else { $env:MERCHANT_DB_PATH = "merchant-live.db"; Append-EnvLine -Path $EnvPath -Key 'MERCHANT_DB_PATH' -Value $env:MERCHANT_DB_PATH }
 if ($WrpcUrl -and $WrpcUrl -ne 'wss://node:port') {
   Append-EnvLine -Path $EnvPath -Key 'WRPC_URL' -Value $WrpcUrl

@@ -103,6 +103,8 @@ fn parse_args() -> Args {
             _ => {}
         }
     }
+    let api_key = api_key.map(|s| s.trim().to_string());
+    let webhook_secret = webhook_secret.trim().to_string();
     Args { merchant_url, guardian_url, watcher_url, webhook_secret, api_key, webhook_port, mock_l1 }
 }
 
