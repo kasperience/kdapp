@@ -74,7 +74,8 @@ fn render_actions(f: &mut Frame, app: &App, area: Rect) {
         Line::raw("d: dispute"),
         Line::raw("s: charge sub"),
         Line::raw("w: watcher config"),
-        Line::raw("arrows: navigate"),
+        Line::raw("left/right: change focus"),
+        Line::raw("up/down: move selection"),
     ]);
     f.render_widget(Paragraph::new(items).block(block), area);
 }
