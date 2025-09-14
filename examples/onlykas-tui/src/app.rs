@@ -4,8 +4,10 @@ use reqwest::Client;
 use serde_json::{json, Value};
 use std::{
     collections::VecDeque,
+    sync::Arc,
     time::{Duration, Instant},
 };
+use tokio::sync::Mutex as AsyncMutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -101,9 +103,15 @@ pub struct StatusMessage {
     time: Instant,
 }
 
+#[derive(Default)]
+pub struct ApiKeyModal {
+    pub value: String,
+}
+
 pub struct App {
     pub merchant_url: String,
     pub guardian_url: String,
+    pub api_key: Option<String>,
     pub mock_l1: bool,
     pub invoices: Vec<Invoice>,
     pub subscriptions: Vec<Subscription>,
@@ -115,14 +123,16 @@ pub struct App {
     pub selection: usize,
     pub status: Option<StatusMessage>,
     pub watcher_config: Option<WatcherConfigModal>,
+    pub api_key_modal: Option<ApiKeyModal>,
     client: Client,
 }
 
 impl App {
-    pub fn new(merchant_url: String, guardian_url: String, mock_l1: bool) -> Self {
+    pub fn new(merchant_url: String, guardian_url: String, api_key: Option<String>, mock_l1: bool) -> Self {
         Self {
             merchant_url,
             guardian_url,
+            api_key,
             mock_l1,
             invoices: Vec::new(),
             subscriptions: Vec::new(),
@@ -134,7 +144,28 @@ impl App {
             selection: 0,
             status: None,
             watcher_config: None,
+            api_key_modal: None,
             client: Client::new(),
+        }
+    }
+
+    fn get(&self, path: &str) -> reqwest::RequestBuilder {
+        let url = format!("{}{}", self.merchant_url, path);
+        let rb = self.client.get(url);
+        if let Some(key) = &self.api_key {
+            rb.header("x-api-key", key)
+        } else {
+            rb
+        }
+    }
+
+    fn post(&self, path: &str) -> reqwest::RequestBuilder {
+        let url = format!("{}{}", self.merchant_url, path);
+        let rb = self.client.post(url);
+        if let Some(key) = &self.api_key {
+            rb.header("x-api-key", key)
+        } else {
+            rb
         }
     }
 
@@ -147,19 +178,35 @@ impl App {
 
     pub async fn refresh(&mut self) {
         if !self.merchant_url.is_empty() {
-            if let Ok(resp) = self.client.get(format!("{}/invoices", self.merchant_url)).send().await {
-                if let Ok(data) = resp.json::<Vec<Invoice>>().await {
-                    self.invoices = data;
+            if let Ok(resp) = self.get("/invoices").send().await {
+                if resp.status().is_success() {
+                    if let Ok(data) = resp.json::<Vec<Invoice>>().await {
+                        self.invoices = data;
+                    }
+                } else if resp.status().as_u16() == 401 {
+                    self.set_status("Unauthorized: set API key".into(), Color::Yellow);
+                    self.require_api_key_prompt();
                 }
             }
-            if let Ok(resp) = self.client.get(format!("{}/subscriptions", self.merchant_url)).send().await {
-                if let Ok(data) = resp.json::<Vec<Subscription>>().await {
-                    self.subscriptions = data;
+            if let Ok(resp) = self.get("/subscriptions").send().await {
+                if resp.status().is_success() {
+                    if let Ok(data) = resp.json::<Vec<Subscription>>().await {
+                        self.subscriptions = data;
+                    }
+                } else if resp.status().as_u16() == 401 {
+                    self.set_status("Unauthorized: set API key".into(), Color::Yellow);
+                    self.require_api_key_prompt();
                 }
             }
-            if let Ok(resp) = self.client.get(format!("{}/mempool", self.merchant_url)).send().await {
-                if let Ok(data) = resp.json::<Mempool>().await {
-                    self.watcher = data;
+            // Align with merchant server: expose mempool metrics at /mempool-metrics
+            if let Ok(resp) = self.get("/mempool-metrics").send().await {
+                if resp.status().is_success() {
+                    if let Ok(data) = resp.json::<Mempool>().await {
+                        self.watcher = data;
+                    }
+                } else if resp.status().as_u16() == 401 {
+                    self.set_status("Unauthorized: set API key".into(), Color::Yellow);
+                    self.require_api_key_prompt();
                 }
             }
         }
@@ -238,7 +285,7 @@ impl App {
         self.status = Some(StatusMessage { msg, color, time: Instant::now() });
     }
 
-    fn selected_invoice_id(&self) -> Option<u64> {
+    pub fn selected_invoice_id(&self) -> Option<u64> {
         if let ListMode::Invoices = self.list_mode {
             self.invoices
                 .get(self.selection)
@@ -248,7 +295,7 @@ impl App {
         }
     }
 
-    fn selected_subscription_id(&self) -> Option<u64> {
+    pub fn selected_subscription_id(&self) -> Option<u64> {
         if let ListMode::Subscriptions = self.list_mode {
             self.subscriptions.get(self.selection).map(|s| s.id)
         } else {
@@ -257,8 +304,17 @@ impl App {
     }
 
     pub async fn create_invoice(&mut self, amount_sompi: u64, memo: String) {
-        let body = json!({ "amount_sompi": amount_sompi, "memo": memo });
-        match self.client.post(format!("{}/invoice", self.merchant_url)).json(&body).send().await {
+        // Merchant API expects: { invoice_id, amount, memo }
+        // Ask server to assign an ID if 0; otherwise user can provide a specific ID.
+        let next_id = self
+            .invoices
+            .iter()
+            .filter_map(|inv| inv.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))))
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
+        let body = json!({ "invoice_id": next_id, "amount": amount_sompi, "memo": memo });
+        match self.post("/invoice").json(&body).send().await {
             Ok(resp) if resp.status().is_success() => {
                 self.set_status("Invoice created".into(), Color::Green);
                 self.refresh().await;
@@ -279,10 +335,14 @@ impl App {
         }
         if let Some(id) = self.selected_invoice_id() {
             let body = json!({ "invoice_id": id });
-            match self.client.post(format!("{}/pay", self.merchant_url)).json(&body).send().await {
+            match self.post("/pay").json(&body).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     self.set_status("Payment simulated".into(), Color::Green);
                     self.refresh().await;
+                }
+                Ok(resp) if resp.status().as_u16() == 401 => {
+                    self.set_status("Unauthorized: set API key".into(), Color::Red);
+                    self.require_api_key_prompt();
                 }
                 Ok(resp) => {
                     self.set_status(format!("Error: {}", resp.status()), Color::Red);
@@ -297,10 +357,14 @@ impl App {
     pub async fn acknowledge_invoice(&mut self) {
         if let Some(id) = self.selected_invoice_id() {
             let body = json!({ "invoice_id": id });
-            match self.client.post(format!("{}/ack", self.merchant_url)).json(&body).send().await {
+            match self.post("/ack").json(&body).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     self.set_status("Invoice acknowledged".into(), Color::Green);
                     self.refresh().await;
+                }
+                Ok(resp) if resp.status().as_u16() == 401 => {
+                    self.set_status("Unauthorized: set API key".into(), Color::Red);
+                    self.require_api_key_prompt();
                 }
                 Ok(resp) => {
                     self.set_status(format!("Error: {}", resp.status()), Color::Red);
@@ -355,10 +419,14 @@ impl App {
 
     pub async fn charge_subscription(&mut self) {
         if let Some(id) = self.selected_subscription_id() {
-            match self.client.post(format!("{}/subscriptions/{}/charge", self.merchant_url, id)).send().await {
+            match self.post(&format!("/subscriptions/{}/charge", id)).json(&json!({})).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     self.set_status("Subscription charged".into(), Color::Green);
                     self.refresh().await;
+                }
+                Ok(resp) if resp.status().as_u16() == 401 => {
+                    self.set_status("Unauthorized: set API key".into(), Color::Red);
+                    self.require_api_key_prompt();
                 }
                 Ok(resp) => {
                     self.set_status(format!("Error: {}", resp.status()), Color::Red);
@@ -394,10 +462,14 @@ impl App {
                     "max_fee": max_fee,
                     "congestion_threshold": th,
                 });
-                match self.client.post(format!("{}/watcher-config", self.merchant_url)).json(&body).send().await {
+                match self.post("/watcher-config").json(&body).send().await {
                     Ok(resp) if resp.status().is_success() => {
                         self.set_status("Watcher config updated".into(), Color::Green);
                         self.refresh().await;
+                    }
+                    Ok(resp) if resp.status().as_u16() == 401 => {
+                        self.set_status("Unauthorized: set API key".into(), Color::Red);
+                        self.require_api_key_prompt();
                     }
                     Ok(resp) => {
                         self.set_status(format!("Error: {}", resp.status()), Color::Red);
@@ -411,5 +483,201 @@ impl App {
                 self.watcher_config = Some(cfg);
             }
         }
+    }
+
+    pub fn require_api_key_prompt(&mut self) {
+        if self.api_key_modal.is_none() {
+            self.api_key_modal = Some(ApiKeyModal::default());
+        }
+    }
+
+    pub fn submit_api_key(&mut self) {
+        if let Some(modal) = self.api_key_modal.take() {
+            if modal.value.is_empty() {
+                self.set_status("API key cannot be empty".into(), Color::Red);
+                self.api_key_modal = Some(modal);
+            } else {
+                self.api_key = Some(modal.value);
+                self.set_status("API key set".into(), Color::Green);
+            }
+        }
+    }
+    pub fn cancel_api_key_modal(&mut self) {
+        self.api_key_modal = None;
+    }
+}
+
+// ---------- Async tasks that avoid holding the app lock across awaits ----------
+fn header_api(rb: reqwest::RequestBuilder, api_key: &Option<String>) -> reqwest::RequestBuilder {
+    if let Some(k) = api_key { rb.header("x-api-key", k) } else { rb }
+}
+
+impl App {
+    pub async fn refresh_task(app: Arc<AsyncMutex<App>>) {
+        let (client, merchant_url, guardian_url, api_key) = {
+            let a = app.lock().await;
+            (a.client.clone(), a.merchant_url.clone(), a.guardian_url.clone(), a.api_key.clone())
+        };
+        if !merchant_url.is_empty() {
+            if let Ok(resp) = header_api(client.get(format!("{merchant_url}/invoices")), &api_key).send().await {
+                if let Ok(data) = resp.json::<Vec<Invoice>>().await {
+                    let mut a = app.lock().await;
+                    a.invoices = data;
+                }
+            }
+            if let Ok(resp) = header_api(client.get(format!("{merchant_url}/subscriptions")), &api_key).send().await {
+                if let Ok(data) = resp.json::<Vec<Subscription>>().await {
+                    let mut a = app.lock().await;
+                    a.subscriptions = data;
+                }
+            }
+            if let Ok(resp) = header_api(client.get(format!("{merchant_url}/mempool-metrics")), &api_key).send().await {
+                if let Ok(data) = resp.json::<Mempool>().await {
+                    let mut a = app.lock().await;
+                    a.watcher = data;
+                }
+            }
+        }
+        if !guardian_url.is_empty() {
+            if let Ok(resp) = client.get(format!("{guardian_url}/metrics")).send().await {
+                if let Ok(data) = resp.json::<GuardianMetrics>().await {
+                    let mut a = app.lock().await;
+                    a.guardian = data;
+                }
+            }
+        }
+    }
+
+    pub async fn create_invoice_task(app: Arc<AsyncMutex<App>>, amount_sompi: u64, memo: String) {
+        let (client, merchant_url, api_key) = {
+            let a = app.lock().await;
+            (a.client.clone(), a.merchant_url.clone(), a.api_key.clone())
+        };
+        // compute next id from current state
+        let next_id = {
+            let a = app.lock().await;
+            a.invoices
+                .iter()
+                .filter_map(|inv| inv.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))))
+                .max()
+                .unwrap_or(0)
+                .saturating_add(1)
+        };
+        let body = json!({ "invoice_id": next_id, "amount": amount_sompi, "memo": memo });
+        match header_api(client.post(format!("{merchant_url}/invoice")), &api_key).json(&body).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let mut a = app.lock().await;
+                a.set_status("Invoice created".into(), Color::Green);
+            }
+            Ok(resp) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {}", resp.status()), Color::Red);
+            }
+            Err(e) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {e}"), Color::Red);
+            }
+        }
+        App::refresh_task(app.clone()).await;
+    }
+
+    pub async fn ack_task(app: Arc<AsyncMutex<App>>, invoice_id: u64) {
+        let (client, merchant_url, api_key) = {
+            let a = app.lock().await;
+            (a.client.clone(), a.merchant_url.clone(), a.api_key.clone())
+        };
+        let body = json!({ "invoice_id": invoice_id });
+        match header_api(client.post(format!("{merchant_url}/ack")), &api_key).json(&body).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let mut a = app.lock().await;
+                a.set_status("Invoice acknowledged".into(), Color::Green);
+            }
+            Ok(resp) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {}", resp.status()), Color::Red);
+            }
+            Err(e) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {e}"), Color::Red);
+            }
+        }
+        App::refresh_task(app.clone()).await;
+    }
+
+    pub async fn simulate_payment_task(app: Arc<AsyncMutex<App>>, invoice_id: u64) {
+        let (client, merchant_url, api_key, mock) = {
+            let a = app.lock().await;
+            (a.client.clone(), a.merchant_url.clone(), a.api_key.clone(), a.mock_l1)
+        };
+        if !mock { return; }
+        let body = json!({ "invoice_id": invoice_id });
+        match header_api(client.post(format!("{merchant_url}/pay")), &api_key).json(&body).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let mut a = app.lock().await;
+                a.set_status("Payment simulated".into(), Color::Green);
+            }
+            Ok(resp) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {}", resp.status()), Color::Red);
+            }
+            Err(e) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {e}"), Color::Red);
+            }
+        }
+        App::refresh_task(app.clone()).await;
+    }
+
+    pub async fn charge_sub_task(app: Arc<AsyncMutex<App>>, sub_id: u64) {
+        let (client, merchant_url, api_key) = {
+            let a = app.lock().await;
+            (a.client.clone(), a.merchant_url.clone(), a.api_key.clone())
+        };
+        match header_api(client.post(format!("{merchant_url}/subscriptions/{sub_id}/charge")), &api_key)
+            .json(&json!({}))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                let mut a = app.lock().await;
+                a.set_status("Subscription charged".into(), Color::Green);
+            }
+            Ok(resp) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {}", resp.status()), Color::Red);
+            }
+            Err(e) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {e}"), Color::Red);
+            }
+        }
+        App::refresh_task(app.clone()).await;
+    }
+
+    pub async fn submit_watcher_config_task(app: Arc<AsyncMutex<App>>, mode: WatcherMode, max_fee: u64, threshold: f32) {
+        let (client, merchant_url, api_key) = {
+            let a = app.lock().await;
+            (a.client.clone(), a.merchant_url.clone(), a.api_key.clone())
+        };
+        let body = json!({
+            "mode": match mode { WatcherMode::Static => "static", WatcherMode::Congestion => "congestion" },
+            "max_fee": max_fee,
+            "congestion_threshold": threshold,
+        });
+        match header_api(client.post(format!("{merchant_url}/watcher-config")), &api_key).json(&body).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let mut a = app.lock().await;
+                a.set_status("Watcher config updated".into(), Color::Green);
+            }
+            Ok(resp) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {}", resp.status()), Color::Red);
+            }
+            Err(e) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {e}"), Color::Red);
+            }
+        }
+        App::refresh_task(app.clone()).await;
     }
 }

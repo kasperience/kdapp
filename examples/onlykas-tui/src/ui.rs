@@ -1,5 +1,5 @@
 use crate::{
-    app::{App, Focus, ListMode, WatcherConfigModal, WatcherField},
+    app::{ApiKeyModal, App, Focus, ListMode, WatcherConfigModal, WatcherField},
     logo,
     models::{invoice_to_string, subscription_to_string},
 };
@@ -15,7 +15,8 @@ pub fn draw(f: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(5),
-            Constraint::Min(3),
+            // Make Actions tall enough to show all shortcuts
+            Constraint::Length(12),
             Constraint::Min(3),
             Constraint::Min(3),
             Constraint::Min(3),
@@ -44,6 +45,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(modal) = &app.watcher_config {
         render_watcher_modal(f, modal);
     }
+    if let Some(modal) = &app.api_key_modal {
+        render_api_key_modal(f, modal);
+    }
 }
 
 fn panel_block(title: &str, focused: bool) -> Block {
@@ -56,18 +60,22 @@ fn panel_block(title: &str, focused: bool) -> Block {
 
 fn render_actions(f: &mut Frame, app: &App, area: Rect) {
     let block = panel_block("Actions", app.focus == Focus::Actions);
-    let items = vec![
+    let mut items = vec![
         Line::raw("q: quit"),
         Line::raw("r: refresh"),
         Line::raw("tab: toggle list"),
         Line::raw("n: new invoice"),
-        Line::raw("p: simulate pay"),
+    ];
+    if app.mock_l1 {
+        items.push(Line::raw("p: simulate pay"));
+    }
+    items.extend([
         Line::raw("a: acknowledge"),
         Line::raw("d: dispute"),
         Line::raw("s: charge sub"),
         Line::raw("w: watcher config"),
         Line::raw("arrows: navigate"),
-    ];
+    ]);
     f.render_widget(Paragraph::new(items).block(block), area);
 }
 
@@ -128,6 +136,16 @@ fn render_watcher_modal(f: &mut Frame, modal: &WatcherConfigModal) {
     let th_line = Line::styled(format!("congestion_threshold: {}", modal.congestion_threshold), th_style);
     let buttons = Line::raw("[Apply] [Cancel]");
     let paragraph = Paragraph::new(vec![mode_line, max_line, th_line, buttons]).block(block);
+    f.render_widget(paragraph, area);
+}
+
+fn render_api_key_modal(f: &mut Frame, modal: &ApiKeyModal) {
+    let area = centered_rect(60, 30, f.size());
+    f.render_widget(Clear, area);
+    let block = Block::default().title("Enter API Key").borders(Borders::ALL);
+    let hint = Line::raw("Enter the merchant API key (Esc to cancel)");
+    let input = Line::raw(format!("{}", modal.value));
+    let paragraph = Paragraph::new(vec![hint, input]).block(block);
     f.render_widget(paragraph, area);
 }
 

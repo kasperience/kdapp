@@ -26,6 +26,9 @@ pub struct WebhookEvent {
 
 pub fn invoice_to_string(inv: &Invoice) -> String {
     if let Some(obj) = inv.as_object() {
+        if let Some(id) = obj.get("id").and_then(|v| v.as_u64()) {
+            return id.to_string();
+        }
         if let Some(id) = obj.get("id").and_then(|v| v.as_str()) {
             return id.to_string();
         }
