@@ -390,9 +390,33 @@ async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx:
 fn main() {
     env_logger::init();
     let args = Args::parse();
-    storage::init();
-    if args.sled_compact_interval > 0 {
-        storage::start_compaction(args.sled_compact_interval);
+    // Initialize sled only for commands that actually use storage.
+    let needs_db = args
+        .command
+        .as_ref()
+        .map(|cmd| {
+            matches!(
+                cmd,
+                CliCmd::Demo
+                    | CliCmd::Serve { .. }
+                    | CliCmd::ServeProxy { .. }
+                    | CliCmd::Create { .. }
+                    | CliCmd::Pay { .. }
+                    | CliCmd::Ack { .. }
+                    | CliCmd::Cancel { .. }
+                    | CliCmd::CreateSubscription { .. }
+                    | CliCmd::CancelSubscription { .. }
+                    | CliCmd::RegisterCustomer { .. }
+                    | CliCmd::ListCustomers
+            )
+        })
+        // When no subcommand is provided, default is Demo which uses storage
+        .unwrap_or(true);
+    if needs_db {
+        storage::init();
+        if args.sled_compact_interval > 0 {
+            storage::start_compaction(args.sled_compact_interval);
+        }
     }
     let guardians: Vec<(String, PubKey)> = args
         .guardian_addr
