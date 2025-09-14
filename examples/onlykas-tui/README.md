@@ -102,14 +102,18 @@ Notes:
 ### Keys
 | Key | Action |
 | --- | --- |
+| `Left` / `Right` | Move focus between panels |
+| `Up` / `Down` | Scroll within the focused list |
+| `Tab` | Switch between invoice and subscription lists |
 | `n` | Create a new invoice |
 | `p` | Simulate payment (mock mode) |
 | `a` | Acknowledge the selected invoice |
 | `d` | Open a dispute for the selected invoice |
 | `w` | Configure watcher fee policy |
 | `r` | Refresh data from services |
-| `q` | Quit |
-Arrow keys navigate lists and `Tab` toggles between invoices and subscriptions.
+| `q` or `Ctrl+C` | Quit |
+
+Use `Left`/`Right` to change panels and `Up`/`Down` to navigate items within the active panel.
 
 ### Panels
 - **Actions** – shortcut reference.
