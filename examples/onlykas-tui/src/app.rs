@@ -8,6 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::time::sleep;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -399,46 +400,6 @@ impl App {
         }
     }
 
-    pub async fn dispute_invoice(&mut self) {
-        if let Some(id) = self.selected_invoice_id() {
-            let status = self.invoices.get(self.selection).and_then(|inv| inv.get("status").and_then(|v| v.as_str())).unwrap_or("");
-            if status != "Paid" && status != "Acked" {
-                self.set_status("invoice not paid/acked".into(), Color::Yellow);
-                return;
-            }
-            let body = json!({ "invoice_id": id, "reason": "demo" });
-            let mut success = false;
-            if !self.guardian_url.is_empty() {
-                match self.client.post(format!("{}/disputes", self.guardian_url)).json(&body).send().await {
-                    Ok(resp) if resp.status().is_success() => {
-                        success = true;
-                    }
-                    _ => {}
-                }
-            }
-            if !success {
-                match self.client.post(format!("{}/disputes", self.merchant_url)).json(&body).send().await {
-                    Ok(resp) if resp.status().is_success() => {
-                        success = true;
-                    }
-                    Ok(resp) => {
-                        self.set_status(format!("Error: {}", resp.status()), Color::Red);
-                        return;
-                    }
-                    Err(e) => {
-                        self.set_status(format!("Error: {e}"), Color::Red);
-                        return;
-                    }
-                }
-            }
-            if success {
-                self.set_status("Dispute opened".into(), Color::Green);
-                self.refresh().await;
-            } else {
-                self.set_status("Error: dispute failed".into(), Color::Red);
-            }
-        }
-    }
 
     #[allow(dead_code)]
     pub async fn charge_subscription(&mut self) {
@@ -576,6 +537,37 @@ impl App {
         }
     }
 
+    async fn poll_invoice_status(
+        app: Arc<AsyncMutex<App>>,
+        invoice_id: u64,
+        target: &str,
+        timeout: Duration,
+    ) -> bool {
+        let start = Instant::now();
+        loop {
+            App::refresh_task(app.clone()).await;
+            {
+                let a = app.lock().await;
+                let status = a
+                    .invoices
+                    .iter()
+                    .find(|inv| {
+                        inv.get("id")
+                            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                            == Some(invoice_id)
+                    })
+                    .and_then(|inv| inv.get("status").and_then(|v| v.as_str()));
+                if status == Some(target) {
+                    return true;
+                }
+            }
+            if start.elapsed() >= timeout {
+                return false;
+            }
+            sleep(Duration::from_millis(500)).await;
+        }
+    }
+
     pub async fn create_invoice_task(app: Arc<AsyncMutex<App>>, amount_sompi: u64, memo: String) {
         let (client, merchant_url, api_key) = {
             let a = app.lock().await;
@@ -622,8 +614,17 @@ impl App {
         let body = json!({ "invoice_id": invoice_id });
         match header_api(client.post(format!("{merchant_url}/ack")), &api_key).json(&body).send().await {
             Ok(resp) if resp.status().is_success() => {
+                {
+                    let mut a = app.lock().await;
+                    a.set_status("Awaiting acknowledgement".into(), Color::Yellow);
+                }
+                let acked = App::poll_invoice_status(app.clone(), invoice_id, "Acked", Duration::from_secs(10)).await;
                 let mut a = app.lock().await;
-                a.set_status("Invoice acknowledged".into(), Color::Green);
+                if acked {
+                    a.set_status("Invoice acknowledged".into(), Color::Green);
+                } else {
+                    a.set_status("Acknowledgement pending".into(), Color::Yellow);
+                }
             }
             Ok(resp) => {
                 let mut a = app.lock().await;
@@ -632,6 +633,101 @@ impl App {
             Err(e) => {
                 let mut a = app.lock().await;
                 a.set_status(format!("Error: {e}"), Color::Red);
+            }
+        }
+        App::refresh_task(app.clone()).await;
+    }
+
+    pub async fn dispute_invoice_task(app: Arc<AsyncMutex<App>>, invoice_id: u64) {
+        let (client, merchant_url, guardian_url, api_key) = {
+            let a = app.lock().await;
+            (
+                a.client.clone(),
+                a.merchant_url.clone(),
+                a.guardian_url.clone(),
+                a.api_key.clone(),
+            )
+        };
+
+        let status = {
+            let a = app.lock().await;
+            a.invoices
+                .iter()
+                .find(|inv| {
+                    inv.get("id")
+                        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                        == Some(invoice_id)
+                })
+                .and_then(|inv| inv.get("status").and_then(|v| v.as_str()))
+                .unwrap_or("")
+                .to_string()
+        };
+
+        if status != "Acked" {
+            if status != "Paid" {
+                let mut a = app.lock().await;
+                a.set_status("invoice not paid/acked".into(), Color::Yellow);
+                return;
+            }
+            {
+                let mut a = app.lock().await;
+                a.set_status("Acknowledgement pending".into(), Color::Yellow);
+            }
+            let _ = App::poll_invoice_status(app.clone(), invoice_id, "Acked", Duration::from_secs(10)).await;
+        }
+
+        let current = {
+            let a = app.lock().await;
+            a.invoices
+                .iter()
+                .find(|inv| {
+                    inv.get("id")
+                        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                        == Some(invoice_id)
+                })
+                .and_then(|inv| inv.get("status").and_then(|v| v.as_str()))
+                .unwrap_or("")
+                .to_string()
+        };
+
+        if current != "Acked" {
+            let mut a = app.lock().await;
+            a.set_status("Acknowledgement still pending".into(), Color::Yellow);
+            return;
+        }
+
+        let body = json!({ "invoice_id": invoice_id, "reason": "demo" });
+        let mut success = false;
+        if !guardian_url.is_empty() {
+            if let Ok(resp) = client.post(format!("{guardian_url}/disputes")).json(&body).send().await {
+                if resp.status().is_success() {
+                    success = true;
+                }
+            }
+        }
+        if !success {
+            match header_api(client.post(format!("{merchant_url}/disputes")), &api_key).json(&body).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    success = true;
+                }
+                Ok(resp) => {
+                    let mut a = app.lock().await;
+                    a.set_status(format!("Error: {}", resp.status()), Color::Red);
+                    return;
+                }
+                Err(e) => {
+                    let mut a = app.lock().await;
+                    a.set_status(format!("Error: {e}"), Color::Red);
+                    return;
+                }
+            }
+        }
+        {
+            let mut a = app.lock().await;
+            if success {
+                a.set_status("Dispute opened".into(), Color::Green);
+            } else {
+                a.set_status("Error: dispute failed".into(), Color::Red);
             }
         }
         App::refresh_task(app.clone()).await;
