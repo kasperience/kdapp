@@ -166,10 +166,12 @@ sleep 1
 if [[ "${DEBUG:-0}" == "1" ]]; then
   cargo run -p kdapp-guardian --bin guardian-service -- \
     --listen-addr 127.0.0.1:"$GUARDIAN_PORT" \
+    --http-port "$GUARDIAN_PORT" \
     2>&1 | tee -a "$LOG_PREFIX/guardian.log" &
 else
   cargo run -p kdapp-guardian --bin guardian-service -- \
     --listen-addr 127.0.0.1:"$GUARDIAN_PORT" \
+    --http-port "$GUARDIAN_PORT" \
     > "$LOG_PREFIX/guardian.out" 2> "$LOG_PREFIX/guardian.err" &
 fi
 sleep 1
