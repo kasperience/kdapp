@@ -322,6 +322,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                             tokio::spawn(async move {
                                 App::charge_sub_task(app2, sub_id).await;
                             });
+                        } else {
+                            let mut a = app.lock().await;
+                            a.set_status("no subscription selected".into(), Color::Red);
                         }
                     }
                     Action::None => {}

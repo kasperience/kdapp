@@ -187,6 +187,19 @@ if [[ "${DEBUG:-0}" == "1" ]]; then
   cargo run -p kdapp-merchant -- kaspa-addr --kaspa-private-key "$KASPA_SK" ${NET_ARGS[@]:-}
 fi
 
+# Seed a demo subscription for testing
+CUSTOMER_SK=$(hex 32)
+CUSTOMER_INFO=$(cargo run -p kdapp-merchant -- register-customer --customer-private-key "$CUSTOMER_SK")
+echo "$CUSTOMER_INFO"
+CUSTOMER_PK=$(echo "$CUSTOMER_INFO" | grep 'registered customer pubkey' | awk '{print $4}')
+if curl -s -f -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+  -d "{\"subscription_id\":1,\"customer_public_key\":\"$CUSTOMER_PK\",\"amount\":1000,\"interval\":60}" \
+  "http://127.0.0.1:$MERCHANT_PORT/subscribe" >/dev/null; then
+  echo "Seeded demo subscription (id=1)"
+else
+  echo "Failed to seed demo subscription"
+fi
+
 # Launch TUI in foreground
 exec cargo run -p onlykas-tui -- \
   --merchant-url http://127.0.0.1:"$MERCHANT_PORT" \

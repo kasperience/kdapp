@@ -144,6 +144,21 @@ if ($Debug) {
   & cargo run -p kdapp-merchant -- kaspa-addr --kaspa-private-key $KaspaSk @($netArgs)
 }
 
+# Seed a demo subscription for testing
+$customerSk = New-Hex -Bytes 32
+$customerOutput = & cargo run -p kdapp-merchant -- register-customer --customer-private-key $customerSk
+$customerOutput | ForEach-Object { Write-Host $_ }
+$pkLine = $customerOutput | Select-String 'registered customer pubkey'
+if ($pkLine) {
+  $customerPk = $pkLine.ToString().Split(':')[1].Trim()
+  try {
+    Invoke-RestMethod -Uri "http://127.0.0.1:$MerchantPort/subscribe" -Method Post -Headers @{ "X-API-Key" = $ApiKey } -ContentType "application/json" -Body (@{subscription_id=1; customer_public_key=$customerPk; amount=1000; interval=60} | ConvertTo-Json) | Out-Null
+    Write-Host "Seeded demo subscription (id=1)" -ForegroundColor DarkGray
+  } catch {
+    Write-Host "Failed to seed demo subscription" -ForegroundColor DarkGray
+  }
+}
+
 Write-Host "Starting onlykas-tui ..." -ForegroundColor Green
 $tuiArgs = @("run","-p","onlykas-tui","--",
   "--merchant-url","http://127.0.0.1:$MerchantPort",
