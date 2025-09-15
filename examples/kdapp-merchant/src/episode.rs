@@ -1,11 +1,11 @@
 #![allow(clippy::enum_variant_names)]
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::script::{self, ScriptError};
 use borsh::{BorshDeserialize, BorshSerialize};
 use kaspa_consensus_core::Hash;
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
-use super::script::{self, ScriptError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 // Use a relative path so this module works when compiled
@@ -247,12 +247,8 @@ impl Episode for ReceiptEpisode {
                 let outs = metadata.tx_outputs.as_ref().ok_or(EpisodeError::InvalidCommand(MerchantError::InvalidScript))?;
                 if let Err(err) = script::enforce_payment_policy(outs, inv.amount, &self.merchant_keys, &inv.guardian_keys) {
                     let mapped = match err {
-                        ScriptError::InsufficientValue { .. } | ScriptError::ValueOverflow => {
-                            MerchantError::InvalidAmount
-                        }
-                        ScriptError::MalformedScript | ScriptError::NoMatchingOutputs => {
-                            MerchantError::InvalidScript
-                        }
+                        ScriptError::InsufficientValue { .. } | ScriptError::ValueOverflow => MerchantError::InvalidAmount,
+                        ScriptError::MalformedScript | ScriptError::NoMatchingOutputs => MerchantError::InvalidScript,
                     };
                     return Err(EpisodeError::InvalidCommand(mapped));
                 }
@@ -615,8 +611,7 @@ mod tests {
             TxOutputInfo { value: 30, script_version: 0, script_bytes: Some(primary) },
             TxOutputInfo { value: 60, script_version: 0, script_bytes: Some(split) },
         ]);
-        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid)
-            .expect("split payment accepted");
+        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid).expect("split payment accepted");
         assert_eq!(ep.invoices.get(&1).unwrap().status, InvoiceStatus::Paid);
     }
 
@@ -644,8 +639,7 @@ mod tests {
         script.push(0x52); // OP_2
         script.push(0xae); // OP_CHECKMULTISIG
         md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 50, script_version: 0, script_bytes: Some(script) }]);
-        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid)
-            .expect("guardian escrow accepted");
+        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid).expect("guardian escrow accepted");
         assert_eq!(ep.invoices.get(&1).unwrap().status, InvoiceStatus::Paid);
     }
 
@@ -670,8 +664,7 @@ mod tests {
         script.extend_from_slice(&xonly.serialize());
         let mut md_paid = metadata.clone();
         md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 75, script_version: 1, script_bytes: Some(script) }]);
-        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid)
-            .expect("taproot payment accepted");
+        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid).expect("taproot payment accepted");
         assert_eq!(ep.invoices.get(&1).unwrap().status, InvoiceStatus::Paid);
     }
 

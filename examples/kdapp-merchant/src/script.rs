@@ -194,19 +194,16 @@ fn matches_guardian(script: &[u8], merchant_keys: &[[u8; 33]], guardian_keys: &[
 }
 
 fn matches_taproot(script: &[u8], script_version: u16, merchant_xonly: &[[u8; 32]]) -> bool {
+    if script_version != 1 {
+        return false;
+    }
+    if script.len() == 33 && script[0] == 0x20 {
+        let key = &script[1..];
+        return merchant_xonly.iter().any(|candidate| candidate.as_slice() == key);
+    }
     if script.len() == 34 && script[0] == 0x51 && script[1] == 0x20 {
         let key = &script[2..];
         return merchant_xonly.iter().any(|candidate| candidate.as_slice() == key);
-    }
-    if script_version == 1 {
-        if script.len() == 33 && script[0] == 0x20 {
-            let key = &script[1..];
-            return merchant_xonly.iter().any(|candidate| candidate.as_slice() == key);
-        }
-        if script.len() == 34 && script[0] == 0x51 && script[1] == 0x20 {
-            let key = &script[2..];
-            return merchant_xonly.iter().any(|candidate| candidate.as_slice() == key);
-        }
     }
     false
 }
@@ -295,5 +292,21 @@ mod tests {
         assert!(matches!(err, ScriptError::InsufficientValue { .. }));
         // Ensure unused payer variable doesn't warn
         let _ = payer;
+    }
+
+    #[test]
+    fn taproot_requires_version_one() {
+        let (_sk, merchant) = generate_keypair();
+        let xonly = merchant.0.x_only_public_key().0.serialize();
+        let mut script = vec![0x51, 0x20];
+        script.extend_from_slice(&xonly);
+
+        let legacy_output = [TxOutputInfo { value: 1, script_version: 0, script_bytes: Some(script.clone()) }];
+        let err = enforce_payment_policy(&legacy_output, 1, &[merchant], &[]).unwrap_err();
+        assert_eq!(err, ScriptError::NoMatchingOutputs);
+
+        let taproot_output = [TxOutputInfo { value: 1, script_version: 1, script_bytes: Some(script) }];
+        let summary = enforce_payment_policy(&taproot_output, 1, &[merchant], &[]).expect("policy");
+        assert_eq!(summary.matched_outputs, 1);
     }
 }
