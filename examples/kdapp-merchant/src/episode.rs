@@ -5,6 +5,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use kaspa_consensus_core::Hash;
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
+use crate::script::{self, ScriptError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 // Use a relative path so this module works when compiled
@@ -244,35 +245,16 @@ impl Episode for ReceiptEpisode {
 
                 // Require proxy-provided tx summary and enforce output amount and script policy
                 let outs = metadata.tx_outputs.as_ref().ok_or(EpisodeError::InvalidCommand(MerchantError::InvalidScript))?;
-                let mut amount_ok = false;
-                let mut script_ok = false;
-                // Precompute allowed scripts (standard P2PK for merchant keys)
-                let allowed_scripts: Vec<Vec<u8>> = self
-                    .merchant_keys
-                    .iter()
-                    .map(|k| {
-                        let mut s = Vec::with_capacity(35);
-                        s.push(33); // OP_DATA_33
-                        s.extend_from_slice(&k.0.serialize());
-                        s.push(0xac); // OP_CHECKSIG
-                        s
-                    })
-                    .collect();
-                for o in outs {
-                    if o.value >= inv.amount {
-                        amount_ok = true;
-                    }
-                    if let Some(sb) = &o.script_bytes {
-                        if allowed_scripts.iter().any(|s| s == sb) {
-                            script_ok = true;
+                if let Err(err) = script::enforce_payment_policy(outs, inv.amount, &self.merchant_keys, &inv.guardian_keys) {
+                    let mapped = match err {
+                        ScriptError::InsufficientValue { .. } | ScriptError::ValueOverflow => {
+                            MerchantError::InvalidAmount
                         }
-                    }
-                }
-                if !script_ok {
-                    return Err(EpisodeError::InvalidCommand(MerchantError::InvalidScript));
-                }
-                if !amount_ok {
-                    return Err(EpisodeError::InvalidCommand(MerchantError::InvalidAmount));
+                        ScriptError::MalformedScript | ScriptError::NoMatchingOutputs => {
+                            MerchantError::InvalidScript
+                        }
+                    };
+                    return Err(EpisodeError::InvalidCommand(mapped));
                 }
 
                 inv.status = InvoiceStatus::Paid;
@@ -493,6 +475,7 @@ mod tests {
     use kaspa_consensus_core::Hash;
     use kdapp::episode::{PayloadMetadata, TxOutputInfo};
     use kdapp::pki::generate_keypair;
+    use secp256k1::XOnlyPublicKey;
 
     fn md() -> PayloadMetadata {
         PayloadMetadata {
@@ -601,6 +584,96 @@ mod tests {
             EpisodeError::InvalidCommand(MerchantError::DuplicatePayment) => {}
             _ => panic!("expected duplicate payment"),
         }
+    }
+
+    #[test]
+    fn split_outputs_cover_amount() {
+        let ((_sk_m, pk_m), (_sk_p, pk_p)) = (generate_keypair(), generate_keypair());
+        let metadata = md();
+        storage::init();
+        let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
+        ep.customers.insert(pk_p, CustomerInfo::default());
+        ep.execute(
+            &MerchantCommand::CreateInvoice { invoice_id: 1, amount: 90, memo: None, guardian_keys: vec![] },
+            Some(pk_m),
+            &metadata,
+        )
+        .unwrap();
+        let mut md_paid = metadata.clone();
+        let primary = {
+            let mut s = Vec::with_capacity(35);
+            s.push(33);
+            s.extend_from_slice(&pk_m.0.serialize());
+            s.push(0xac);
+            s
+        };
+        let mut split = Vec::with_capacity(36);
+        split.push(0x4c);
+        split.push(33);
+        split.extend_from_slice(&pk_m.0.serialize());
+        split.push(0xac);
+        md_paid.tx_outputs = Some(vec![
+            TxOutputInfo { value: 30, script_version: 0, script_bytes: Some(primary) },
+            TxOutputInfo { value: 60, script_version: 0, script_bytes: Some(split) },
+        ]);
+        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid)
+            .expect("split payment accepted");
+        assert_eq!(ep.invoices.get(&1).unwrap().status, InvoiceStatus::Paid);
+    }
+
+    #[test]
+    fn guardian_escrow_script_allowed() {
+        let ((_sk_m, pk_m), (_sk_p, pk_p), (_sk_g, pk_g)) = (generate_keypair(), generate_keypair(), generate_keypair());
+        let metadata = md();
+        storage::init();
+        let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
+        ep.customers.insert(pk_p, CustomerInfo::default());
+        ep.execute(
+            &MerchantCommand::CreateInvoice { invoice_id: 1, amount: 50, memo: None, guardian_keys: vec![pk_g] },
+            Some(pk_m),
+            &metadata,
+        )
+        .unwrap();
+        let mut md_paid = metadata.clone();
+        let mut script = Vec::new();
+        script.push(0x52); // OP_2
+        script.push(0x4c);
+        script.push(33);
+        script.extend_from_slice(&pk_m.0.serialize());
+        script.push(33);
+        script.extend_from_slice(&pk_g.0.serialize());
+        script.push(0x52); // OP_2
+        script.push(0xae); // OP_CHECKMULTISIG
+        md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 50, script_version: 0, script_bytes: Some(script) }]);
+        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid)
+            .expect("guardian escrow accepted");
+        assert_eq!(ep.invoices.get(&1).unwrap().status, InvoiceStatus::Paid);
+    }
+
+    #[test]
+    fn taproot_payment_accepts_normalized_script() {
+        let ((_sk_m, pk_m), (_sk_p, pk_p)) = (generate_keypair(), generate_keypair());
+        let metadata = md();
+        storage::init();
+        let mut ep = ReceiptEpisode::initialize(vec![pk_m], &metadata);
+        ep.customers.insert(pk_p, CustomerInfo::default());
+        ep.execute(
+            &MerchantCommand::CreateInvoice { invoice_id: 1, amount: 75, memo: None, guardian_keys: vec![] },
+            Some(pk_m),
+            &metadata,
+        )
+        .unwrap();
+        let (xonly, _) = XOnlyPublicKey::from_pubkey(&pk_m.0);
+        let mut script = Vec::new();
+        script.push(0x51); // OP_1
+        script.push(0x4c);
+        script.push(32);
+        script.extend_from_slice(&xonly.serialize());
+        let mut md_paid = metadata.clone();
+        md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 75, script_version: 1, script_bytes: Some(script) }]);
+        ep.execute(&MerchantCommand::MarkPaid { invoice_id: 1, payer: pk_p }, Some(pk_p), &md_paid)
+            .expect("taproot payment accepted");
+        assert_eq!(ep.invoices.get(&1).unwrap().status, InvoiceStatus::Paid);
     }
 
     #[test]
