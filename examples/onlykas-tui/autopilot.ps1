@@ -122,7 +122,8 @@ Start-Process -FilePath cargo -ArgumentList $watcherArgs -NoNewWindow -RedirectS
 
 # Start guardian
 $guardianArgs = @("run","-p","kdapp-guardian","--bin","guardian-service","--",
-  "--listen-addr","127.0.0.1:$GuardianPort"
+  "--listen-addr","127.0.0.1:$GuardianPort",
+  "--http-port",$GuardianPort
 )
 Start-Process -FilePath cargo -ArgumentList $guardianArgs -NoNewWindow -RedirectStandardOutput guardian.out -RedirectStandardError guardian.err
 
@@ -147,6 +148,7 @@ Write-Host "Starting onlykas-tui ..." -ForegroundColor Green
 $tuiArgs = @("run","-p","onlykas-tui","--",
   "--merchant-url","http://127.0.0.1:$MerchantPort",
   "--guardian-url","http://127.0.0.1:$GuardianPort",
+  "--watcher-url","http://127.0.0.1:$WatcherPort",
   "--webhook-secret","$WebhookSecret",
   "--api-key","$ApiKey",
   "--webhook-port","$WebhookPort"
