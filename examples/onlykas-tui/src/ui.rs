@@ -96,16 +96,13 @@ fn render_watcher(f: &mut Frame, app: &App, area: Rect) {
     let text = if let Some(obj) = app.watcher.as_object() {
         if let Some(err) = obj.get("error").and_then(|v| v.as_str()) {
             err.to_string()
-        } else if let (Some(base), Some(cong)) = (
-            obj.get("est_base_fee").and_then(|v| v.as_u64()),
-            obj.get("congestion_ratio").and_then(|v| v.as_f64()),
-        ) {
+        } else if let (Some(base), Some(cong)) =
+            (obj.get("est_base_fee").and_then(|v| v.as_u64()), obj.get("congestion_ratio").and_then(|v| v.as_f64()))
+        {
             let min = obj.get("min").and_then(|v| v.as_u64()).unwrap_or(0);
             let max = obj.get("max").and_then(|v| v.as_u64()).unwrap_or(0);
             let policy = obj.get("policy").and_then(|v| v.as_str()).unwrap_or("");
-            format!(
-                "est_base_fee: {base}\ncongestion_ratio: {cong:.2}\nmin: {min} max: {max}\npolicy: {policy}",
-            )
+            format!("est_base_fee: {base}\ncongestion_ratio: {cong:.2}\nmin: {min} max: {max}\npolicy: {policy}",)
         } else {
             "metrics unavailable".to_string()
         }

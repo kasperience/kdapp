@@ -1,9 +1,9 @@
 #[path = "../src/episode.rs"]
 pub mod episode;
-#[path = "../src/storage.rs"]
-pub mod storage;
 #[path = "../src/script.rs"]
 pub mod script;
+#[path = "../src/storage.rs"]
+pub mod storage;
 
 use episode::{CustomerInfo, MerchantCommand, ReceiptEpisode};
 use kaspa_consensus_core::Hash;

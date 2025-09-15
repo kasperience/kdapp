@@ -1,6 +1,5 @@
 use kdapp::episode::TxOutputInfo;
 use kdapp::pki::PubKey;
-use secp256k1::XOnlyPublicKey;
 use thiserror::Error;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -222,7 +221,7 @@ pub fn enforce_payment_policy(
     let guardian_serialized: Vec<[u8; 33]> = guardian_keys.iter().map(|k| k.0.serialize()).collect();
     let merchant_xonly: Vec<[u8; 32]> = merchant_keys
         .iter()
-        .map(|k| XOnlyPublicKey::from_pubkey(&k.0).0.serialize())
+        .map(|k| k.0.x_only_public_key().0.serialize())
         .collect();
 
     let mut total_value = 0u64;

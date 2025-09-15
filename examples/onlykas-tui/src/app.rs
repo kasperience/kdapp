@@ -421,7 +421,6 @@ impl App {
         }
     }
 
-
     #[allow(dead_code)]
     pub async fn charge_subscription(&mut self) {
         if let Some(id) = self.selected_subscription_id() {
@@ -445,18 +444,9 @@ impl App {
     }
 
     pub fn open_watcher_config(&mut self) {
-        let max_fee = self
-            .watcher
-            .get("max_fee")
-            .and_then(|v| v.as_u64())
-            .map(|v| v.to_string())
-            .unwrap_or_default();
-        let congestion_threshold = self
-            .watcher
-            .get("congestion_threshold")
-            .and_then(|v| v.as_f64())
-            .map(|v| v.to_string())
-            .unwrap_or_default();
+        let max_fee = self.watcher.get("max_fee").and_then(|v| v.as_u64()).map(|v| v.to_string()).unwrap_or_default();
+        let congestion_threshold =
+            self.watcher.get("congestion_threshold").and_then(|v| v.as_f64()).map(|v| v.to_string()).unwrap_or_default();
         let mode = self
             .watcher
             .get("mode")
@@ -467,12 +457,7 @@ impl App {
                 _ => WatcherMode::Static,
             })
             .unwrap_or(WatcherMode::Static);
-        self.watcher_config = Some(WatcherConfigModal {
-            mode,
-            max_fee,
-            congestion_threshold,
-            field: WatcherField::MaxFee,
-        });
+        self.watcher_config = Some(WatcherConfigModal { mode, max_fee, congestion_threshold, field: WatcherField::MaxFee });
     }
 
     pub fn close_watcher_config(&mut self) {
@@ -481,16 +466,8 @@ impl App {
 
     pub async fn submit_watcher_config(&mut self) {
         if let Some(cfg) = self.watcher_config.take() {
-            let current_max = self
-                .watcher
-                .get("max_fee")
-                .and_then(|v| v.as_u64())
-                .unwrap_or_default();
-            let current_th = self
-                .watcher
-                .get("congestion_threshold")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0) as f32;
+            let current_max = self.watcher.get("max_fee").and_then(|v| v.as_u64()).unwrap_or_default();
+            let current_th = self.watcher.get("congestion_threshold").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
 
             let max_fee = if cfg.max_fee.trim().is_empty() {
                 current_max
@@ -612,12 +589,7 @@ impl App {
         }
     }
 
-    async fn poll_invoice_status(
-        app: Arc<AsyncMutex<App>>,
-        invoice_id: u64,
-        target: &str,
-        timeout: Duration,
-    ) -> bool {
+    async fn poll_invoice_status(app: Arc<AsyncMutex<App>>, invoice_id: u64, target: &str, timeout: Duration) -> bool {
         let start = Instant::now();
         loop {
             App::refresh_task(app.clone()).await;
@@ -627,9 +599,7 @@ impl App {
                     .invoices
                     .iter()
                     .find(|inv| {
-                        inv.get("id")
-                            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
-                            == Some(invoice_id)
+                        inv.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))) == Some(invoice_id)
                     })
                     .and_then(|inv| inv.get("status").and_then(|v| v.as_str()));
                 if status == Some(target) {
@@ -716,12 +686,7 @@ impl App {
     pub async fn dispute_invoice_task(app: Arc<AsyncMutex<App>>, invoice_id: u64) {
         let (client, merchant_url, guardian_url, api_key) = {
             let a = app.lock().await;
-            (
-                a.client.clone(),
-                a.merchant_url.clone(),
-                a.guardian_url.clone(),
-                a.api_key.clone(),
-            )
+            (a.client.clone(), a.merchant_url.clone(), a.guardian_url.clone(), a.api_key.clone())
         };
 
         let status = {
@@ -729,9 +694,7 @@ impl App {
             a.invoices
                 .iter()
                 .find(|inv| {
-                    inv.get("id")
-                        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
-                        == Some(invoice_id)
+                    inv.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))) == Some(invoice_id)
                 })
                 .and_then(|inv| inv.get("status").and_then(|v| v.as_str()))
                 .unwrap_or("")
@@ -756,9 +719,7 @@ impl App {
             a.invoices
                 .iter()
                 .find(|inv| {
-                    inv.get("id")
-                        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
-                        == Some(invoice_id)
+                    inv.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))) == Some(invoice_id)
                 })
                 .and_then(|inv| inv.get("status").and_then(|v| v.as_str()))
                 .unwrap_or("")

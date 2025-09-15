@@ -5,7 +5,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use kaspa_consensus_core::Hash;
 use kdapp::episode::{Episode, EpisodeError, PayloadMetadata};
 use kdapp::pki::PubKey;
-use crate::script::{self, ScriptError};
+use super::script::{self, ScriptError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 // Use a relative path so this module works when compiled
@@ -475,7 +475,6 @@ mod tests {
     use kaspa_consensus_core::Hash;
     use kdapp::episode::{PayloadMetadata, TxOutputInfo};
     use kdapp::pki::generate_keypair;
-    use secp256k1::XOnlyPublicKey;
 
     fn md() -> PayloadMetadata {
         PayloadMetadata {
@@ -663,7 +662,7 @@ mod tests {
             &metadata,
         )
         .unwrap();
-        let (xonly, _) = XOnlyPublicKey::from_pubkey(&pk_m.0);
+        let (xonly, _) = pk_m.0.x_only_public_key();
         let mut script = Vec::new();
         script.push(0x51); // OP_1
         script.push(0x4c);
