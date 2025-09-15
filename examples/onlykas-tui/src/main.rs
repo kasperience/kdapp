@@ -297,9 +297,16 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                         }
                     }
                     Action::Dispute => {
-                        // keep simple for now: reuse existing method synchronously
-                        let mut a = app.lock().await;
-                        a.dispute_invoice().await;
+                        let id = {
+                            let a = app.lock().await;
+                            a.selected_invoice_id()
+                        };
+                        if let Some(invoice_id) = id {
+                            let app2 = app.clone();
+                            tokio::spawn(async move {
+                                App::dispute_invoice_task(app2, invoice_id).await;
+                            });
+                        }
                     }
                     Action::WatcherConfig => {
                         let mut a = app.lock().await;
