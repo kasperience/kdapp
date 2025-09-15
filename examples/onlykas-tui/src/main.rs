@@ -180,6 +180,11 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
         }
         if event::poll(std::time::Duration::from_millis(50))? {
             if let event::Event::Key(key) = event::read()? {
+                // Ignore non-press events to avoid double input
+                if key.kind != event::KeyEventKind::Press {
+                    continue;
+                }
+
                 // Global shortcuts (work even when a modal is open)
                 if matches!(key.code, event::KeyCode::Char('q'))
                     || (matches!(key.code, event::KeyCode::Char('c')) && key.modifiers.contains(event::KeyModifiers::CONTROL))
