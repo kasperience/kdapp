@@ -424,7 +424,34 @@ impl App {
     }
 
     pub fn open_watcher_config(&mut self) {
-        self.watcher_config = Some(WatcherConfigModal::default());
+        let max_fee = self
+            .watcher
+            .get("max_fee")
+            .and_then(|v| v.as_u64())
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        let congestion_threshold = self
+            .watcher
+            .get("congestion_threshold")
+            .and_then(|v| v.as_f64())
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        let mode = self
+            .watcher
+            .get("mode")
+            .or_else(|| self.watcher.get("policy"))
+            .and_then(|v| v.as_str())
+            .map(|s| match s.to_lowercase().as_str() {
+                "congestion" => WatcherMode::Congestion,
+                _ => WatcherMode::Static,
+            })
+            .unwrap_or(WatcherMode::Static);
+        self.watcher_config = Some(WatcherConfigModal {
+            mode,
+            max_fee,
+            congestion_threshold,
+            field: WatcherField::MaxFee,
+        });
     }
 
     pub fn close_watcher_config(&mut self) {
@@ -433,39 +460,66 @@ impl App {
 
     pub async fn submit_watcher_config(&mut self) {
         if let Some(cfg) = self.watcher_config.take() {
-            if let (Ok(max_fee), Ok(th)) = (cfg.max_fee.parse::<u64>(), cfg.congestion_threshold.parse::<f32>()) {
-                if !(0.0..=1.0).contains(&th) {
-                    self.set_status("invalid config".into(), Color::Red);
-                    self.watcher_config = Some(cfg);
-                    return;
-                }
-                let body = json!({
-                    "mode": match cfg.mode {
-                        WatcherMode::Static => "static",
-                        WatcherMode::Congestion => "congestion",
-                    },
-                    "max_fee": max_fee,
-                    "congestion_threshold": th,
-                });
-                match self.post("/watcher-config").json(&body).send().await {
-                    Ok(resp) if resp.status().is_success() => {
-                        self.set_status("Watcher config updated".into(), Color::Green);
-                        self.refresh().await;
-                    }
-                    Ok(resp) if resp.status().as_u16() == 401 => {
-                        self.set_status("Unauthorized: set API key".into(), Color::Red);
-                        self.require_api_key_prompt();
-                    }
-                    Ok(resp) => {
-                        self.set_status(format!("Error: {}", resp.status()), Color::Red);
-                    }
-                    Err(e) => {
-                        self.set_status(format!("Error: {e}"), Color::Red);
-                    }
-                }
+            let current_max = self
+                .watcher
+                .get("max_fee")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_default();
+            let current_th = self
+                .watcher
+                .get("congestion_threshold")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0) as f32;
+
+            let max_fee = if cfg.max_fee.trim().is_empty() {
+                current_max
             } else {
-                self.set_status("invalid config".into(), Color::Red);
-                self.watcher_config = Some(cfg);
+                match cfg.max_fee.parse::<u64>() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        self.set_status("invalid max_fee".into(), Color::Red);
+                        self.watcher_config = Some(cfg);
+                        return;
+                    }
+                }
+            };
+
+            let th = if cfg.congestion_threshold.trim().is_empty() {
+                current_th
+            } else {
+                match cfg.congestion_threshold.parse::<f32>() {
+                    Ok(v) if (0.0..=1.0).contains(&v) => v,
+                    Ok(_) | Err(_) => {
+                        self.set_status("invalid congestion_threshold".into(), Color::Red);
+                        self.watcher_config = Some(cfg);
+                        return;
+                    }
+                }
+            };
+
+            let body = json!({
+                "mode": match cfg.mode {
+                    WatcherMode::Static => "static",
+                    WatcherMode::Congestion => "congestion",
+                },
+                "max_fee": max_fee,
+                "congestion_threshold": th,
+            });
+            match self.post("/watcher-config").json(&body).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    self.set_status("Watcher config updated".into(), Color::Green);
+                    self.refresh().await;
+                }
+                Ok(resp) if resp.status().as_u16() == 401 => {
+                    self.set_status("Unauthorized: set API key".into(), Color::Red);
+                    self.require_api_key_prompt();
+                }
+                Ok(resp) => {
+                    self.set_status(format!("Error: {}", resp.status()), Color::Red);
+                }
+                Err(e) => {
+                    self.set_status(format!("Error: {e}"), Color::Red);
+                }
             }
         }
     }
