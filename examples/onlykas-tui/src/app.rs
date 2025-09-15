@@ -209,21 +209,42 @@ impl App {
             }
             // Watcher metrics: prefer watcher_url if provided; otherwise fallback to merchant proxy endpoint
             if let Some(url) = &self.watcher_url {
-                if let Ok(resp) = self.client.get(format!("{url}/mempool")).send().await {
-                    if resp.status().is_success() {
-                        if let Ok(data) = resp.json::<Mempool>().await {
-                            self.watcher = data;
+                match self.client.get(format!("{url}/mempool")).send().await {
+                    Ok(resp) => {
+                        if resp.status().is_success() {
+                            if let Ok(data) = resp.json::<Mempool>().await {
+                                self.watcher = data;
+                            } else {
+                                self.watcher = json!({ "error": "unavailable" });
+                            }
+                        } else {
+                            self.watcher = json!({ "error": "unavailable" });
                         }
                     }
-                }
-            } else if let Ok(resp) = self.get("/mempool-metrics").send().await {
-                if resp.status().is_success() {
-                    if let Ok(data) = resp.json::<Mempool>().await {
-                        self.watcher = data;
+                    Err(_) => {
+                        self.watcher = json!({ "error": "unavailable" });
                     }
-                } else if resp.status().as_u16() == 401 {
-                    self.set_status("Unauthorized: set API key".into(), Color::Yellow);
-                    self.require_api_key_prompt();
+                }
+            } else {
+                match self.get("/mempool-metrics").send().await {
+                    Ok(resp) => {
+                        if resp.status().is_success() {
+                            if let Ok(data) = resp.json::<Mempool>().await {
+                                self.watcher = data;
+                            } else {
+                                self.watcher = json!({ "error": "unavailable" });
+                            }
+                        } else if resp.status().as_u16() == 401 {
+                            self.set_status("Unauthorized: set API key".into(), Color::Yellow);
+                            self.require_api_key_prompt();
+                            self.watcher = json!({ "error": "unavailable" });
+                        } else {
+                            self.watcher = json!({ "error": "unavailable" });
+                        }
+                    }
+                    Err(_) => {
+                        self.watcher = json!({ "error": "unavailable" });
+                    }
                 }
             }
         }
