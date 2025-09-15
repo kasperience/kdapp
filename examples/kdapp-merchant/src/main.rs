@@ -3,6 +3,7 @@ mod episode;
 mod handler;
 mod program_id;
 mod scheduler;
+mod script;
 mod server;
 mod sim_router;
 mod storage;
