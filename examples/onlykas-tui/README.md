@@ -127,7 +127,8 @@ Use `Left`/`Right` to change panels and `Up`/`Down` to navigate items within the
 
 ## Troubleshooting
 - Terminal must support Unicode block characters; without it the UI may misrender.
-- The logo uses Unicode blocks. If it looks misaligned, try a monospace font (Consolas, Cascadia Mono). Or set `ONLYKAS_TUI_ASCII=1` to use a simple ASCII logo.
+- The logo uses Unicode blocks. If it looks misaligned, try a monospace font (Consolas, Cascadia Mono).
+  Set `ONLYKAS_TUI_ASCII=0` to keep the block logo; any other value (or unset) uses a simple ASCII logo.
 - Color: The "KAS" part uses teal (RGB 0,128,128). Some terminals may approximate.
 - Preflight test: run `examples/scripts/smoke_onlykas.sh` to validate merchant+watcher+webhook locally before launching the TUI. It creates an invoice, simulates pay/ack, and checks webhook delivery.
 - Watcher panel shows `null` if the watcher is not running or TUI is not pointed to it. Either run `kdapp-merchant watcher --http-port <P>` and start TUI with `--watcher-url http://127.0.0.1:<P>`, or expose metrics from the merchant process itself.
