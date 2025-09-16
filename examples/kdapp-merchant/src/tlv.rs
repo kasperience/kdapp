@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub const DEMO_HMAC_KEY: &[u8] = b"kdapp-demo-secret";
 
 pub const TLV_VERSION: u8 = 1;
+pub const SCRIPT_POLICY_VERSION: u16 = 1;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -86,6 +87,7 @@ pub struct SubDisputeResolve {
 pub struct TlvMsg {
     pub version: u8,  // = TLV_VERSION
     pub msg_type: u8, // MsgType as u8
+    pub script_policy_version: u16,
     pub episode_id: u64,
     pub seq: u64,
     pub state_hash: [u8; 32],
@@ -95,10 +97,11 @@ pub struct TlvMsg {
 
 impl TlvMsg {
     fn bytes_for_sign(&self) -> Vec<u8> {
-        // version(1) | type(1) | episode_id(8) | seq(8) | state_hash(32) | payload_len(2) | payload
-        let mut v = Vec::with_capacity(1 + 1 + 8 + 8 + 32 + 2 + self.payload.len());
+        // version(1) | type(1) | script_policy_version(2) | episode_id(8) | seq(8) | state_hash(32) | payload_len(2) | payload
+        let mut v = Vec::with_capacity(1 + 1 + 2 + 8 + 8 + 32 + 2 + self.payload.len());
         v.push(self.version);
         v.push(self.msg_type);
+        v.extend_from_slice(&self.script_policy_version.to_le_bytes());
         v.extend_from_slice(&self.episode_id.to_le_bytes());
         v.extend_from_slice(&self.seq.to_le_bytes());
         v.extend_from_slice(&self.state_hash);
@@ -132,7 +135,7 @@ impl TlvMsg {
     }
 
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() < 1 + 1 + 8 + 8 + 32 + 2 + 32 {
+        if bytes.len() < 1 + 1 + 2 + 8 + 8 + 32 + 2 + 32 {
             return None;
         }
         let version = bytes[0];
@@ -141,20 +144,21 @@ impl TlvMsg {
             return None;
         }
         MsgType::from_u8(msg_type)?;
-        let episode_id = u64::from_le_bytes(bytes[2..10].try_into().ok()?);
-        let seq = u64::from_le_bytes(bytes[10..18].try_into().ok()?);
+        let script_policy_version = u16::from_le_bytes(bytes[2..4].try_into().ok()?);
+        let episode_id = u64::from_le_bytes(bytes[4..12].try_into().ok()?);
+        let seq = u64::from_le_bytes(bytes[12..20].try_into().ok()?);
         let mut state_hash = [0u8; 32];
-        state_hash.copy_from_slice(&bytes[18..50]);
-        let payload_len = u16::from_le_bytes(bytes[50..52].try_into().ok()?);
-        if bytes.len() < 52 + payload_len as usize + 32 {
+        state_hash.copy_from_slice(&bytes[20..52]);
+        let payload_len = u16::from_le_bytes(bytes[52..54].try_into().ok()?);
+        if bytes.len() < 54 + payload_len as usize + 32 {
             return None;
         }
-        let payload_start = 52;
+        let payload_start = 54;
         let payload_end = payload_start + payload_len as usize;
         let payload = bytes[payload_start..payload_end].to_vec();
         let mut auth = [0u8; 32];
         auth.copy_from_slice(&bytes[payload_end..payload_end + 32]);
-        Some(Self { version, msg_type, episode_id, seq, state_hash, payload, auth })
+        Some(Self { version, msg_type, script_policy_version, episode_id, seq, state_hash, payload, auth })
     }
 }
 

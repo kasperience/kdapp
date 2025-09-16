@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::episode::MerchantCommand;
-use crate::tlv::{MsgType, TlvMsg, TLV_VERSION};
+use crate::tlv::{MsgType, TlvMsg, SCRIPT_POLICY_VERSION, TLV_VERSION};
 
 /// Basic invoice request used for NFC/BLE taps.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +64,7 @@ pub fn encode_ble(req: &InvoiceRequest) -> Vec<u8> {
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Cmd as u8,
+        script_policy_version: SCRIPT_POLICY_VERSION,
         episode_id: 0,
         seq: 0,
         state_hash: [0u8; 32],

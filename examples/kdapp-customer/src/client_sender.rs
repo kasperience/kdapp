@@ -4,9 +4,9 @@ use std::time::Duration;
 use kdapp::engine::EpisodeMessage;
 
 use crate::episode::ReceiptEpisode;
-use crate::tlv::{MsgType, TlvMsg, TLV_VERSION};
+use crate::tlv::{MsgType, TlvMsg, SCRIPT_POLICY_VERSION, TLV_VERSION};
 
-pub fn send_with_retry_on(sock: &UdpSocket, dest: &str, mut tlv: TlvMsg, key: &[u8]) {
+pub fn send_with_retry_on(sock: &UdpSocket, dest: &str, mut tlv: TlvMsg, key: &[u8]) -> Option<TlvMsg> {
     tlv.sign(key);
     let expected = MsgType::Ack as u8;
     let bytes = tlv.encode();
@@ -19,7 +19,7 @@ pub fn send_with_retry_on(sock: &UdpSocket, dest: &str, mut tlv: TlvMsg, key: &[
             if let Some(ack) = TlvMsg::decode(&buf[..n]) {
                 if ack.msg_type == expected && ack.episode_id == tlv.episode_id && ack.seq == tlv.seq && ack.verify(key) {
                     println!("ack received for ep {} seq {}", tlv.episode_id, tlv.seq);
-                    return;
+                    return Some(ack);
                 }
             }
         }
@@ -29,12 +29,13 @@ pub fn send_with_retry_on(sock: &UdpSocket, dest: &str, mut tlv: TlvMsg, key: &[
         }
     }
     eprintln!("ack failed for ep {} seq {}", tlv.episode_id, tlv.seq);
+    None
 }
 
 #[allow(dead_code)]
-pub fn send_with_retry(dest: &str, tlv: TlvMsg, key: &[u8]) {
+pub fn send_with_retry(dest: &str, tlv: TlvMsg, key: &[u8]) -> Option<TlvMsg> {
     let sock = UdpSocket::bind("0.0.0.0:0").expect("bind sender");
-    send_with_retry_on(&sock, dest, tlv, key);
+    send_with_retry_on(&sock, dest, tlv, key)
 }
 
 #[allow(dead_code)]
@@ -43,20 +44,22 @@ pub fn send_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<Recei
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Cmd as u8,
+        script_policy_version: SCRIPT_POLICY_VERSION,
         episode_id,
         seq,
         state_hash: [0u8; 32],
         payload,
         auth: [0u8; 32],
     };
-    send_with_retry(dest, tlv, key);
+    let _ = send_with_retry(dest, tlv, key);
 }
 
 #[allow(dead_code)]
-pub fn handshake(dest: &str, key: &[u8]) {
+pub fn handshake(dest: &str, key: &[u8]) -> Option<u16> {
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Handshake as u8,
+        script_policy_version: SCRIPT_POLICY_VERSION,
         episode_id: 0,
         seq: 0,
         state_hash: [0u8; 32],
@@ -64,20 +67,21 @@ pub fn handshake(dest: &str, key: &[u8]) {
         auth: [0u8; 32],
     };
     // Sign using the same key; router does not verify handshake auth but will sign the Ack
-    send_with_retry(dest, tlv, key);
+    send_with_retry(dest, tlv, key).map(|ack| ack.script_policy_version)
 }
 
-pub fn handshake_on(sock: &UdpSocket, dest: &str, key: &[u8]) {
+pub fn handshake_on(sock: &UdpSocket, dest: &str, key: &[u8]) -> Option<u16> {
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Handshake as u8,
+        script_policy_version: SCRIPT_POLICY_VERSION,
         episode_id: 0,
         seq: 0,
         state_hash: [0u8; 32],
         payload: key.to_vec(),
         auth: [0u8; 32],
     };
-    send_with_retry_on(sock, dest, tlv, key);
+    send_with_retry_on(sock, dest, tlv, key).map(|ack| ack.script_policy_version)
 }
 
 #[allow(dead_code)]
@@ -86,13 +90,14 @@ pub fn send_new(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<Recei
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::New as u8,
+        script_policy_version: SCRIPT_POLICY_VERSION,
         episode_id,
         seq,
         state_hash: [0u8; 32],
         payload,
         auth: [0u8; 32],
     };
-    send_with_retry(dest, tlv, key);
+    let _ = send_with_retry(dest, tlv, key);
 }
 
 pub fn send_cmd_on(sock: &UdpSocket, dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>, key: &[u8]) {
@@ -100,13 +105,14 @@ pub fn send_cmd_on(sock: &UdpSocket, dest: &str, episode_id: u64, seq: u64, msg:
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Cmd as u8,
+        script_policy_version: SCRIPT_POLICY_VERSION,
         episode_id,
         seq,
         state_hash: [0u8; 32],
         payload,
         auth: [0u8; 32],
     };
-    send_with_retry_on(sock, dest, tlv, key);
+    let _ = send_with_retry_on(sock, dest, tlv, key);
 }
 
 pub fn send_new_on(sock: &UdpSocket, dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<ReceiptEpisode>, key: &[u8]) {
@@ -114,11 +120,12 @@ pub fn send_new_on(sock: &UdpSocket, dest: &str, episode_id: u64, seq: u64, msg:
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::New as u8,
+        script_policy_version: SCRIPT_POLICY_VERSION,
         episode_id,
         seq,
         state_hash: [0u8; 32],
         payload,
         auth: [0u8; 32],
     };
-    send_with_retry_on(sock, dest, tlv, key);
+    let _ = send_with_retry_on(sock, dest, tlv, key);
 }

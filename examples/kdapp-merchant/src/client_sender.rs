@@ -4,7 +4,7 @@ use std::time::Duration;
 use kdapp::engine::EpisodeMessage;
 
 use crate::episode::ReceiptEpisode;
-use crate::tlv::{MsgType, TlvMsg, TLV_VERSION};
+use crate::tlv::{MsgType, TlvMsg, SCRIPT_POLICY_VERSION, TLV_VERSION};
 
 /// Send a TLV message over UDP and retry if no acknowledgement is received.
 pub fn send_with_retry(dest: &str, mut tlv: TlvMsg, expect_close_ack: bool, key: &[u8], sign: bool) {
@@ -40,6 +40,7 @@ pub fn handshake(dest: &str, key: &[u8]) {
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Handshake as u8,
+        script_policy_version: SCRIPT_POLICY_VERSION,
         episode_id: 0,
         seq: 0,
         state_hash: [0u8; 32],
@@ -55,6 +56,7 @@ pub fn send_cmd(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<Recei
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Cmd as u8,
+        script_policy_version: SCRIPT_POLICY_VERSION,
         episode_id,
         seq,
         state_hash: [0u8; 32],
@@ -70,6 +72,7 @@ pub fn send_new(dest: &str, episode_id: u64, seq: u64, msg: EpisodeMessage<Recei
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::New as u8,
+        script_policy_version: SCRIPT_POLICY_VERSION,
         episode_id,
         seq,
         state_hash: [0u8; 32],
@@ -84,6 +87,7 @@ pub fn send_close(dest: &str, episode_id: u64, seq: u64, key: &[u8]) {
     let tlv = TlvMsg {
         version: TLV_VERSION,
         msg_type: MsgType::Close as u8,
+        script_policy_version: SCRIPT_POLICY_VERSION,
         episode_id,
         seq,
         state_hash: [0u8; 32],

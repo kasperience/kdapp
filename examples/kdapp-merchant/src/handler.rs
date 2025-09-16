@@ -8,7 +8,7 @@ use kdapp::pki::{to_message, verify_signature, PubKey, Sig};
 use crate::client_sender;
 use crate::episode::{MerchantCommand, ReceiptEpisode};
 use crate::storage;
-use crate::tlv::{hash_state, MsgType, TlvMsg, DEMO_HMAC_KEY, TLV_VERSION};
+use crate::tlv::{hash_state, MsgType, TlvMsg, DEMO_HMAC_KEY, SCRIPT_POLICY_VERSION, TLV_VERSION};
 use kdapp_guardian::{self as guardian};
 
 pub struct MerchantEventHandler;
@@ -66,6 +66,7 @@ fn emit_checkpoint(episode_id: EpisodeId, episode: &ReceiptEpisode, force: bool)
         let msg = TlvMsg {
             version: TLV_VERSION,
             msg_type: MsgType::Checkpoint as u8,
+            script_policy_version: SCRIPT_POLICY_VERSION,
             episode_id: episode_id as u64,
             seq: *seq,
             state_hash,

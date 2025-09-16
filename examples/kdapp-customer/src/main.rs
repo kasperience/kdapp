@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 use client_sender::{handshake_on, send_cmd_on, send_new_on};
 use std::net::UdpSocket;
-use tlv::DEMO_HMAC_KEY;
+use tlv::{DEMO_HMAC_KEY, SCRIPT_POLICY_VERSION};
 
 #[derive(Parser, Debug)]
 #[command(name = "kdapp-customer", about = "Interact with merchant invoices")]
@@ -102,6 +102,18 @@ fn parse_public_key(hex: &str) -> Option<PubKey> {
     }
 }
 
+fn warn_if_outdated(remote_version: Option<u16>) {
+    if let Some(remote) = remote_version {
+        if remote > SCRIPT_POLICY_VERSION {
+            log::warn!(
+                "router requires script policy v{} but client only supports v{}; upgrade kdapp-customer",
+                remote,
+                SCRIPT_POLICY_VERSION
+            );
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -136,7 +148,7 @@ async fn main() {
         }
         Command::Create { episode_id, invoice_id, amount, memo, merchant_private_key } => {
             let sock = UdpSocket::bind("0.0.0.0:0").expect("bind sender");
-            handshake_on(&sock, &args.dest, DEMO_HMAC_KEY);
+            warn_if_outdated(handshake_on(&sock, &args.dest, DEMO_HMAC_KEY));
             let sk = parse_secret_key(&merchant_private_key).expect("invalid private key");
             let secp = Secp256k1::new();
             let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));
@@ -156,7 +168,7 @@ async fn main() {
         Command::Pay { episode_id, invoice_id, payer_private_key } => {
             // Use one UDP socket for handshake + subsequent signed messages (stable src addr)
             let sock = UdpSocket::bind("0.0.0.0:0").expect("bind sender");
-            handshake_on(&sock, &args.dest, DEMO_HMAC_KEY);
+            warn_if_outdated(handshake_on(&sock, &args.dest, DEMO_HMAC_KEY));
             let sk = parse_secret_key(&payer_private_key).expect("invalid private key");
             let secp = Secp256k1::new();
             let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));
@@ -175,7 +187,7 @@ async fn main() {
         Command::Ack { episode_id, invoice_id, merchant_private_key } => {
             // Use one UDP socket for handshake + subsequent signed messages (stable src addr)
             let sock = UdpSocket::bind("0.0.0.0:0").expect("bind sender");
-            handshake_on(&sock, &args.dest, DEMO_HMAC_KEY);
+            warn_if_outdated(handshake_on(&sock, &args.dest, DEMO_HMAC_KEY));
             let sk = parse_secret_key(&merchant_private_key).expect("invalid private key");
             let secp = Secp256k1::new();
             let pk = PubKey(secp256k1::PublicKey::from_secret_key(&secp, &sk));
