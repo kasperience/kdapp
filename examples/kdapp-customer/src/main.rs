@@ -106,9 +106,7 @@ fn warn_if_outdated(remote_version: Option<u16>) {
     if let Some(remote) = remote_version {
         if remote > SCRIPT_POLICY_VERSION {
             log::warn!(
-                "router requires script policy v{} but client only supports v{}; upgrade kdapp-customer",
-                remote,
-                SCRIPT_POLICY_VERSION
+                "router requires script policy v{remote} but client only supports v{SCRIPT_POLICY_VERSION}; upgrade kdapp-customer"
             );
         }
     }
