@@ -97,7 +97,14 @@ kdapp-merchant serve \
   --merchant-private-key <hex>
 ```
 
-Endpoints use `x-api-key` for authentication:
+Endpoints require authentication via either:
+
+- `X-API-Key: <token>` matching the configured server API key, or
+- a valid session token presented as `Authorization: Bearer <token>`,
+  `X-Session-Token: <token>`, or a `merchant_session=<token>` cookie.
+
+Policy endpoints accept the same credentials, enabling UI clients that rely on
+session tokens issued by an authentication flow.
 
 | Endpoint | Description |
 | -------- | ----------- |
@@ -112,6 +119,30 @@ Endpoints use `x-api-key` for authentication:
 | `GET /subscriptions` | List subscriptions |
 | `POST /watcher-config` | Override watcher `max_fee` or `congestion_threshold` |
 | `GET /mempool-metrics` | Fetch mempool metrics snapshot |
+| `POST /policy/templates` | Upsert an allowed script template `{template_id, script_hex, description?}` |
+| `GET /policy/templates` | List stored script templates |
+| `DELETE /policy/templates/:id` | Remove a stored script template |
+
+### Script template schema
+
+`POST /policy/templates` accepts JSON payloads shaped as:
+
+```json
+{
+  "template_id": "merchant_p2pk",
+  "script_hex": "4104...ac",
+  "description": "Optional operator notes"
+}
+```
+
+- `template_id` must match the whitelist: `merchant_p2pk`,
+  `merchant_guardian_multisig`, or `merchant_taproot`.
+- `script_hex` is the canonical hex encoding of the script template that will be
+  enforced when invoices are paid.
+- `description` is optional and stored verbatim for operator reference.
+
+Session tokens are stored hashed on disk. Seed them via an administrative task
+or an authentication integration before relying on session-based access.
 
 Example usage:
 
