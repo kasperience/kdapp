@@ -98,6 +98,39 @@ append_env GUARDIAN_PORT "$GUARDIAN_PORT" >/dev/null 2>&1 || true
 export MERCHANT_DB_PATH
 export RUST_LOG=${RUST_LOG:-info,kdapp=info,kdapp_merchant=info}
 
+# Prepare a customer record before long-lived services grab the sled lock
+CUSTOMER_SK=$(hex 32)
+CUSTOMER_INFO=$(cargo run -p kdapp-merchant -- register-customer --customer-private-key "$CUSTOMER_SK")
+REGISTER_STATUS=$?
+echo "$CUSTOMER_INFO"
+if [[ $REGISTER_STATUS -ne 0 ]]; then
+  echo "Failed to register demo customer; is another kdapp-merchant using $MERCHANT_DB_PATH?" >&2
+  echo "Stop existing onlykas processes with '--stop' and rerun." >&2
+  exit $REGISTER_STATUS
+fi
+CUSTOMER_PK=$(echo "$CUSTOMER_INFO" | grep 'registered customer pubkey' | awk '{print $4}')
+
+PIDS=()
+cleanup() {
+  local exit_code=$?
+  for pid in "${PIDS[@]}"; do
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      if children=$(pgrep -P "$pid" 2>/dev/null); then
+        for child in $children; do
+          kill "$child" 2>/dev/null || true
+        done
+      fi
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
+  if ((${#PIDS[@]})); then
+    wait "${PIDS[@]}" 2>/dev/null || true
+    echo "Stopped background onlykas services"
+  fi
+  return $exit_code
+}
+trap cleanup EXIT
+
 NET_ARGS=()
 [[ "$MAINNET" == "1" ]] && NET_ARGS+=("--mainnet")
 
@@ -140,6 +173,7 @@ else
     ${NET_ARGS[@]:-} \
     > "$LOG_PREFIX/merchant-serve.out" 2> "$LOG_PREFIX/merchant-serve.err" &
 fi
+PIDS+=($!)
 sleep 1
 
 # Start watcher (UDP + HTTP metrics)
@@ -160,6 +194,7 @@ else
     --http-port "$WATCHER_PORT" \
     > "$LOG_PREFIX/watcher.out" 2> "$LOG_PREFIX/watcher.err" &
 fi
+PIDS+=($!)
 sleep 1
 
 # Start guardian (optional demo service)
@@ -174,6 +209,7 @@ else
     --http-port "$GUARDIAN_PORT" \
     > "$LOG_PREFIX/guardian.out" 2> "$LOG_PREFIX/guardian.err" &
 fi
+PIDS+=($!)
 sleep 1
 
 echo "API key:        $API_KEY"
@@ -188,20 +224,18 @@ if [[ "${DEBUG:-0}" == "1" ]]; then
 fi
 
 # Seed a demo subscription for testing
-CUSTOMER_SK=$(hex 32)
-CUSTOMER_INFO=$(cargo run -p kdapp-merchant -- register-customer --customer-private-key "$CUSTOMER_SK")
-echo "$CUSTOMER_INFO"
-CUSTOMER_PK=$(echo "$CUSTOMER_INFO" | grep 'registered customer pubkey' | awk '{print $4}')
-if curl -s -f -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+if [[ -n "$CUSTOMER_PK" ]]; then
+  if curl -s -f -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
   -d "{\"subscription_id\":1,\"customer_public_key\":\"$CUSTOMER_PK\",\"amount\":1000,\"interval\":60}" \
   "http://127.0.0.1:$MERCHANT_PORT/subscribe" >/dev/null; then
-  echo "Seeded demo subscription (id=1)"
-else
-  echo "Failed to seed demo subscription"
+    echo "Seeded demo subscription (id=1)"
+  else
+    echo "Failed to seed demo subscription"
+  fi
 fi
 
-# Launch TUI in foreground
-exec cargo run -p onlykas-tui -- \
+# Launch TUI in foreground and ensure cleanup afterwards
+cargo run -p onlykas-tui -- \
   --merchant-url http://127.0.0.1:"$MERCHANT_PORT" \
   --guardian-url http://127.0.0.1:"$GUARDIAN_PORT" \
   --watcher-url http://127.0.0.1:"$WATCHER_PORT" \

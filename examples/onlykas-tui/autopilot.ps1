@@ -90,91 +90,133 @@ Append-EnvLine -Path $EnvPath -Key 'MERCHANT_PORT' -Value $MerchantPort
 Append-EnvLine -Path $EnvPath -Key 'WEBHOOK_PORT' -Value $WebhookPort
 Append-EnvLine -Path $EnvPath -Key 'GUARDIAN_PORT' -Value $GuardianPort
 
+$customerPk = $null
+$customerSk = New-Hex -Bytes 32
+# Seed a customer before starting long-lived services so the sled DB lock is held by at most one process
+$customerOutput = & cargo run -p kdapp-merchant -- register-customer --customer-private-key $customerSk
+$registerExit = $LASTEXITCODE
+$customerOutput | ForEach-Object { Write-Host $_ }
+if ($registerExit -ne 0) {
+  Write-Host "Failed to register demo customer; is another kdapp-merchant process using $($env:MERCHANT_DB_PATH)?" -ForegroundColor Red
+  Write-Host "Stop existing onlykas processes with 'examples/onlykas-tui/autopilot.ps1 -Stop' and rerun." -ForegroundColor Yellow
+  exit $registerExit
+}
+$pkLine = $customerOutput | Select-String 'registered customer pubkey'
+if ($pkLine) {
+  $customerPk = $pkLine.ToString().Split(':')[1].Trim()
+}
+
 $netArgs = @()
 if ($Mainnet) { $netArgs += "--mainnet" }
 
 if (-not $env:RUST_LOG) { $env:RUST_LOG = 'info,kdapp=info,kdapp_merchant=info' }
 
-# Start merchant server + proxy in one process (shared engine)
-$merchantArgs = @("run","-p","kdapp-merchant","--","serve-proxy",
-  "--bind","127.0.0.1:$MerchantPort",
-  "--episode-id","$EpisodeId",
-  "--api-key","$ApiKey",
-  "--merchant-private-key","$MerchantSk",
-  "--webhook-url","http://127.0.0.1:$WebhookPort/hook",
-  "--webhook-secret","$WebhookSecret"
-)
-if ($WrpcUrl -and $WrpcUrl -ne 'wss://node:port') { $merchantArgs += @("--wrpc-url", $WrpcUrl) }
-if ($Mainnet) { $merchantArgs += "--mainnet" }
-Start-Process -FilePath cargo -ArgumentList $merchantArgs -NoNewWindow -RedirectStandardOutput merchant-serve.out -RedirectStandardError merchant-serve.err
+$spawnedProcs = @()
+$logTailJobs = @()
+try {
+  # Start merchant server + proxy in one process (shared engine)
+  $merchantArgs = @("run","-p","kdapp-merchant","--","serve-proxy",
+    "--bind","127.0.0.1:$MerchantPort",
+    "--episode-id","$EpisodeId",
+    "--api-key","$ApiKey",
+    "--merchant-private-key","$MerchantSk",
+    "--webhook-url","http://127.0.0.1:$WebhookPort/hook",
+    "--webhook-secret","$WebhookSecret"
+  )
+  if ($WrpcUrl -and $WrpcUrl -ne 'wss://node:port') { $merchantArgs += @("--wrpc-url", $WrpcUrl) }
+  if ($Mainnet) { $merchantArgs += "--mainnet" }
+  $spawnedProcs += Start-Process -FilePath cargo -ArgumentList $merchantArgs -NoNewWindow -RedirectStandardOutput merchant-serve.out -RedirectStandardError merchant-serve.err -PassThru
 
-Start-Sleep -Seconds 2
+  Start-Sleep -Seconds 2
 
-# Start watcher (UDP listener + optional HTTP metrics)
-$watcherArgs = @("run","-p","kdapp-merchant","--","watcher",
-  "--bind","127.0.0.1:9590",
-  "--kaspa-private-key",$KaspaSk,
-  "--http-port",$WatcherPort
-)
-if ($WrpcUrl -and $WrpcUrl -ne 'wss://node:port') { $watcherArgs += @("--wrpc-url", $WrpcUrl) }
-if ($Mainnet) { $watcherArgs += "--mainnet" }
-Start-Process -FilePath cargo -ArgumentList $watcherArgs -NoNewWindow -RedirectStandardOutput watcher.out -RedirectStandardError watcher.err
+  # Start watcher (UDP listener + optional HTTP metrics)
+  $watcherArgs = @("run","-p","kdapp-merchant","--","watcher",
+    "--bind","127.0.0.1:9590",
+    "--kaspa-private-key",$KaspaSk,
+    "--http-port",$WatcherPort
+  )
+  if ($WrpcUrl -and $WrpcUrl -ne 'wss://node:port') { $watcherArgs += @("--wrpc-url", $WrpcUrl) }
+  if ($Mainnet) { $watcherArgs += "--mainnet" }
+  $spawnedProcs += Start-Process -FilePath cargo -ArgumentList $watcherArgs -NoNewWindow -RedirectStandardOutput watcher.out -RedirectStandardError watcher.err -PassThru
 
-# Start guardian
-$guardianArgs = @("run","-p","kdapp-guardian","--bin","guardian-service","--",
-  "--listen-addr","127.0.0.1:$GuardianPort",
-  "--http-port",$GuardianPort
-)
-Start-Process -FilePath cargo -ArgumentList $guardianArgs -NoNewWindow -RedirectStandardOutput guardian.out -RedirectStandardError guardian.err
+  # Start guardian
+  $guardianArgs = @("run","-p","kdapp-guardian","--bin","guardian-service","--",
+    "--listen-addr","127.0.0.1:$GuardianPort",
+    "--http-port",$GuardianPort
+  )
+  $spawnedProcs += Start-Process -FilePath cargo -ArgumentList $guardianArgs -NoNewWindow -RedirectStandardOutput guardian.out -RedirectStandardError guardian.err -PassThru
 
-Start-Sleep -Seconds 2
+  Start-Sleep -Seconds 2
 
-# Optionally start a guardian demo (no-op metrics)
-# $guardianArgs = @("run","-p","kdapp-guardian","--bin","guardian-service","--","--listen-addr","127.0.0.1:$GuardianPort")
-# Start-Process -FilePath cargo -ArgumentList $guardianArgs -NoNewWindow -RedirectStandardOutput guardian.out -RedirectStandardError guardian.err
+  # Optionally start a guardian demo (no-op metrics)
+  # $guardianArgs = @("run","-p","kdapp-guardian","--bin","guardian-service","--","--listen-addr","127.0.0.1:$GuardianPort")
+  # Start-Process -FilePath cargo -ArgumentList $guardianArgs -NoNewWindow -RedirectStandardOutput guardian.out -RedirectStandardError guardian.err
 
-Write-Host "API key:        $ApiKey" -ForegroundColor Cyan
-Write-Host "Webhook secret: $WebhookSecret" -ForegroundColor Cyan
-Write-Host "Merchant SK:    $MerchantSk" -ForegroundColor DarkGray
-Write-Host "Kaspa SK:       $KaspaSk" -ForegroundColor DarkGray
-Write-Host "Episode ID:     $EpisodeId" -ForegroundColor Cyan
-Write-Host "Merchant URL:   http://127.0.0.1:$MerchantPort" -ForegroundColor Cyan
-if ($Debug) {
-  Write-Host -NoNewline "Kaspa Address:  "
-  & cargo run -p kdapp-merchant -- kaspa-addr --kaspa-private-key $KaspaSk @($netArgs)
+  Write-Host "API key:        $ApiKey" -ForegroundColor Cyan
+  Write-Host "Webhook secret: $WebhookSecret" -ForegroundColor Cyan
+  Write-Host "Merchant SK:    $MerchantSk" -ForegroundColor DarkGray
+  Write-Host "Kaspa SK:       $KaspaSk" -ForegroundColor DarkGray
+  Write-Host "Episode ID:     $EpisodeId" -ForegroundColor Cyan
+  Write-Host "Merchant URL:   http://127.0.0.1:$MerchantPort" -ForegroundColor Cyan
+  if ($Debug) {
+    Write-Host -NoNewline "Kaspa Address:  "
+    & cargo run -p kdapp-merchant -- kaspa-addr --kaspa-private-key $KaspaSk @($netArgs)
+  }
+
+  if ($customerPk) {
+    try {
+      Invoke-RestMethod -Uri "http://127.0.0.1:$MerchantPort/subscribe" -Method Post -Headers @{ "X-API-Key" = $ApiKey } -ContentType "application/json" -Body (@{subscription_id=1; customer_public_key=$customerPk; amount=1000; interval=60} | ConvertTo-Json) | Out-Null
+      Write-Host "Seeded demo subscription (id=1)" -ForegroundColor DarkGray
+    } catch {
+      Write-Host "Failed to seed demo subscription" -ForegroundColor DarkGray
+    }
+  }
+
+  Write-Host "Starting onlykas-tui ..." -ForegroundColor Green
+  $tuiArgs = @("run","-p","onlykas-tui","--",
+    "--merchant-url","http://127.0.0.1:$MerchantPort",
+    "--guardian-url","http://127.0.0.1:$GuardianPort",
+    "--watcher-url","http://127.0.0.1:$WatcherPort",
+    "--webhook-secret","$WebhookSecret",
+    "--api-key","$ApiKey",
+    "--webhook-port","$WebhookPort"
+  )
+  if ($Debug) {
+    $logTailJobs += Start-Job -ScriptBlock { Get-Content -Path 'merchant-serve.out' -Wait }
+    $logTailJobs += Start-Job -ScriptBlock { Get-Content -Path 'merchant-serve.err' -Wait }
+    $logTailJobs += Start-Job -ScriptBlock { Get-Content -Path 'watcher.out' -Wait }
+    $logTailJobs += Start-Job -ScriptBlock { Get-Content -Path 'watcher.err' -Wait }
+    $logTailJobs += Start-Job -ScriptBlock { Get-Content -Path 'guardian.out' -Wait }
+    $logTailJobs += Start-Job -ScriptBlock { Get-Content -Path 'guardian.err' -Wait }
+  }
+  # Run TUI in the same window so keypresses and environment apply here
+  & cargo @tuiArgs
 }
-
-# Seed a demo subscription for testing
-$customerSk = New-Hex -Bytes 32
-$customerOutput = & cargo run -p kdapp-merchant -- register-customer --customer-private-key $customerSk
-$customerOutput | ForEach-Object { Write-Host $_ }
-$pkLine = $customerOutput | Select-String 'registered customer pubkey'
-if ($pkLine) {
-  $customerPk = $pkLine.ToString().Split(':')[1].Trim()
-  try {
-    Invoke-RestMethod -Uri "http://127.0.0.1:$MerchantPort/subscribe" -Method Post -Headers @{ "X-API-Key" = $ApiKey } -ContentType "application/json" -Body (@{subscription_id=1; customer_public_key=$customerPk; amount=1000; interval=60} | ConvertTo-Json) | Out-Null
-    Write-Host "Seeded demo subscription (id=1)" -ForegroundColor DarkGray
-  } catch {
-    Write-Host "Failed to seed demo subscription" -ForegroundColor DarkGray
+finally {
+  foreach ($job in $logTailJobs) {
+    if ($null -ne $job) {
+      try {
+        Stop-Job -Job $job -Force -ErrorAction SilentlyContinue
+      } catch {}
+      try {
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+      } catch {}
+    }
+  }
+  foreach ($proc in $spawnedProcs) {
+    if ($proc -and -not $proc.HasExited) {
+      try {
+        $children = Get-CimInstance -ClassName Win32_Process -Filter "ParentProcessId=$($proc.Id)" -ErrorAction SilentlyContinue
+        foreach ($child in $children) {
+          try {
+            Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+          } catch {}
+        }
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+      } catch {}
+    }
+  }
+  if ($spawnedProcs.Count -gt 0) {
+    Write-Host "Stopped background onlykas services" -ForegroundColor DarkGray
   }
 }
-
-Write-Host "Starting onlykas-tui ..." -ForegroundColor Green
-$tuiArgs = @("run","-p","onlykas-tui","--",
-  "--merchant-url","http://127.0.0.1:$MerchantPort",
-  "--guardian-url","http://127.0.0.1:$GuardianPort",
-  "--watcher-url","http://127.0.0.1:$WatcherPort",
-  "--webhook-secret","$WebhookSecret",
-  "--api-key","$ApiKey",
-  "--webhook-port","$WebhookPort"
-)
-if ($Debug) {
-  Start-Job -ScriptBlock { Get-Content -Path 'merchant-serve.out' -Wait } | Out-Null
-  Start-Job -ScriptBlock { Get-Content -Path 'merchant-serve.err' -Wait } | Out-Null
-  Start-Job -ScriptBlock { Get-Content -Path 'watcher.out' -Wait } | Out-Null
-  Start-Job -ScriptBlock { Get-Content -Path 'watcher.err' -Wait } | Out-Null
-  Start-Job -ScriptBlock { Get-Content -Path 'guardian.out' -Wait } | Out-Null
-  Start-Job -ScriptBlock { Get-Content -Path 'guardian.err' -Wait } | Out-Null
-}
-# Run TUI in the same window so keypresses and environment apply here
-& cargo @tuiArgs
