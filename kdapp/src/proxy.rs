@@ -13,12 +13,12 @@ use lru::LruCache;
 use log::{debug, info, warn};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
     Arc,
 };
-use std::num::NonZeroUsize;
 use std::time::Duration;
 use tokio::time::{sleep_until, Instant};
 

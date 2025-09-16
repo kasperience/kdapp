@@ -131,10 +131,7 @@ pub async fn serve(bind: String, state: AppState) -> Result<(), Box<dyn std::err
         .route("/mempool-metrics", get(mempool_metrics))
         .route("/attestations", get(list_attestations))
         .route("/attest", post(submit_attestation))
-        .route(
-            "/policy/templates",
-            post(upsert_policy_template).get(list_policy_templates),
-        )
+        .route("/policy/templates", post(upsert_policy_template).get(list_policy_templates))
         .route("/policy/templates/{template_id}", delete(remove_policy_template))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(bind).await?;
@@ -415,26 +412,18 @@ async fn upsert_policy_template(
         return Err(StatusCode::BAD_REQUEST);
     }
     let normalized = script::normalize_script_bytes(&raw_bytes).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let template = ScriptTemplate {
-        template_id: template_id.to_ascii_lowercase(),
-        script_bytes: normalized,
-        description: req.description,
-    };
+    let template =
+        ScriptTemplate { template_id: template_id.to_ascii_lowercase(), script_bytes: normalized, description: req.description };
     match storage::put_script_template(&template) {
         Ok(_) => Ok(StatusCode::NO_CONTENT),
         Err(TemplateStoreError::InvalidIdentifier) => Err(StatusCode::BAD_REQUEST),
         Err(TemplateStoreError::EmptyScript) => Err(StatusCode::BAD_REQUEST),
         Err(TemplateStoreError::NotAllowed(_)) => Err(StatusCode::FORBIDDEN),
-        Err(TemplateStoreError::Serialize) | Err(TemplateStoreError::Db(_)) => {
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Err(TemplateStoreError::Serialize) | Err(TemplateStoreError::Db(_)) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
-async fn list_policy_templates(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<Vec<ScriptTemplateOut>>, StatusCode> {
+async fn list_policy_templates(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Vec<ScriptTemplateOut>>, StatusCode> {
     authorize(&headers, &state)?;
     let templates = storage::load_script_templates();
     let mut out = Vec::with_capacity(templates.len());

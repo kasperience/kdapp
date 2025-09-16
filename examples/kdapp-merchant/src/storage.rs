@@ -18,8 +18,7 @@ use thiserror::Error;
 const SCRIPT_TEMPLATES_TREE: &str = "script_templates";
 const SESSION_TOKENS_TREE: &str = "session_tokens";
 
-pub const SCRIPT_TEMPLATE_WHITELIST: &[&str] =
-    &["merchant_p2pk", "merchant_guardian_multisig", "merchant_taproot"];
+pub const SCRIPT_TEMPLATE_WHITELIST: &[&str] = ["merchant_p2pk", "merchant_guardian_multisig", "merchant_taproot"];
 
 // Allows running multiple merchant processes concurrently by overriding the DB path.
 // Set MERCHANT_DB_PATH to a unique directory per process (e.g., merchant-udp.db, merchant-tcp.db).
@@ -204,9 +203,7 @@ fn canonical_template_id(id: &str) -> String {
 }
 
 fn template_allowed(id: &str) -> bool {
-    SCRIPT_TEMPLATE_WHITELIST
-        .iter()
-        .any(|allowed| allowed.eq_ignore_ascii_case(id))
+    SCRIPT_TEMPLATE_WHITELIST.iter().any(|allowed| allowed.eq_ignore_ascii_case(id))
 }
 
 pub fn put_script_template(template: &ScriptTemplate) -> Result<(), TemplateStoreError> {
@@ -285,8 +282,6 @@ pub fn session_token_exists(token: &str) -> bool {
     if token.is_empty() {
         return false;
     }
-    let tree = DB
-        .open_tree(SESSION_TOKENS_TREE)
-        .expect("session tokens tree");
+    let tree = DB.open_tree(SESSION_TOKENS_TREE).expect("session tokens tree");
     tree.contains_key(session_token_key(token)).unwrap_or(false)
 }
