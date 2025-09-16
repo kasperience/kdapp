@@ -11,6 +11,7 @@ use clap::Parser;
 use kaspa_consensus_core::network::{NetworkId, NetworkType};
 use kaspa_rpc_core::api::rpc::RpcApi;
 use kaspa_wrpc_client::client::KaspaRpcClient;
+use kdapp::pki::PubKey;
 use kdapp::proxy;
 use log::{info, warn};
 use ripemd::Ripemd160;
@@ -208,6 +209,11 @@ fn handle_escalate(state: &Arc<Mutex<GuardianState>>, episode_id: u64, refund_tx
 
 static STARTED: OnceLock<()> = OnceLock::new();
 static GUARDIAN_SK: OnceLock<SecretKey> = OnceLock::new();
+
+pub fn current_guardian_pubkey() -> Option<PubKey> {
+    let secp = Secp256k1::new();
+    GUARDIAN_SK.get().map(|sk| PubKey(PublicKey::from_secret_key(&secp, sk)))
+}
 
 fn load_or_generate_key(path: &str) -> SecretKey {
     if let Ok(bytes) = fs::read(path) {

@@ -1,4 +1,5 @@
 use std::net::UdpSocket;
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -11,8 +12,13 @@ use kdapp_guardian::{
 };
 
 fn write_secret_key(path: &std::path::Path, sk: &secp256k1::SecretKey) {
-    let hex: String = sk.secret_bytes().iter().map(|b| format!("{b:02x}")).collect();
-    std::fs::write(path, hex).unwrap();
+    std::fs::write(path, sk.secret_bytes()).unwrap();
+}
+
+fn unique_temp_base(label: &str) -> std::path::PathBuf {
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let idx = COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
+    std::env::temp_dir().join(format!("{label}_{}_{}", std::process::id(), idx))
 }
 
 fn test_guard() -> std::sync::MutexGuard<'static, ()> {
@@ -28,9 +34,13 @@ fn scenario_a_refund_signed_and_recorded() {
     let _g = test_guard();
     metrics::reset();
 
-    let (sk, pk) = generate_keypair();
-    let key_path = std::env::temp_dir().join("guardian_test.key");
-    write_secret_key(&key_path, &sk);
+    let (sk, _pk) = generate_keypair();
+    let base = unique_temp_base("guardian_test");
+    let key_path_buf = base.with_extension("key");
+    write_secret_key(&key_path_buf, &sk);
+    let state_path_buf = base.with_extension("state");
+    let key_path = key_path_buf.to_string_lossy().into_owned();
+    let state_path = Some(state_path_buf.clone());
 
     let tmp = UdpSocket::bind("127.0.0.1:0").unwrap();
     let port = tmp.local_addr().unwrap().port();
@@ -39,13 +49,15 @@ fn scenario_a_refund_signed_and_recorded() {
 
     let cfg = GuardianConfig {
         listen_addr: listen.clone(),
-        wrpc_url: None,
+        wrpc_url: "ws://127.0.0.1:16110".to_string(),
         mainnet: false,
         key_path: key_path.clone(),
+        state_path,
         log_level: "info".into(),
-        http_port: None,
+        http_port: 0,
     };
-    let handle = run(&cfg);
+    let handle = run(cfg);
+    let guardian_pk = kdapp_guardian::service::current_guardian_pubkey().expect("guardian pk");
     let state = handle.state.clone();
 
     let before = metrics::snapshot();
@@ -64,7 +76,7 @@ fn scenario_a_refund_signed_and_recorded() {
         thread::sleep(Duration::from_millis(50));
     }
     let sig = sig.expect("signature");
-    assert!(verify_signature(&pk, &to_message(&refund_tx), &sig));
+    assert!(verify_signature(&guardian_pk, &to_message(&refund_tx), &sig));
     assert_eq!(state.lock().unwrap().refund_signatures.len(), 1);
     let after = metrics::snapshot();
     assert_eq!(after.0, before.0 + 1);
@@ -78,12 +90,15 @@ fn scenario_b_replay_confirm_rejected() {
     let _g = test_guard();
     metrics::reset();
 
-    let key_path = std::env::temp_dir().join("guardian_test.key");
-    // key already written by previous test, but ensure file exists
-    if !key_path.exists() {
+    let base = unique_temp_base("guardian_test");
+    let key_path_buf = base.with_extension("key");
+    if !key_path_buf.exists() {
         let (sk, _) = generate_keypair();
-        write_secret_key(&key_path, &sk);
+        write_secret_key(&key_path_buf, &sk);
     }
+    let state_path_buf = base.with_extension("state");
+    let key_path = key_path_buf.to_string_lossy().into_owned();
+    let state_path = Some(state_path_buf.clone());
 
     let tmp = UdpSocket::bind("127.0.0.1:0").unwrap();
     let port = tmp.local_addr().unwrap().port();
@@ -92,13 +107,14 @@ fn scenario_b_replay_confirm_rejected() {
 
     let cfg = GuardianConfig {
         listen_addr: listen.clone(),
-        wrpc_url: None,
+        wrpc_url: "ws://127.0.0.1:16110".to_string(),
         mainnet: false,
         key_path,
+        state_path,
         log_level: "info".into(),
-        http_port: None,
+        http_port: 0,
     };
-    let handle = run(&cfg);
+    let handle = run(cfg);
     let state = handle.state.clone();
 
     let before = metrics::snapshot();
@@ -109,7 +125,14 @@ fn scenario_b_replay_confirm_rejected() {
     thread::sleep(Duration::from_millis(150));
     send_confirm(&listen, ep, 1, DEMO_HMAC_KEY);
     thread::sleep(Duration::from_millis(200));
-    let after = metrics::snapshot();
+    let mut after = metrics::snapshot();
+    for _ in 0..20 {
+        if after.0 >= before.0 + 2 && after.1 >= before.1 + 3 {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+        after = metrics::snapshot();
+    }
     assert_eq!(after.0, before.0 + 2);
     assert_eq!(after.1, before.1 + 3);
     assert_eq!(state.lock().unwrap().checkpoints, vec![(ep, 1)]);
