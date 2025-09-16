@@ -1,3 +1,4 @@
+use borsh::{BorshDeserialize, BorshSerialize};
 use once_cell::sync::Lazy;
 use sled::Db;
 use std::collections::BTreeMap;
@@ -11,6 +12,14 @@ use std::time::Duration;
 use super::episode::{CustomerInfo, Invoice, Subscription};
 use kdapp::pki::PubKey;
 use secp256k1::PublicKey as SecpPublicKey;
+use sha2::{Digest, Sha256};
+use thiserror::Error;
+
+const SCRIPT_TEMPLATES_TREE: &str = "script_templates";
+const SESSION_TOKENS_TREE: &str = "session_tokens";
+
+pub const SCRIPT_TEMPLATE_WHITELIST: &[&str] =
+    &["merchant_p2pk", "merchant_guardian_multisig", "merchant_taproot"];
 
 // Allows running multiple merchant processes concurrently by overriding the DB path.
 // Set MERCHANT_DB_PATH to a unique directory per process (e.g., merchant-udp.db, merchant-tcp.db).
@@ -27,18 +36,43 @@ pub static DB: Lazy<Db> = Lazy::new(|| {
     }
 });
 
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+pub struct ScriptTemplate {
+    pub template_id: String,
+    pub script_bytes: Vec<u8>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Error)]
+pub enum TemplateStoreError {
+    #[error("template identifier cannot be empty")]
+    InvalidIdentifier,
+    #[error("script template `{0}` is not permitted")]
+    NotAllowed(String),
+    #[error("script template must include script bytes")]
+    EmptyScript,
+    #[error("failed to serialize script template")]
+    Serialize,
+    #[error("database error: {0}")]
+    Db(#[from] sled::Error),
+}
+
 pub fn init() {
     Lazy::force(&DB);
     Lazy::force(&FLUSH_WORKER);
     let _invoices = DB.open_tree("invoices").expect("invoices tree");
     let _customers = DB.open_tree("customers").expect("customers tree");
     let _subscriptions = DB.open_tree("subscriptions").expect("subscriptions tree");
+    let _templates = DB.open_tree(SCRIPT_TEMPLATES_TREE).expect("script templates tree");
+    let _sessions = DB.open_tree(SESSION_TOKENS_TREE).expect("session tokens tree");
     #[cfg(test)]
     {
         // Ensure clean state for each test run
         let _ = _invoices.clear();
         let _ = _customers.clear();
         let _ = _subscriptions.clear();
+        let _ = _templates.clear();
+        let _ = _sessions.clear();
     }
 }
 
@@ -163,4 +197,94 @@ pub fn put_subscription(sub: &Subscription) {
 pub fn delete_subscription(id: u64) {
     let tree = DB.open_tree("subscriptions").expect("subscriptions tree");
     let _ = tree.remove(id.to_be_bytes());
+}
+
+fn canonical_template_id(id: &str) -> String {
+    id.trim().to_ascii_lowercase()
+}
+
+fn template_allowed(id: &str) -> bool {
+    SCRIPT_TEMPLATE_WHITELIST
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(id))
+}
+
+pub fn put_script_template(template: &ScriptTemplate) -> Result<(), TemplateStoreError> {
+    let mut normalized = template.clone();
+    let identifier = canonical_template_id(&normalized.template_id);
+    if identifier.is_empty() {
+        return Err(TemplateStoreError::InvalidIdentifier);
+    }
+    if !template_allowed(&identifier) {
+        return Err(TemplateStoreError::NotAllowed(identifier));
+    }
+    if normalized.script_bytes.is_empty() {
+        return Err(TemplateStoreError::EmptyScript);
+    }
+    normalized.template_id = identifier.clone();
+    let tree = DB.open_tree(SCRIPT_TEMPLATES_TREE)?;
+    let value = borsh::to_vec(&normalized).map_err(|_| TemplateStoreError::Serialize)?;
+    tree.insert(identifier.as_bytes(), value)?;
+    Ok(())
+}
+
+pub fn load_script_templates() -> BTreeMap<String, ScriptTemplate> {
+    let tree = DB.open_tree(SCRIPT_TEMPLATES_TREE).expect("script templates tree");
+    tree.iter()
+        .filter_map(|res| res.ok())
+        .filter_map(|(_, v)| borsh::from_slice::<ScriptTemplate>(&v).ok())
+        .map(|template| {
+            let id = template.template_id.clone();
+            (id, template)
+        })
+        .collect()
+}
+
+pub fn delete_script_template(template_id: &str) -> Result<(), sled::Error> {
+    let id = canonical_template_id(template_id);
+    if id.is_empty() {
+        return Ok(());
+    }
+    let tree = DB.open_tree(SCRIPT_TEMPLATES_TREE)?;
+    let _ = tree.remove(id.as_bytes())?;
+    Ok(())
+}
+
+fn session_token_key(token: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    let digest = hasher.finalize();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&digest);
+    out
+}
+
+pub fn store_session_token(token: &str) -> Result<(), sled::Error> {
+    if token.is_empty() {
+        return Ok(());
+    }
+    let tree = DB.open_tree(SESSION_TOKENS_TREE)?;
+    let key = session_token_key(token);
+    tree.insert(key, &[])?;
+    Ok(())
+}
+
+pub fn remove_session_token(token: &str) -> Result<(), sled::Error> {
+    if token.is_empty() {
+        return Ok(());
+    }
+    let tree = DB.open_tree(SESSION_TOKENS_TREE)?;
+    let key = session_token_key(token);
+    let _ = tree.remove(key)?;
+    Ok(())
+}
+
+pub fn session_token_exists(token: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    let tree = DB
+        .open_tree(SESSION_TOKENS_TREE)
+        .expect("session tokens tree");
+    tree.contains_key(session_token_key(token)).unwrap_or(false)
 }

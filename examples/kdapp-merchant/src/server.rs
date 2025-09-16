@@ -5,8 +5,8 @@ use tokio::time::sleep;
 
 use axum::{
     extract::{Json, Path, State},
-    http::{HeaderMap, StatusCode},
-    routing::{get, post},
+    http::{header, HeaderMap, StatusCode},
+    routing::{delete, get, post},
     Router,
 };
 use hmac::{Hmac, Mac};
@@ -17,8 +17,9 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
 use crate::episode::{MerchantCommand, ReceiptEpisode};
+use crate::script;
 use crate::sim_router::SimRouter;
-use crate::storage;
+use crate::storage::{self, ScriptTemplate, TemplateStoreError};
 use crate::tlv::Attestation;
 use crate::watcher::{self, AttestationSummary};
 
@@ -130,6 +131,11 @@ pub async fn serve(bind: String, state: AppState) -> Result<(), Box<dyn std::err
         .route("/mempool-metrics", get(mempool_metrics))
         .route("/attestations", get(list_attestations))
         .route("/attest", post(submit_attestation))
+        .route(
+            "/policy/templates",
+            post(upsert_policy_template).get(list_policy_templates),
+        )
+        .route("/policy/templates/{template_id}", delete(remove_policy_template))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app).await?;
@@ -138,11 +144,44 @@ pub async fn serve(bind: String, state: AppState) -> Result<(), Box<dyn std::err
 
 fn authorize(headers: &HeaderMap, state: &AppState) -> Result<(), StatusCode> {
     if let Some(v) = headers.get("x-api-key").and_then(|h| h.to_str().ok()) {
-        if v == state.api_key {
+        if !state.api_key.is_empty() && v == state.api_key {
+            return Ok(());
+        }
+    }
+    if let Some(token) = session_token_from_headers(headers) {
+        if storage::session_token_exists(&token) {
             return Ok(());
         }
     }
     Err(StatusCode::UNAUTHORIZED)
+}
+
+fn session_token_from_headers(headers: &HeaderMap) -> Option<String> {
+    if let Some(value) = headers.get(header::AUTHORIZATION).and_then(|h| h.to_str().ok()) {
+        if let Some(rest) = value.strip_prefix("Bearer ") {
+            let token = rest.trim();
+            if !token.is_empty() {
+                return Some(token.to_string());
+            }
+        }
+    }
+    if let Some(token) = headers.get("x-session-token").and_then(|h| h.to_str().ok()) {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    if let Some(cookie) = headers.get(header::COOKIE).and_then(|h| h.to_str().ok()) {
+        for part in cookie.split(';') {
+            let trimmed = part.trim();
+            if let Some(rest) = trimmed.strip_prefix("merchant_session=") {
+                if !rest.is_empty() {
+                    return Some(rest.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 #[derive(Deserialize)]
@@ -344,6 +383,88 @@ async fn escalate_sub_dispute(
     let _ = (sub_id, req.invoice_id, req.reason, req.evidence_base64);
     // A real implementation would call ReceiptEpisode::escalate_sub_dispute and send TLVs
     Ok(StatusCode::ACCEPTED)
+}
+
+#[derive(Deserialize)]
+struct ScriptTemplateReq {
+    template_id: String,
+    script_hex: String,
+    description: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ScriptTemplateOut {
+    template_id: String,
+    script_hex: String,
+    description: Option<String>,
+}
+
+async fn upsert_policy_template(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<ScriptTemplateReq>,
+) -> Result<StatusCode, StatusCode> {
+    authorize(&headers, &state)?;
+    let template_id = req.template_id.trim();
+    if template_id.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let script_hex = req.script_hex.trim_start_matches("0x");
+    let raw_bytes = hex::decode(script_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if raw_bytes.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let normalized = script::normalize_script_bytes(&raw_bytes).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let template = ScriptTemplate {
+        template_id: template_id.to_ascii_lowercase(),
+        script_bytes: normalized,
+        description: req.description,
+    };
+    match storage::put_script_template(&template) {
+        Ok(_) => Ok(StatusCode::NO_CONTENT),
+        Err(TemplateStoreError::InvalidIdentifier) => Err(StatusCode::BAD_REQUEST),
+        Err(TemplateStoreError::EmptyScript) => Err(StatusCode::BAD_REQUEST),
+        Err(TemplateStoreError::NotAllowed(_)) => Err(StatusCode::FORBIDDEN),
+        Err(TemplateStoreError::Serialize) | Err(TemplateStoreError::Db(_)) => {
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_policy_templates(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<ScriptTemplateOut>>, StatusCode> {
+    authorize(&headers, &state)?;
+    let templates = storage::load_script_templates();
+    let mut out = Vec::with_capacity(templates.len());
+    for template in templates.values() {
+        let mut hex_buf = vec![0u8; template.script_bytes.len() * 2];
+        if faster_hex::hex_encode(&template.script_bytes, &mut hex_buf).is_err() {
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+        let script_hex = String::from_utf8(hex_buf).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        out.push(ScriptTemplateOut {
+            template_id: template.template_id.clone(),
+            script_hex,
+            description: template.description.clone(),
+        });
+    }
+    Ok(Json(out))
+}
+
+async fn remove_policy_template(
+    State(state): State<AppState>,
+    Path(template_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode, StatusCode> {
+    authorize(&headers, &state)?;
+    let id = template_id.trim();
+    if id.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    storage::delete_script_template(&id.to_ascii_lowercase()).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Serialize)]
