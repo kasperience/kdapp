@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// In real deployments this should be negotiated out of band.
 pub const DEMO_HMAC_KEY: &[u8] = b"kdapp-demo-secret";
 
-pub const TLV_VERSION: u8 = 1;
+pub const TLV_VERSION: u8 = 2;
 pub const SCRIPT_POLICY_VERSION: u16 = 1;
 
 #[derive(Clone, Copy, PartialEq, Eq)]

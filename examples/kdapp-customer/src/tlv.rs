@@ -2,7 +2,7 @@ use blake2::{Blake2b512, Digest};
 
 pub const DEMO_HMAC_KEY: &[u8] = b"kdapp-demo-secret";
 
-pub const TLV_VERSION: u8 = 1;
+pub const TLV_VERSION: u8 = 2;
 pub const SCRIPT_POLICY_VERSION: u16 = 1;
 
 #[derive(Clone, Copy)]
