@@ -8,6 +8,7 @@ use kaspa_wrpc_client::client::ConnectOptions;
 use kaspa_wrpc_client::error::Error;
 use kaspa_wrpc_client::prelude::*;
 use kaspa_wrpc_client::{KaspaRpcClient, WrpcEncoding};
+use lru::LruCache;
 
 use log::{debug, info, warn};
 use std::collections::hash_map::Entry;
@@ -17,6 +18,7 @@ use std::sync::{
     mpsc::Sender,
     Arc,
 };
+use std::num::NonZeroUsize;
 use std::time::Duration;
 use tokio::time::{sleep_until, Instant};
 
@@ -72,7 +74,75 @@ pub async fn connect_client(network_id: NetworkId, rpc_url: Option<String>) -> R
 
 pub type EngineMap = HashMap<PrefixType, (PatternType, Sender<Msg>)>;
 
+#[derive(Clone, Debug)]
+pub struct ProxyCacheConfig {
+    tx_output_cache_capacity: Option<usize>,
+}
+
+impl ProxyCacheConfig {
+    pub const DEFAULT_TX_OUTPUT_CACHE_CAPACITY: usize = 256;
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        let normalized = if capacity == 0 { None } else { Some(capacity) };
+        Self { tx_output_cache_capacity: normalized }
+    }
+
+    pub fn disabled() -> Self {
+        Self { tx_output_cache_capacity: None }
+    }
+
+    pub fn tx_output_cache_capacity(&self) -> Option<usize> {
+        self.tx_output_cache_capacity
+    }
+}
+
+impl Default for ProxyCacheConfig {
+    fn default() -> Self {
+        Self::with_capacity(Self::DEFAULT_TX_OUTPUT_CACHE_CAPACITY)
+    }
+}
+
+#[derive(Debug)]
+struct TxOutputCache {
+    inner: Option<LruCache<(Hash, u32), TxOutputInfo>>,
+}
+
+impl TxOutputCache {
+    fn new(capacity: Option<usize>) -> Self {
+        let inner = capacity.and_then(NonZeroUsize::new).map(LruCache::new);
+        Self { inner }
+    }
+
+    fn get_or_insert_with<F>(&mut self, txid: &Hash, index: u32, producer: F) -> TxOutputInfo
+    where
+        F: FnOnce() -> TxOutputInfo,
+    {
+        if let Some(cache) = self.inner.as_mut() {
+            let key = (txid.clone(), index);
+            if let Some(existing) = cache.get(&key) {
+                return existing.clone();
+            }
+            let value = producer();
+            cache.put(key, value.clone());
+            value
+        } else {
+            producer()
+        }
+    }
+}
+
 pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signal: Arc<AtomicBool>) {
+    run_listener_with_config(kaspad, engines, exit_signal, ProxyCacheConfig::default()).await;
+}
+
+pub async fn run_listener_with_config(
+    mut kaspad: KaspaRpcClient,
+    engines: EngineMap,
+    exit_signal: Arc<AtomicBool>,
+    cache_config: ProxyCacheConfig,
+) {
+    let mut tx_output_cache = TxOutputCache::new(cache_config.tx_output_cache_capacity());
+
     let info = match kaspad.get_block_dag_info().await {
         Ok(info) => info,
         Err(e) => {
@@ -205,15 +275,15 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                 };
                 for tx in merged_block.transactions.into_iter().skip(1) {
                     if let Some(tx_verbose) = tx.verbose_data {
-                        if let Some(required_payload) = required_payloads.get_mut(&tx_verbose.transaction_id) {
+                        let tx_id = tx_verbose.transaction_id;
+                        if let Some(required_payload) = required_payloads.get_mut(&tx_id) {
                             if required_payload.is_none() {
                                 required_payload.replace(tx.payload);
                                 // Collect outputs summary for this transaction
-                                if let Some(outputs_slot) = required_outputs.get_mut(&tx_verbose.transaction_id) {
-                                    let outputs_info: Vec<TxOutputInfo> = tx
-                                        .outputs
-                                        .into_iter()
-                                        .map(|out| {
+                                if let Some(outputs_slot) = required_outputs.get_mut(&tx_id) {
+                                    let mut outputs_info = Vec::new();
+                                    for (index, out) in tx.outputs.into_iter().enumerate() {
+                                        let info = tx_output_cache.get_or_insert_with(&tx_id, index as u32, move || {
                                             #[cfg(feature = "tx-script-bytes")]
                                             let script_bytes = Some(out.script_public_key.script().to_vec());
                                             #[cfg(not(feature = "tx-script-bytes"))]
@@ -223,8 +293,9 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
                                                 script_version: out.script_public_key.version,
                                                 script_bytes,
                                             }
-                                        })
-                                        .collect();
+                                        });
+                                        outputs_info.push(info);
+                                    }
                                     outputs_slot.replace(outputs_info);
                                 }
                                 required_num -= 1;
@@ -303,5 +374,54 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
         if let Err(e) = sender.send(Msg::Exit) {
             warn!("Failed to send exit message to engine: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn hash_from_byte(byte: u8) -> Hash {
+        Hash::from_bytes([byte; 32])
+    }
+
+    #[test]
+    fn tx_output_cache_hits_do_not_invoke_producer() {
+        let mut cache = TxOutputCache::new(ProxyCacheConfig::with_capacity(4).tx_output_cache_capacity());
+        let txid = hash_from_byte(1);
+        let calls = AtomicUsize::new(0);
+
+        let first = cache.get_or_insert_with(&txid, 0, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            TxOutputInfo { value: 42, script_version: 0, script_bytes: None }
+        });
+
+        let second = cache.get_or_insert_with(&txid, 0, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            TxOutputInfo { value: 42, script_version: 0, script_bytes: None }
+        });
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn disabled_cache_invokes_producer_each_time() {
+        let mut cache = TxOutputCache::new(ProxyCacheConfig::disabled().tx_output_cache_capacity());
+        let txid = hash_from_byte(2);
+        let calls = AtomicUsize::new(0);
+
+        let _ = cache.get_or_insert_with(&txid, 1, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            TxOutputInfo { value: 7, script_version: 0, script_bytes: None }
+        });
+
+        let _ = cache.get_or_insert_with(&txid, 1, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            TxOutputInfo { value: 7, script_version: 0, script_bytes: None }
+        });
+
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }

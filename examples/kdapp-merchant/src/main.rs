@@ -23,7 +23,7 @@ use kdapp::engine::{Engine, EngineMsg, EpisodeMessage};
 use kdapp::generator::{PatternType, PrefixType};
 use kdapp::pki::generate_keypair;
 use kdapp::pki::PubKey;
-use kdapp::proxy;
+use kdapp::proxy::{self, ProxyCacheConfig};
 use secp256k1::Keypair;
 use secp256k1::SecretKey;
 use std::sync::{atomic::AtomicBool, Arc};
@@ -49,6 +49,12 @@ struct Args {
     /// Override routing pattern as "pos:bit,pos:bit,..."
     #[arg(long)]
     pattern: Option<String>,
+    /// Maximum entries retained in the proxy transaction output cache (0 disables caching)
+    #[arg(long, default_value_t = ProxyCacheConfig::DEFAULT_TX_OUTPUT_CACHE_CAPACITY)]
+    tx_output_cache_size: usize,
+    /// Disable the proxy transaction output cache
+    #[arg(long, default_value_t = false)]
+    disable_tx_output_cache: bool,
     /// Guardian UDP address (repeatable)
     #[arg(long = "guardian-addr")]
     guardian_addr: Vec<String>,
@@ -492,14 +498,20 @@ fn main() {
             let (prefix, pattern) = ids;
             log::info!("prefix=0x{prefix:08x}, pattern={pattern:?}");
 
+            let cache_config = if args.disable_tx_output_cache {
+                ProxyCacheConfig::disabled()
+            } else {
+                ProxyCacheConfig::with_capacity(args.tx_output_cache_size)
+            };
             let network =
                 if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let rt = Runtime::new().expect("runtime");
             let exit = Arc::new(AtomicBool::new(false));
             let engines = std::iter::once((prefix, (pattern, tx.clone()))).collect();
-            rt.block_on(async {
-                let kaspad = proxy::connect_client(network, args.wrpc_url.clone()).await.expect("kaspad connect");
-                proxy::run_listener(kaspad, engines, exit).await;
+            let wrpc_url = args.wrpc_url.clone();
+            rt.block_on(async move {
+                let kaspad = proxy::connect_client(network, wrpc_url).await.expect("kaspad connect");
+                proxy::run_listener_with_config(kaspad, engines, exit, cache_config).await;
             });
         }
         CliCmd::New { episode_id, merchant_private_key } => {
@@ -675,6 +687,11 @@ fn main() {
             };
             let (prefix, pattern) = ids;
             log::info!("prefix=0x{prefix:08x}, pattern={pattern:?}");
+            let cache_config = if args.disable_tx_output_cache {
+                ProxyCacheConfig::disabled()
+            } else {
+                ProxyCacheConfig::with_capacity(args.tx_output_cache_size)
+            };
             let network =
                 if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let exit = Arc::new(AtomicBool::new(false));
@@ -684,7 +701,7 @@ fn main() {
                 let rt = Runtime::new().expect("runtime");
                 rt.block_on(async move {
                     let kaspad = proxy::connect_client(network, wrpc_url).await.expect("kaspad connect");
-                    proxy::run_listener(kaspad, engines, exit).await;
+                    proxy::run_listener_with_config(kaspad, engines, exit, cache_config).await;
                 });
             });
 
