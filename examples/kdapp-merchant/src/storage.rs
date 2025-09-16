@@ -259,6 +259,7 @@ fn session_token_key(token: &str) -> [u8; 32] {
     out
 }
 
+#[allow(dead_code)]
 pub fn store_session_token(token: &str) -> Result<(), sled::Error> {
     if token.is_empty() {
         return Ok(());
@@ -269,6 +270,7 @@ pub fn store_session_token(token: &str) -> Result<(), sled::Error> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn remove_session_token(token: &str) -> Result<(), sled::Error> {
     if token.is_empty() {
         return Ok(());

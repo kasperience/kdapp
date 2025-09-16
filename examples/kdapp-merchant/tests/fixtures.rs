@@ -2,6 +2,7 @@
 pub mod episode;
 #[path = "../src/script.rs"]
 pub mod script;
+#[allow(dead_code)]
 #[path = "../src/storage.rs"]
 pub mod storage;
 
