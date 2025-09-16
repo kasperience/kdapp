@@ -2512,6 +2512,7 @@ dependencies = [
  "kaspa-txscript",
  "kaspa-wrpc-client",
  "log",
+ "lru",
  "rand 0.8.5",
  "secp256k1",
  "serde",

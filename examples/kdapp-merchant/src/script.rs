@@ -216,10 +216,7 @@ pub fn enforce_payment_policy(
 ) -> Result<PaymentSummary, ScriptError> {
     let merchant_serialized: Vec<[u8; 33]> = merchant_keys.iter().map(|k| k.0.serialize()).collect();
     let guardian_serialized: Vec<[u8; 33]> = guardian_keys.iter().map(|k| k.0.serialize()).collect();
-    let merchant_xonly: Vec<[u8; 32]> = merchant_keys
-        .iter()
-        .map(|k| k.0.x_only_public_key().0.serialize())
-        .collect();
+    let merchant_xonly: Vec<[u8; 32]> = merchant_keys.iter().map(|k| k.0.x_only_public_key().0.serialize()).collect();
 
     let mut total_value = 0u64;
     let mut matched_outputs = 0usize;
@@ -234,9 +231,7 @@ pub fn enforce_payment_policy(
             || matches_guardian(&normalized, &merchant_serialized, &guardian_serialized)
             || matches_taproot(&normalized, output.script_version, &merchant_xonly);
         if matched {
-            total_value = total_value
-                .checked_add(output.value)
-                .ok_or(ScriptError::ValueOverflow)?;
+            total_value = total_value.checked_add(output.value).ok_or(ScriptError::ValueOverflow)?;
             matched_outputs += 1;
         }
     }

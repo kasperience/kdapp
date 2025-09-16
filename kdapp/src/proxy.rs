@@ -118,7 +118,7 @@ impl TxOutputCache {
         F: FnOnce() -> TxOutputInfo,
     {
         if let Some(cache) = self.inner.as_mut() {
-            let key = (txid.clone(), index);
+            let key = (*txid, index);
             if let Some(existing) = cache.get(&key) {
                 return existing.clone();
             }
@@ -136,7 +136,7 @@ pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signa
 }
 
 pub async fn run_listener_with_config(
-    mut kaspad: KaspaRpcClient,
+    kaspad: KaspaRpcClient,
     engines: EngineMap,
     exit_signal: Arc<AtomicBool>,
     cache_config: ProxyCacheConfig,
