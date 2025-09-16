@@ -18,7 +18,7 @@ use thiserror::Error;
 const SCRIPT_TEMPLATES_TREE: &str = "script_templates";
 const SESSION_TOKENS_TREE: &str = "session_tokens";
 
-pub const SCRIPT_TEMPLATE_WHITELIST: &[&str] = ["merchant_p2pk", "merchant_guardian_multisig", "merchant_taproot"];
+pub const SCRIPT_TEMPLATE_WHITELIST: &[&str] = &["merchant_p2pk", "merchant_guardian_multisig", "merchant_taproot"];
 
 // Allows running multiple merchant processes concurrently by overriding the DB path.
 // Set MERCHANT_DB_PATH to a unique directory per process (e.g., merchant-udp.db, merchant-tcp.db).
