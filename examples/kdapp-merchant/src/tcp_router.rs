@@ -11,7 +11,7 @@ use log::{info, warn};
 
 use crate::{
     sim_router::EngineChannel,
-    tlv::{MsgType, TlvMsg, TLV_VERSION},
+    tlv::{MsgType, TlvMsg, SCRIPT_POLICY_VERSION, TLV_VERSION},
 };
 
 #[derive(Clone)]
@@ -46,13 +46,13 @@ impl TcpRouter {
     }
 
     fn handle_stream(&self, stream: &mut TcpStream) -> std::io::Result<()> {
-        let mut header = [0u8; 52];
+        let mut header = [0u8; 54];
         let mut key: Option<Vec<u8>> = None;
         loop {
             if stream.read_exact(&mut header).is_err() {
                 break;
             }
-            let payload_len = u16::from_le_bytes([header[50], header[51]]) as usize;
+            let payload_len = u16::from_le_bytes([header[52], header[53]]) as usize;
             let mut tail = vec![0u8; payload_len + 32];
             if stream.read_exact(&mut tail).is_err() {
                 break;
@@ -80,6 +80,7 @@ impl TcpRouter {
                 let mut ack = TlvMsg {
                     version: TLV_VERSION,
                     msg_type: MsgType::Ack as u8,
+                    script_policy_version: SCRIPT_POLICY_VERSION,
                     episode_id: msg.episode_id,
                     seq: msg.seq,
                     state_hash: msg.state_hash,
@@ -161,6 +162,7 @@ impl TcpRouter {
             let mut ack = TlvMsg {
                 version: TLV_VERSION,
                 msg_type: ack_type,
+                script_policy_version: SCRIPT_POLICY_VERSION,
                 episode_id: msg.episode_id,
                 seq: msg.seq,
                 state_hash: msg.state_hash,

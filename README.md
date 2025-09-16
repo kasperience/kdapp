@@ -129,6 +129,9 @@ Tic‑Tac‑Toe, merchant/customer flows, and more live under `examples/`.
     - `cargo run -p kdapp-customer -- pay --episode-id 42 --invoice-id 1001 --payer-private-key <hex>`
     - `cargo run -p kdapp-customer -- ack --episode-id 42 --invoice-id 1001 --merchant-private-key <hex>`
   - Details: `examples/kdapp-merchant/onlyKAS-merchant.md`, `examples/kdapp-customer/README.md`
+  - Version negotiation: every TLV handshake now includes a `script_policy_version`. Routers echo their supported
+    value in the ACK so the customer CLI can warn if it is older—upgrade your client if you see the warning to
+    avoid policy mismatches during payment flows.
 
 Explore `examples/kaspa-auth` and `examples/comment-board` for richer flows and docs.
 

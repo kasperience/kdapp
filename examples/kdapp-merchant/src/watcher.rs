@@ -33,7 +33,7 @@ use secp256k1::Keypair;
 use serde::Serialize;
 
 use crate::server::WatcherRuntimeOverrides;
-use crate::tlv::{verify_attestation, Attestation, MsgType, TlvMsg, DEMO_HMAC_KEY};
+use crate::tlv::{verify_attestation, Attestation, MsgType, TlvMsg, DEMO_HMAC_KEY, SCRIPT_POLICY_VERSION};
 
 pub const MIN_FEE: u64 = 5_000;
 const CHECKPOINT_PREFIX: PrefixType = u32::from_le_bytes(*b"KMCP");
@@ -472,6 +472,7 @@ pub fn run(
             let mut ack = TlvMsg {
                 version: msg.version,
                 msg_type: MsgType::Ack as u8,
+                script_policy_version: SCRIPT_POLICY_VERSION,
                 episode_id: msg.episode_id,
                 seq: msg.seq,
                 state_hash: msg.state_hash,
@@ -505,6 +506,7 @@ pub fn run(
         let mut ack = TlvMsg {
             version: msg.version,
             msg_type: MsgType::Ack as u8,
+            script_policy_version: SCRIPT_POLICY_VERSION,
             episode_id: msg.episode_id,
             seq: msg.seq,
             state_hash: msg.state_hash,

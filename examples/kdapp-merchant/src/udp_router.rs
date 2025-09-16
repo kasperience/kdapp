@@ -10,7 +10,7 @@ use log::{info, warn};
 
 use crate::{
     sim_router::EngineChannel,
-    tlv::{MsgType, TlvMsg, TLV_VERSION},
+    tlv::{MsgType, TlvMsg, SCRIPT_POLICY_VERSION, TLV_VERSION},
 };
 
 /// Minimal UDP TLV router for off-chain delivery.
@@ -67,6 +67,7 @@ impl UdpRouter {
                 let mut ack = TlvMsg {
                     version: TLV_VERSION,
                     msg_type: MsgType::Ack as u8,
+                    script_policy_version: SCRIPT_POLICY_VERSION,
                     episode_id: msg.episode_id,
                     seq: msg.seq,
                     state_hash: msg.state_hash,
@@ -165,6 +166,7 @@ impl UdpRouter {
             let mut ack = TlvMsg {
                 version: TLV_VERSION,
                 msg_type: ack_type,
+                script_policy_version: SCRIPT_POLICY_VERSION,
                 episode_id: msg.episode_id,
                 seq: msg.seq,
                 state_hash: msg.state_hash,
