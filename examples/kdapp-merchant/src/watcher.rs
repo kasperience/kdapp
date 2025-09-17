@@ -25,7 +25,6 @@ use axum::http::StatusCode;
 use axum::{routing::get, Json, Router};
 use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
 use kaspa_consensus_core::{
-    hash::Hash,
     network::{NetworkId, NetworkType},
     tx::{TransactionOutpoint, UtxoEntry},
     Hash,
