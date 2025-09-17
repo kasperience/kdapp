@@ -187,6 +187,9 @@ fn invoice_payment_reorg_resets_confirmations() {
         acceptance_height: Some(500),
         confirmations: Some(3),
         finality: Some(false),
+
+        ..TxStatus::default()
+
     };
     let paid_cmd = MerchantCommand::MarkPaid { invoice_id, payer: payer_pk };
     let paid_msg = EpisodeMessage::new_signed_command(episode_id, paid_cmd, payer_sk, payer_pk);
@@ -215,6 +218,7 @@ fn invoice_payment_reorg_resets_confirmations() {
         acceptance_height: Some(505),
         confirmations: Some(1),
         finality: Some(false),
+
     };
     let paid_again = EpisodeMessage::new_signed_command(
         episode_id,
