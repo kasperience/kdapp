@@ -32,13 +32,13 @@ impl TestMerchantEventHandler {
 
 #[derive(Clone, Debug)]
 enum TestEvent {
-    Paid { invoice_id: u64, confirmations: Option<u64> },
+    Paid { confirmations: Option<u64> },
 }
 
 impl TestEvent {
     fn confirmations(&self) -> Option<u64> {
         match self {
-            TestEvent::Paid { confirmations, .. } => *confirmations,
+            TestEvent::Paid { confirmations } => *confirmations,
         }
     }
 }
@@ -69,7 +69,7 @@ impl EpisodeEventHandler<ReceiptEpisode> for TestMerchantEventHandler {
                 if let Some(inv) = episode.invoices.get(invoice_id) {
                     let _ = storage::persist_invoice_state(inv, update);
                     let confirmations = metadata.tx_status.as_ref().and_then(|s| s.confirmations);
-                    self.events.lock().unwrap().push(TestEvent::Paid { invoice_id: *invoice_id, confirmations });
+                    self.events.lock().unwrap().push(TestEvent::Paid { confirmations });
                 }
             }
             _ => {}
@@ -108,12 +108,14 @@ fn next_tx_hash() -> Hash {
     hash_from_byte(byte)
 }
 
+type EpisodeEntry = (EpisodeMessage<ReceiptEpisode>, Option<Vec<TxOutputInfo>>, Option<TxStatus>);
+
 fn send_block(
     tx: &Sender<EngineMsg>,
     accepting_hash: Hash,
     accepting_daa: u64,
     accepting_time: u64,
-    entries: Vec<(EpisodeMessage<ReceiptEpisode>, Option<Vec<TxOutputInfo>>, Option<TxStatus>)>,
+    entries: Vec<EpisodeEntry>,
 ) {
     let associated_txs = entries
         .into_iter()
@@ -181,10 +183,12 @@ fn invoice_payment_reorg_resets_confirmations() {
     wait_briefly();
 
     // Payer settles invoice with three confirmations recorded
-    let mut status_high = TxStatus::default();
-    status_high.acceptance_height = Some(500);
-    status_high.confirmations = Some(3);
-    status_high.finality = Some(false);
+    let status_high = TxStatus {
+        acceptance_height: Some(500),
+        confirmations: Some(3),
+        finality: Some(false),
+        ..TxStatus::default()
+    };
     let paid_cmd = MerchantCommand::MarkPaid { invoice_id, payer: payer_pk };
     let paid_msg = EpisodeMessage::new_signed_command(episode_id, paid_cmd, payer_sk, payer_pk);
     let outputs = vec![TxOutputInfo { value: 50_000, script_version: 0, script_bytes: Some(p2pk_script(&merchant_pk)) }];
@@ -208,10 +212,12 @@ fn invoice_payment_reorg_resets_confirmations() {
     assert_eq!(invoices.get(&invoice_id).map(|inv| inv.status.clone()), Some(InvoiceStatus::Open));
 
     // Re-accept payment on new branch with fewer confirmations
-    let mut status_low = TxStatus::default();
-    status_low.acceptance_height = Some(505);
-    status_low.confirmations = Some(1);
-    status_low.finality = Some(false);
+    let status_low = TxStatus {
+        acceptance_height: Some(505),
+        confirmations: Some(1),
+        finality: Some(false),
+        ..TxStatus::default()
+    };
     let paid_again = EpisodeMessage::new_signed_command(
         episode_id,
         MerchantCommand::MarkPaid { invoice_id, payer: payer_pk },

@@ -1,5 +1,4 @@
 pub use kdapp_merchant::episode;
-pub use kdapp_merchant::script;
 #[allow(dead_code)]
 pub use kdapp_merchant::storage;
 
