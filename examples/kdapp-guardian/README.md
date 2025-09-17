@@ -19,7 +19,7 @@ The service is configured via TOML or CLI flags:
 | `--listen-addr` | UDP socket for TLV messages from merchants and customers. |
 | `--wrpc-url` | Kaspa wRPC endpoint used to watch the DAG for `OKCP` checkpoints. |
 | `--mainnet` | Set to `true` to connect to mainnet (default is testnet‑10). |
-| `--key-path` | Location of the guardian's secp256k1 private key. Created on first run. **Keep this file secret.** |
+| `--key-path` | Location or descriptor of the guardian's secp256k1 private key. Use a filesystem path or `hsm:ENV_VAR` to load material supplied by an HSM agent. Files are created on first run. **Keep this material secret.** |
 | `--state-path` | Optional path used to persist dispute status and sequence counters. |
 | `--http-port` | Port for health and metrics endpoints. Defaults to `listen_port + 1`. |
 
@@ -37,6 +37,26 @@ http_port = 9651
 The guardian writes its key file if one does not exist.  The file permissions are restricted to the
 current user on Unix systems.  The `state_path` stores open disputes and sequence numbers so the
 guardian can recover after restarts.
+
+### Key management and rotation
+
+Guardians may load signing keys from the local filesystem or from an HSM/remote signer.  Set
+`key_path = "path/to/guardian.key"` for file-based storage, or `key_path = "hsm:ENV_VAR"` to have
+the service read hex-encoded key material from the `ENV_VAR` environment variable (for example when
+an HSM daemon exposes an export or handle).  Prefixes such as `hsm://slot-name` or `hsm:env:VAR` map
+to the same environment variable mechanism; if no name is provided (`hsm:`) the default variable
+`GUARDIAN_HSM_KEY` is used.
+
+- **Secure generation.** Provision production keys outside the guardian host and copy them into
+  place with `chmod 600` permissions. For a file backend, `openssl rand -hex 32 > guardian.key` is a
+  simple starting point; for HSM deployments, use the vendor tooling to create a signing key and set
+  `ENV_VAR` to the exported handle or wrapped secret.
+- **Rotation.** Generate the replacement key, update `key_path` (or the referenced environment
+  variable), restart the guardian, and re-run handshakes with merchants/customers so they learn the
+  new guardian pubkey. Keep the prior key available until all sessions acknowledge the rotation.
+- **Hygiene.** Remove stale key files once rotation is complete and clear environment variables after
+  restarts. Pair the guardian with a secret manager or HSM to avoid storing raw keys on disk long
+  term.
 
 Generate the config file manually or by copying the example above.
 

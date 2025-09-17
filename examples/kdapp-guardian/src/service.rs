@@ -1,4 +1,3 @@
-use std::fs;
 use std::net::UdpSocket;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,7 +18,14 @@ use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{metrics, receive, GuardianMsg, GuardianState, DEMO_HMAC_KEY};
+use crate::{
+    keys::{GuardianKeySource, GuardianKeyStorage},
+    metrics,
+    receive,
+    GuardianMsg,
+    GuardianState,
+    DEMO_HMAC_KEY,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct GuardianConfig {
@@ -215,28 +221,6 @@ pub fn current_guardian_pubkey() -> Option<PubKey> {
     GUARDIAN_SK.get().map(|sk| PubKey(PublicKey::from_secret_key(&secp, sk)))
 }
 
-fn load_or_generate_key(path: &str) -> SecretKey {
-    if let Ok(bytes) = fs::read(path) {
-        if let Ok(sk) = SecretKey::from_slice(&bytes) {
-            return sk;
-        }
-    }
-    let secp = Secp256k1::new();
-    let mut rng = rand::thread_rng();
-    let (sk, _pk) = secp.generate_keypair(&mut rng);
-    {
-        fs::write(path, sk.secret_bytes()).expect("write key");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perm = fs::metadata(path).expect("meta").permissions();
-            perm.set_mode(0o600);
-            fs::set_permissions(path, perm).expect("perms");
-        }
-    }
-    sk
-}
-
 fn pubkey_fingerprint(pk: &PublicKey) -> String {
     let compressed = pk.serialize();
     let sha = Sha256::digest(compressed);
@@ -271,7 +255,21 @@ impl Drop for ServiceHandle {
 
 pub fn run(cfg: GuardianConfig) -> ServiceHandle {
     STARTED.get_or_init(|| {});
-    let sk = GUARDIAN_SK.get_or_init(|| load_or_generate_key(&cfg.key_path));
+    let key_source = GuardianKeySource::from_uri(&cfg.key_path);
+    let key_desc = key_source.describe().to_string();
+    let was_uninitialized = GUARDIAN_SK.get().is_none();
+    let sk = GUARDIAN_SK.get_or_init({
+        let key_source = key_source.clone();
+        let key_desc = key_desc.clone();
+        move || {
+            key_source
+                .load_key()
+                .unwrap_or_else(|err| panic!("guardian: failed to load {key_desc}: {err}"))
+        }
+    });
+    if was_uninitialized {
+        info!("Guardian signing backend: {key_desc}");
+    }
     let secp = Secp256k1::new();
     let pk = PublicKey::from_secret_key(&secp, sk);
     info!("Guardian pubkey: {}", hex::encode(pk.serialize()));

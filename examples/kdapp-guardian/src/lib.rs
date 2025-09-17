@@ -13,6 +13,7 @@ use std::{
 };
 use thiserror::Error;
 
+pub mod keys;
 pub mod metrics;
 pub mod service;
 
