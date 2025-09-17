@@ -19,9 +19,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
+    clear_handshake_store,
+    handshake_db::HandshakeStore,
     keys::{GuardianKeySource, GuardianKeyStorage},
     metrics,
     receive,
+    set_handshake_store,
     GuardianMsg,
     GuardianState,
     DEMO_HMAC_KEY,
@@ -231,6 +234,7 @@ fn pubkey_fingerprint(pk: &PublicKey) -> String {
 /// Handle returned by [`run`] to allow graceful shutdown in tests.
 pub struct ServiceHandle {
     pub state: Arc<Mutex<GuardianState>>,
+    pub handshake_store: Arc<HandshakeStore>,
     shutdown: Arc<AtomicBool>,
     threads: Vec<thread::JoinHandle<()>>,
 }
@@ -250,6 +254,8 @@ impl Drop for ServiceHandle {
         while let Some(handle) = self.threads.pop() {
             let _ = handle.join();
         }
+        let _ = self.handshake_store.flush();
+        clear_handshake_store();
     }
 }
 
@@ -279,6 +285,16 @@ pub fn run(cfg: GuardianConfig) -> ServiceHandle {
     sock.set_nonblocking(true).expect("nonblocking");
     let state_path = cfg.state_path.clone().unwrap_or_else(|| PathBuf::from("guardian.state"));
     let state = Arc::new(Mutex::new(GuardianState::load(&state_path)));
+    let handshake_path = state_path.with_extension("handshake.db");
+    let handshake_store = Arc::new(
+        HandshakeStore::open(&handshake_path).unwrap_or_else(|err| {
+            panic!(
+                "guardian: failed to open handshake db {}: {err}",
+                handshake_path.display()
+            )
+        }),
+    );
+    set_handshake_store(handshake_store.clone());
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let mut threads = Vec::new();
@@ -357,7 +373,7 @@ pub fn run(cfg: GuardianConfig) -> ServiceHandle {
     });
     threads.push(http_handle);
 
-    ServiceHandle { state, shutdown, threads }
+    ServiceHandle { state, handshake_store, shutdown, threads }
 }
 
 #[cfg(test)]

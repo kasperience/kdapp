@@ -25,6 +25,7 @@ sha2 = { workspace = true }
 ripemd = "0.1"
 hex = "0.4"
 anyhow = "1.0"
+sled = "0.34"
 
 [[bin]]
 name = "guardian-service"
