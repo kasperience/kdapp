@@ -1,5 +1,11 @@
 use std::collections::{HashMap, VecDeque};
+#[cfg(any(test, feature = "okcp_relay"))]
+use std::fs;
+#[cfg(any(test, feature = "okcp_relay"))]
+use std::io::{self, ErrorKind};
 use std::net::UdpSocket;
+#[cfg(any(test, feature = "okcp_relay"))]
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, RwLock};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -7,6 +13,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use once_cell::sync::Lazy;
 use thiserror::Error;
 use tokio::sync::Mutex;
+#[cfg(feature = "okcp_relay")]
+use tokio::time::{sleep, Duration};
 
 #[cfg(feature = "okcp_relay")]
 use crate::sim_router::EngineChannel;
@@ -16,8 +24,11 @@ use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
 use kaspa_consensus_core::{
     network::{NetworkId, NetworkType},
     tx::{TransactionOutpoint, UtxoEntry},
+    Hash,
 };
 use kaspa_rpc_core::api::rpc::RpcApi;
+#[cfg(any(test, feature = "okcp_relay"))]
+use kaspa_rpc_core::model::block::RpcBlock;
 use kaspa_wrpc_client::client::KaspaRpcClient;
 #[cfg(feature = "okcp_relay")]
 use kdapp::engine::EngineMsg;
@@ -286,34 +297,253 @@ pub async fn relay_checkpoints(
     program_id: u64,
     sender: EngineChannel,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use kaspa_rpc_core::notify::virtual_chain_changed::{VirtualChainChangedNotification, VirtualChainChangedNotificationType};
-    let mut stream = client.subscribe_virtual_chain_changed().await?;
-    while let Some(VirtualChainChangedNotification { ty, accepted_blocks, .. }) = stream.recv().await {
-        if !matches!(ty, VirtualChainChangedNotificationType::Accepted) {
-            continue;
+    use kaspa_rpc_core::notify::virtual_chain_changed::{
+        VirtualChainChangedNotification, VirtualChainChangedNotificationType,
+    };
+
+    let store = RelayCheckpointStore::new(default_state_path());
+    let mut last_processed = match store.load() {
+        Ok(value) => value,
+        Err(err) => {
+            warn!("watcher: failed to load relay checkpoint state: {err}");
+            None
         }
-        for block in accepted_blocks {
-            let accepting_hash = block.hash();
-            let accepting_daa = block.header.daa_score;
-            let accepting_time = block.header.timestamp;
-            for tx in block.transactions {
-                if let Some(payload) = tx.payload() {
-                    if let Some(rec) = decode_okcp(payload) {
-                        if rec.program_id == program_id {
-                            let tx_id = tx.id();
-                            let event = EngineMsg::BlkAccepted {
-                                accepting_hash,
-                                accepting_daa,
-                                accepting_time,
-                                associated_txs: vec![(tx_id, payload.to_vec(), None::<Vec<TxOutputInfo>>, None)],
-                            };
-                            let _ = sender.send(event);
+    };
+
+    if last_processed.is_some() {
+        if let Err(err) = startup_rescan(client, program_id, &sender, &store, &mut last_processed).await {
+            warn!("watcher: startup rescan failed: {err}");
+        }
+    }
+
+    let mut backoff = Duration::from_secs(1);
+    loop {
+        match client.subscribe_virtual_chain_changed().await {
+            Ok(mut stream) => {
+                backoff = Duration::from_secs(1);
+                info!("watcher: subscribed to virtual chain notifications");
+                while let Some(VirtualChainChangedNotification { ty, accepted_blocks, .. }) = stream.recv().await {
+                    if !matches!(ty, VirtualChainChangedNotificationType::Accepted) {
+                        continue;
+                    }
+                    for block in accepted_blocks {
+                        if let Some(batch) = batch_from_notification_block(block, program_id) {
+                            process_checkpoint_batches(&sender, &store, &mut last_processed, std::iter::once(batch));
                         }
                     }
+                }
+                warn!("watcher: virtual chain stream ended; retrying subscription");
+            }
+            Err(err) => {
+                warn!("watcher: failed to subscribe to virtual chain notifications: {err}");
+            }
+        }
+        sleep(backoff).await;
+        backoff = (backoff * 2).min(Duration::from_secs(60));
+    }
+}
+
+#[cfg(any(test, feature = "okcp_relay"))]
+const DEFAULT_RELAY_STATE_FILE: &str = "okcp_relay_state.hex";
+
+#[cfg(any(test, feature = "okcp_relay"))]
+fn default_state_path() -> PathBuf {
+    PathBuf::from(DEFAULT_RELAY_STATE_FILE)
+}
+
+#[cfg(any(test, feature = "okcp_relay"))]
+#[derive(Clone, Debug)]
+struct CheckpointBatch {
+    accepting_hash: Hash,
+    accepting_daa: u64,
+    accepting_time: u64,
+    checkpoints: Vec<(Hash, Vec<u8>)>,
+}
+
+#[cfg(any(test, feature = "okcp_relay"))]
+#[derive(Clone, Debug)]
+struct RelayCheckpointStore {
+    path: PathBuf,
+}
+
+#[cfg(any(test, feature = "okcp_relay"))]
+impl RelayCheckpointStore {
+    fn new<P: Into<PathBuf>>(path: P) -> Self {
+        Self { path: path.into() }
+    }
+
+    fn load(&self) -> io::Result<Option<Hash>> {
+        match fs::read_to_string(&self.path) {
+            Ok(contents) => {
+                let trimmed = contents.trim();
+                if trimmed.is_empty() {
+                    return Ok(None);
+                }
+                let bytes = hex::decode(trimmed)
+                    .map_err(|err| io::Error::new(ErrorKind::InvalidData, format!("invalid hash encoding: {err}")))?;
+                if bytes.len() != 32 {
+                    return Err(io::Error::new(ErrorKind::InvalidData, "invalid hash length"));
+                }
+                let mut array = [0u8; 32];
+                array.copy_from_slice(&bytes);
+                Ok(Some(Hash::from_bytes(array)))
+            }
+            Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    fn persist(&self, hash: Hash) -> io::Result<()> {
+        if let Some(parent) = self.path.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        fs::write(&self.path, hex::encode(hash.as_bytes()))
+    }
+}
+
+#[cfg(any(test, feature = "okcp_relay"))]
+fn batch_from_notification_block(block: kaspa_consensus_core::block::Block, program_id: u64) -> Option<CheckpointBatch> {
+    let accepting_hash = block.hash();
+    let accepting_daa = block.header.daa_score;
+    let accepting_time = block.header.timestamp;
+    let mut checkpoints = Vec::new();
+    for tx in block.transactions {
+        if let Some(payload) = tx.payload() {
+            if let Some(rec) = decode_okcp(payload) {
+                if rec.program_id == program_id {
+                    checkpoints.push((tx.id(), payload.to_vec()));
                 }
             }
         }
     }
+    build_checkpoint_batch(accepting_hash, accepting_daa, accepting_time, checkpoints)
+}
+
+#[cfg(any(test, feature = "okcp_relay"))]
+fn batch_from_rpc_block(block: RpcBlock, program_id: u64) -> Option<CheckpointBatch> {
+    use std::convert::TryFrom;
+
+    let accepting_hash = block.header.hash;
+    let accepting_daa = block.header.daa_score;
+    let accepting_time = block.header.timestamp;
+    let mut checkpoints = Vec::new();
+    for tx in block.transactions {
+        if tx.payload.is_empty() {
+            continue;
+        }
+        if let Some(rec) = decode_okcp(&tx.payload) {
+            if rec.program_id == program_id {
+                let tx_id = if let Some(verbose) = tx.verbose_data.as_ref() {
+                    verbose.transaction_id
+                } else {
+                    match kaspa_consensus_core::tx::Transaction::try_from(tx.clone()) {
+                        Ok(consensus_tx) => consensus_tx.id(),
+                        Err(err) => {
+                            warn!("watcher: failed to convert transaction for accepting block {accepting_hash}: {err}");
+                            continue;
+                        }
+                    }
+                };
+                checkpoints.push((tx_id, tx.payload.clone()));
+            }
+        }
+    }
+    build_checkpoint_batch(accepting_hash, accepting_daa, accepting_time, checkpoints)
+}
+
+#[cfg(any(test, feature = "okcp_relay"))]
+fn build_checkpoint_batch(
+    accepting_hash: Hash,
+    accepting_daa: u64,
+    accepting_time: u64,
+    checkpoints: Vec<(Hash, Vec<u8>)>,
+) -> Option<CheckpointBatch> {
+    if checkpoints.is_empty() {
+        None
+    } else {
+        Some(CheckpointBatch { accepting_hash, accepting_daa, accepting_time, checkpoints })
+    }
+}
+
+#[cfg(any(test, feature = "okcp_relay"))]
+fn process_checkpoint_batches<I>(
+    sender: &EngineChannel,
+    store: &RelayCheckpointStore,
+    last_processed: &mut Option<Hash>,
+    batches: I,
+)
+where
+    I: IntoIterator<Item = CheckpointBatch>,
+{
+    for batch in batches {
+        if batch.checkpoints.is_empty() {
+            continue;
+        }
+        if last_processed.as_ref() == Some(&batch.accepting_hash) {
+            continue;
+        }
+        let CheckpointBatch { accepting_hash, accepting_daa, accepting_time, checkpoints } = batch;
+        let associated_txs = checkpoints
+            .into_iter()
+            .map(|(tx_id, payload)| (tx_id, payload, None::<Vec<TxOutputInfo>>, None))
+            .collect::<Vec<_>>();
+        let event = EngineMsg::BlkAccepted { accepting_hash, accepting_daa, accepting_time, associated_txs };
+        if let Err(err) = sender.send(event) {
+            warn!("watcher: failed to forward checkpoint block {accepting_hash}: {err}");
+            continue;
+        }
+        if let Err(err) = store.persist(accepting_hash) {
+            warn!("watcher: failed to persist checkpoint state {accepting_hash}: {err}");
+            continue;
+        }
+        *last_processed = Some(accepting_hash);
+    }
+}
+
+#[cfg(any(test, feature = "okcp_relay"))]
+async fn startup_rescan(
+    client: &KaspaRpcClient,
+    program_id: u64,
+    sender: &EngineChannel,
+    store: &RelayCheckpointStore,
+    last_processed: &mut Option<Hash>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(mut anchor) = *last_processed else { return Ok(()); };
+
+    loop {
+        let mut response = client.get_virtual_chain_from_block(anchor, true).await?;
+        if response.accepted_transaction_ids.is_empty() {
+            break;
+        }
+        let next_anchor = response
+            .accepted_transaction_ids
+            .last()
+            .map(|entry| entry.accepting_block_hash)
+            .unwrap_or(anchor);
+        for entry in response.accepted_transaction_ids.drain(..) {
+            let accepting_hash = entry.accepting_block_hash;
+            if last_processed.as_ref() == Some(&accepting_hash) {
+                continue;
+            }
+            match client.get_block(accepting_hash, true).await {
+                Ok(block) => {
+                    if let Some(batch) = batch_from_rpc_block(block, program_id) {
+                        process_checkpoint_batches(sender, store, last_processed, std::iter::once(batch));
+                    }
+                }
+                Err(err) => {
+                    warn!("watcher: failed to fetch block {accepting_hash} during rescan: {err}");
+                }
+            }
+        }
+        if next_anchor == anchor {
+            break;
+        }
+        anchor = next_anchor;
+    }
+
     Ok(())
 }
 
@@ -586,6 +816,9 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc::channel;
+
+    use tempfile::TempDir;
 
     #[test]
     fn okcp_roundtrip() {
@@ -622,5 +855,69 @@ mod tests {
         let (fee, defer) = policy.fee_and_deferral(&snap);
         assert!(!defer);
         assert!((1..=10).contains(&fee));
+    }
+
+    fn hash_from_byte(byte: u8) -> Hash {
+        let mut data = [0u8; 32];
+        data[31] = byte;
+        Hash::from_bytes(data)
+    }
+
+    fn sample_batch(block_byte: u8, payload_byte: u8) -> CheckpointBatch {
+        CheckpointBatch {
+            accepting_hash: hash_from_byte(block_byte),
+            accepting_daa: block_byte as u64,
+            accepting_time: 1_000 + block_byte as u64,
+            checkpoints: vec![(hash_from_byte(payload_byte), vec![payload_byte])],
+        }
+    }
+
+    #[test]
+    fn checkpoint_batches_resume_from_persisted_state() {
+        let dir = TempDir::new().expect("tempdir");
+        let store = RelayCheckpointStore::new(dir.path().join("relay_state"));
+        let (tx, rx) = channel();
+        let channel = EngineChannel::Local(tx);
+        let mut last_processed = None;
+
+        let first = sample_batch(1, 11);
+        let second = sample_batch(2, 22);
+        let third = sample_batch(3, 33);
+
+        process_checkpoint_batches(&channel, &store, &mut last_processed, vec![first.clone()]);
+        assert_eq!(store.load().expect("load state"), Some(first.accepting_hash));
+        // Drain the initial event so later assertions focus on the catch-up run.
+        rx.recv().expect("initial event");
+
+        let mut last_processed = store.load().expect("reload state");
+        process_checkpoint_batches(
+            &channel,
+            &store,
+            &mut last_processed,
+            vec![first.clone(), second.clone(), third.clone()],
+        );
+
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(events.len(), 2);
+
+        match &events[0] {
+            EngineMsg::BlkAccepted { accepting_hash, associated_txs, .. } => {
+                assert_eq!(*accepting_hash, second.accepting_hash);
+                assert_eq!(associated_txs.len(), 1);
+                assert_eq!(associated_txs[0].1, vec![22]);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+        match &events[1] {
+            EngineMsg::BlkAccepted { accepting_hash, associated_txs, .. } => {
+                assert_eq!(*accepting_hash, third.accepting_hash);
+                assert_eq!(associated_txs.len(), 1);
+                assert_eq!(associated_txs[0].1, vec![33]);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+
+        assert_eq!(last_processed, Some(third.accepting_hash));
+        assert_eq!(store.load().expect("final state"), Some(third.accepting_hash));
     }
 }

@@ -16,7 +16,6 @@ use log::{debug, info, warn};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
-use std::str::FromStr;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
@@ -84,6 +83,8 @@ pub struct TxStatus {
     pub confirmations: Option<u64>,
     pub finality: Option<bool>,
 }
+
+const FINALITY_CONFIRMATION_THRESHOLD: u64 = 10;
 
 impl TxStatus {
     fn is_empty(&self) -> bool {
@@ -196,33 +197,22 @@ impl TxOutputCache {
     }
 }
 
-fn collect_tx_statuses(entry: &RpcAcceptedTransactionIds) -> HashMap<Hash, TxStatus> {
-    let mut statuses = HashMap::new();
+fn derive_block_status(
+    block_blue_score: u64,
+    block_daa_score: u64,
+    is_chain_block: bool,
+    virtual_daa_score: u64,
+) -> TxStatus {
+    let mut status = TxStatus::default();
+    status.acceptance_height = Some(block_blue_score);
 
-    if let Ok(value) = serde_json::to_value(entry) {
-        if let Some(transactions) = value.get("acceptedTransactions").and_then(Value::as_array) {
-            for transaction in transactions {
-                let Some(tx_id_hex) = transaction.get("transactionId").and_then(Value::as_str) else {
-                    continue;
-                };
-                let Ok(tx_id) = Hash::from_str(tx_id_hex) else {
-                    debug!("Failed to parse transaction id from status payload: {tx_id_hex}");
-                    continue;
-                };
-                let status_value = transaction
-                    .get("transactionStatus")
-                    .or_else(|| transaction.get("status"))
-                    .or_else(|| transaction.get("transaction_status"));
-                if let Some(status_value) = status_value {
-                    if let Some(status) = TxStatus::from_json(status_value) {
-                        statuses.insert(tx_id, status);
-                    }
-                }
-            }
-        }
-    }
+    let confirmations = virtual_daa_score
+        .saturating_sub(block_daa_score)
+        .saturating_add(1);
+    status.confirmations = Some(confirmations);
+    status.finality = Some(is_chain_block && confirmations >= FINALITY_CONFIRMATION_THRESHOLD);
 
-    statuses
+    status
 }
 
 pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signal: Arc<AtomicBool>) {
@@ -256,6 +246,7 @@ pub async fn run_listener_with_config(
         }
     };
     let mut sink = info.sink;
+    let mut virtual_daa_score = info.virtual_daa_score;
     let mut now = Instant::now();
     info!("Sink: {sink}");
     loop {
@@ -297,6 +288,12 @@ pub async fn run_listener_with_config(
             continue;
         }
 
+        if let Ok(updated_info) = kaspad.get_block_dag_info().await {
+            virtual_daa_score = updated_info.virtual_daa_score;
+        } else {
+            warn!("Failed to refresh DAG info for virtual score; using last known value");
+        }
+
         for rcb in vcb.removed_chain_block_hashes {
             for (_, sender) in engines.values() {
                 let msg = Msg::BlkReverted { accepting_hash: rcb };
@@ -309,7 +306,6 @@ pub async fn run_listener_with_config(
         // Iterate new chain blocks
         for ncb in vcb.accepted_transaction_ids {
             let accepting_hash = ncb.accepting_block_hash;
-            let status_map = collect_tx_statuses(&ncb);
 
             // Required txs kept in original acceptance order. Skip the first which is always a coinbase tx
             let required_txs: Vec<Hash> = ncb
@@ -323,8 +319,6 @@ pub async fn run_listener_with_config(
             // Track the required payloads and outputs
             let mut required_payloads: HashMap<Hash, Option<Vec<u8>>> = required_txs.iter().map(|&id| (id, None)).collect();
             let mut required_outputs: HashMap<Hash, Option<Vec<TxOutputInfo>>> = required_txs.iter().map(|&id| (id, None)).collect();
-            let mut required_statuses: HashMap<Hash, Option<TxStatus>> =
-                required_txs.iter().map(|&id| (id, status_map.get(&id).cloned())).collect();
             let mut required_num = required_payloads.len();
 
             if required_num == 0 {
@@ -338,6 +332,19 @@ pub async fn run_listener_with_config(
                     continue;
                 }
             };
+            let is_chain_block = accepting_block
+                .verbose_data
+                .as_ref()
+                .map(|verbose| verbose.is_chain_block)
+                .unwrap_or(false);
+            let block_status = derive_block_status(
+                accepting_block.header.blue_score,
+                accepting_block.header.daa_score,
+                is_chain_block,
+                virtual_daa_score,
+            );
+            let mut required_statuses: HashMap<Hash, Option<TxStatus>> =
+                required_txs.iter().map(|&id| (id, Some(block_status.clone()))).collect();
             let verbose = match accepting_block.verbose_data {
                 Some(verbose) => verbose,
                 None => {
@@ -509,6 +516,22 @@ mod tests {
         let status = TxStatus::from_json(&value).expect("status");
         assert_eq!(status.acceptance_height, Some(13));
         assert_eq!(status.confirmations, Some(2));
+        assert_eq!(status.finality, Some(false));
+    }
+
+    #[test]
+    fn derive_block_status_tracks_confirmations_and_finality() {
+        let status = derive_block_status(150, 140, true, 155);
+        assert_eq!(status.acceptance_height, Some(150));
+        assert_eq!(status.confirmations, Some(16));
+        assert_eq!(status.finality, Some(16 >= FINALITY_CONFIRMATION_THRESHOLD));
+    }
+
+    #[test]
+    fn derive_block_status_handles_early_blocks() {
+        let status = derive_block_status(42, 50, false, 48);
+        assert_eq!(status.acceptance_height, Some(42));
+        assert_eq!(status.confirmations, Some(1));
         assert_eq!(status.finality, Some(false));
     }
 
