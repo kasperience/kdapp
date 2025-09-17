@@ -403,10 +403,10 @@ pub async fn relay_checkpoints(
     }
 }
 
-#[cfg(any(test, feature = "okcp_relay"))]
+#[cfg(feature = "okcp_relay")]
 const DEFAULT_RELAY_STATE_FILE: &str = "okcp_relay_state.hex";
 
-#[cfg(any(test, feature = "okcp_relay"))]
+#[cfg(feature = "okcp_relay")]
 fn default_state_path() -> PathBuf {
     PathBuf::from(DEFAULT_RELAY_STATE_FILE)
 }
@@ -463,7 +463,7 @@ impl RelayCheckpointStore {
     }
 }
 
-#[cfg(any(test, feature = "okcp_relay"))]
+#[cfg(feature = "okcp_relay")]
 fn batch_from_notification_block(block: kaspa_consensus_core::block::Block, program_id: u64) -> Option<CheckpointBatch> {
     let accepting_hash = block.hash();
     let accepting_daa = block.header.daa_score;
@@ -483,7 +483,7 @@ fn batch_from_notification_block(block: kaspa_consensus_core::block::Block, prog
     build_checkpoint_batch(accepting_hash, accepting_daa, accepting_time, checkpoints)
 }
 
-#[cfg(any(test, feature = "okcp_relay"))]
+#[cfg(feature = "okcp_relay")]
 fn batch_from_rpc_block(block: RpcBlock, program_id: u64) -> Option<CheckpointBatch> {
     use std::convert::TryFrom;
 
@@ -515,7 +515,7 @@ fn batch_from_rpc_block(block: RpcBlock, program_id: u64) -> Option<CheckpointBa
     build_checkpoint_batch(accepting_hash, accepting_daa, accepting_time, checkpoints)
 }
 
-#[cfg(any(test, feature = "okcp_relay"))]
+#[cfg(feature = "okcp_relay")]
 fn build_checkpoint_batch(
     accepting_hash: Hash,
     accepting_daa: u64,
@@ -564,7 +564,7 @@ where
     }
 }
 
-#[cfg(any(test, feature = "okcp_relay"))]
+#[cfg(feature = "okcp_relay")]
 async fn startup_rescan(
     client: &KaspaRpcClient,
     program_id: u64,
