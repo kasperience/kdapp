@@ -201,15 +201,6 @@ fn invoice_payment_reorg_resets_confirmations() {
 
     let status_high = tx_status(500, 3);
 
-    let status_high = TxStatus {
-        acceptance_height: Some(500),
-        confirmations: Some(3),
-        finality: Some(false),
-
-        ..TxStatus::default()
-
-    };
-
     let paid_cmd = MerchantCommand::MarkPaid { invoice_id, payer: payer_pk };
     let paid_msg = EpisodeMessage::new_signed_command(episode_id, paid_cmd, payer_sk, payer_pk);
     let outputs = vec![TxOutputInfo { value: 50_000, script_version: 0, script_bytes: Some(p2pk_script(&merchant_pk)) }];
@@ -235,13 +226,6 @@ fn invoice_payment_reorg_resets_confirmations() {
     // Re-accept payment on new branch with fewer confirmations
 
     let status_low = tx_status(505, 1);
-
-    let status_low = TxStatus {
-        acceptance_height: Some(505),
-        confirmations: Some(1),
-        finality: Some(false),
-
-    };
 
     let paid_again = EpisodeMessage::new_signed_command(
         episode_id,
