@@ -1,4 +1,7 @@
-use crate::models::{GuardianMetrics, Invoice, Mempool, Subscription, WebhookEvent};
+use crate::{
+    models::{GuardianMetrics, Invoice, Mempool, Subscription, WebhookEvent},
+    ui::RefreshScheduler,
+};
 use ratatui::style::Color;
 use reqwest::Client;
 use serde::Deserialize;
@@ -692,10 +695,16 @@ impl App {
         }
     }
 
-    async fn poll_invoice_status(app: Arc<AsyncMutex<App>>, invoice_id: u64, target: &str, timeout: Duration) -> bool {
+    async fn poll_invoice_status(
+        app: Arc<AsyncMutex<App>>,
+        scheduler: Arc<RefreshScheduler>,
+        invoice_id: u64,
+        target: &str,
+        timeout: Duration,
+    ) -> bool {
         let start = Instant::now();
         loop {
-            App::refresh_task(app.clone()).await;
+            scheduler.refresh_now(app.clone()).await;
             {
                 let a = app.lock().await;
                 let status = a
@@ -716,7 +725,12 @@ impl App {
         }
     }
 
-    pub async fn create_invoice_task(app: Arc<AsyncMutex<App>>, amount_sompi: u64, memo: String) {
+    pub async fn create_invoice_task(
+        app: Arc<AsyncMutex<App>>,
+        scheduler: Arc<RefreshScheduler>,
+        amount_sompi: u64,
+        memo: String,
+    ) {
         let (client, merchant_url, api_key) = {
             let a = app.lock().await;
             (a.client.clone(), a.merchant_url.clone(), a.api_key.clone())
@@ -751,10 +765,10 @@ impl App {
                 a.set_status(format!("Error: {e}"), Color::Red);
             }
         }
-        App::refresh_task(app.clone()).await;
+        scheduler.refresh_now(app.clone()).await;
     }
 
-    pub async fn ack_task(app: Arc<AsyncMutex<App>>, invoice_id: u64) {
+    pub async fn ack_task(app: Arc<AsyncMutex<App>>, scheduler: Arc<RefreshScheduler>, invoice_id: u64) {
         let (client, merchant_url, api_key) = {
             let a = app.lock().await;
             (a.client.clone(), a.merchant_url.clone(), a.api_key.clone())
@@ -766,7 +780,9 @@ impl App {
                     let mut a = app.lock().await;
                     a.set_status("Awaiting acknowledgement".into(), Color::Yellow);
                 }
-                let acked = App::poll_invoice_status(app.clone(), invoice_id, "Acked", Duration::from_secs(10)).await;
+                let acked =
+                    App::poll_invoice_status(app.clone(), scheduler.clone(), invoice_id, "Acked", Duration::from_secs(10))
+                        .await;
                 let mut a = app.lock().await;
                 if acked {
                     a.set_status("Invoice acknowledged".into(), Color::Green);
@@ -783,10 +799,14 @@ impl App {
                 a.set_status(format!("Error: {e}"), Color::Red);
             }
         }
-        App::refresh_task(app.clone()).await;
+        scheduler.refresh_now(app.clone()).await;
     }
 
-    pub async fn dispute_invoice_task(app: Arc<AsyncMutex<App>>, invoice_id: u64) {
+    pub async fn dispute_invoice_task(
+        app: Arc<AsyncMutex<App>>,
+        scheduler: Arc<RefreshScheduler>,
+        invoice_id: u64,
+    ) {
         let (client, merchant_url, guardian_url, api_key) = {
             let a = app.lock().await;
             (a.client.clone(), a.merchant_url.clone(), a.guardian_url.clone(), a.api_key.clone())
@@ -814,7 +834,8 @@ impl App {
                 let mut a = app.lock().await;
                 a.set_status("Acknowledgement pending".into(), Color::Yellow);
             }
-            let _ = App::poll_invoice_status(app.clone(), invoice_id, "Acked", Duration::from_secs(10)).await;
+            let _ =
+                App::poll_invoice_status(app.clone(), scheduler.clone(), invoice_id, "Acked", Duration::from_secs(10)).await;
         }
 
         let current = {
@@ -869,10 +890,14 @@ impl App {
                 a.set_status("Error: dispute failed".into(), Color::Red);
             }
         }
-        App::refresh_task(app.clone()).await;
+        scheduler.refresh_now(app.clone()).await;
     }
 
-    pub async fn simulate_payment_task(app: Arc<AsyncMutex<App>>, invoice_id: u64) {
+    pub async fn simulate_payment_task(
+        app: Arc<AsyncMutex<App>>,
+        scheduler: Arc<RefreshScheduler>,
+        invoice_id: u64,
+    ) {
         let (client, merchant_url, api_key, mock) = {
             let a = app.lock().await;
             (a.client.clone(), a.merchant_url.clone(), a.api_key.clone(), a.mock_l1)
@@ -895,10 +920,10 @@ impl App {
                 a.set_status(format!("Error: {e}"), Color::Red);
             }
         }
-        App::refresh_task(app.clone()).await;
+        scheduler.refresh_now(app.clone()).await;
     }
 
-    pub async fn charge_sub_task(app: Arc<AsyncMutex<App>>, sub_id: u64) {
+    pub async fn charge_sub_task(app: Arc<AsyncMutex<App>>, scheduler: Arc<RefreshScheduler>, sub_id: u64) {
         let (client, merchant_url, api_key) = {
             let a = app.lock().await;
             (a.client.clone(), a.merchant_url.clone(), a.api_key.clone())
@@ -918,7 +943,7 @@ impl App {
                 a.set_status(format!("Error: {e}"), Color::Red);
             }
         }
-        App::refresh_task(app.clone()).await;
+        scheduler.refresh_now(app.clone()).await;
     }
 
     pub async fn rollback_watcher_config_task(app: Arc<AsyncMutex<App>>, op_id: u64) {
@@ -957,7 +982,13 @@ impl App {
     }
 
     #[allow(dead_code)]
-    pub async fn submit_watcher_config_task(app: Arc<AsyncMutex<App>>, mode: WatcherMode, max_fee: u64, threshold: f32) {
+    pub async fn submit_watcher_config_task(
+        app: Arc<AsyncMutex<App>>,
+        scheduler: Arc<RefreshScheduler>,
+        mode: WatcherMode,
+        max_fee: u64,
+        threshold: f32,
+    ) {
         let (client, merchant_url, api_key) = {
             let a = app.lock().await;
             (a.client.clone(), a.merchant_url.clone(), a.api_key.clone())
@@ -987,6 +1018,6 @@ impl App {
                 a.set_status(format!("Error: {e}"), Color::Red);
             }
         }
-        App::refresh_task(app.clone()).await;
+        scheduler.refresh_now(app.clone()).await;
     }
 }

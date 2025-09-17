@@ -20,8 +20,7 @@ use models::WebhookEvent;
 use ratatui::{prelude::*, Terminal};
 use serde_json::Value;
 use sha2::Sha256;
-use std::error::Error;
-use std::sync::Arc;
+use std::{error::Error, sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Mutex};
 
 #[derive(Clone)]
@@ -80,6 +79,8 @@ struct Args {
     api_key: Option<String>,
     webhook_port: Option<u16>,
     mock_l1: bool,
+    refresh_interval: Duration,
+    refresh_jitter: Duration,
 }
 
 fn parse_args() -> Args {
@@ -90,6 +91,8 @@ fn parse_args() -> Args {
     let mut api_key: Option<String> = None;
     let mut mock_l1 = false;
     let mut webhook_port: Option<u16> = None;
+    let mut refresh_interval_ms: u64 = 1000;
+    let mut refresh_jitter_ms: u64 = 500;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -100,17 +103,42 @@ fn parse_args() -> Args {
             "--api-key" => api_key = args.next(),
             "--webhook-port" => webhook_port = args.next().and_then(|s| s.parse().ok()),
             "--mock-l1" => mock_l1 = true,
+            "--refresh-interval-ms" => {
+                if let Some(val) = args.next() {
+                    if let Ok(parsed) = val.parse::<u64>() {
+                        refresh_interval_ms = parsed;
+                    }
+                }
+            }
+            "--refresh-jitter-ms" => {
+                if let Some(val) = args.next() {
+                    if let Ok(parsed) = val.parse::<u64>() {
+                        refresh_jitter_ms = parsed;
+                    }
+                }
+            }
             _ => {}
         }
     }
     let api_key = api_key.map(|s| s.trim().to_string());
     let webhook_secret = webhook_secret.trim().to_string();
-    Args { merchant_url, guardian_url, watcher_url, webhook_secret, api_key, webhook_port, mock_l1 }
+    Args {
+        merchant_url,
+        guardian_url,
+        watcher_url,
+        webhook_secret,
+        api_key,
+        webhook_port,
+        mock_l1,
+        refresh_interval: Duration::from_millis(refresh_interval_ms),
+        refresh_jitter: Duration::from_millis(refresh_jitter_ms),
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = parse_args();
+    let scheduler = Arc::new(ui::RefreshScheduler::new(args.refresh_interval, args.refresh_jitter));
     let app = Arc::new(Mutex::new(App::new(args.merchant_url, args.guardian_url, args.watcher_url, args.api_key, args.mock_l1)));
 
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -141,14 +169,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let _ = axum::serve(listener, router).await;
     });
 
-    // background refresh task (no long holds on the mutex)
+    // background refresh scheduler keeps network polling centralized
     {
         let app_clone = Arc::clone(&app);
+        let sched_clone = Arc::clone(&scheduler);
         tokio::spawn(async move {
-            loop {
-                App::refresh_task(app_clone.clone()).await;
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
+            sched_clone.run(app_clone).await;
+        });
+    }
+    {
+        let app_clone = Arc::clone(&app);
+        let sched_clone = Arc::clone(&scheduler);
+        tokio::spawn(async move {
+            sched_clone.refresh_now(app_clone).await;
         });
     }
 
@@ -159,7 +192,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let res = run_app(&mut terminal, app.clone()).await;
+    let res = run_app(&mut terminal, app.clone(), scheduler.clone()).await;
 
     // restore terminal
     disable_raw_mode()?;
@@ -171,7 +204,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -> Result<(), Box<dyn Error>> {
+async fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>,
+    app: Arc<Mutex<App>>,
+    scheduler: Arc<ui::RefreshScheduler>,
+) -> Result<(), Box<dyn Error>> {
     loop {
         {
             let mut app = app.lock().await;
@@ -194,6 +231,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
 
                 // Handle modals first while holding the lock
                 let mut handled = false;
+                let mut queue_refresh = false;
                 {
                     let mut a = app.lock().await;
                     if let Some(modal) = a.api_key_modal.as_mut() {
@@ -202,7 +240,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                             event::KeyCode::Enter => {
                                 a.submit_api_key();
                                 if a.api_key.is_some() {
-                                    a.refresh().await;
+                                    queue_refresh = true;
                                 }
                             }
                             event::KeyCode::Backspace => {
@@ -229,6 +267,13 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                         handled = true;
                     }
                 }
+                if queue_refresh {
+                    let app2 = app.clone();
+                    let sched2 = scheduler.clone();
+                    tokio::spawn(async move {
+                        sched2.refresh_now(app2).await;
+                    });
+                }
                 if handled {
                     continue;
                 }
@@ -238,8 +283,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                     Action::Quit => return Ok(()),
                     Action::Refresh => {
                         let app2 = app.clone();
+                        let sched2 = scheduler.clone();
                         tokio::spawn(async move {
-                            App::refresh_task(app2).await;
+                            sched2.refresh_now(app2).await;
                         });
                     }
                     Action::FocusNext => {
@@ -267,8 +313,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                             let memo = prompt("memo").unwrap_or_default();
                             if let Ok(amount) = amount_s.parse::<u64>() {
                                 let app2 = app.clone();
+                                let sched2 = scheduler.clone();
                                 tokio::spawn(async move {
-                                    App::create_invoice_task(app2, amount, memo).await;
+                                    App::create_invoice_task(app2, sched2, amount, memo).await;
                                 });
                             } else {
                                 let mut a = app.lock().await;
@@ -284,8 +331,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                         };
                         if let Some(invoice_id) = id {
                             let app2 = app.clone();
+                            let sched2 = scheduler.clone();
                             tokio::spawn(async move {
-                                App::simulate_payment_task(app2, invoice_id).await;
+                                App::simulate_payment_task(app2, sched2, invoice_id).await;
                             });
                         }
                     }
@@ -296,8 +344,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                         };
                         if let Some(invoice_id) = id {
                             let app2 = app.clone();
+                            let sched2 = scheduler.clone();
                             tokio::spawn(async move {
-                                App::ack_task(app2, invoice_id).await;
+                                App::ack_task(app2, sched2, invoice_id).await;
                             });
                         }
                     }
@@ -308,8 +357,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                         };
                         if let Some(invoice_id) = id {
                             let app2 = app.clone();
+                            let sched2 = scheduler.clone();
                             tokio::spawn(async move {
-                                App::dispute_invoice_task(app2, invoice_id).await;
+                                App::dispute_invoice_task(app2, sched2, invoice_id).await;
                             });
                         }
                     }
@@ -339,8 +389,9 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -
                         };
                         if let Some(sub_id) = id {
                             let app2 = app.clone();
+                            let sched2 = scheduler.clone();
                             tokio::spawn(async move {
-                                App::charge_sub_task(app2, sub_id).await;
+                                App::charge_sub_task(app2, sched2, sub_id).await;
                             });
                         } else {
                             let mut a = app.lock().await;
