@@ -70,6 +70,12 @@ pub struct WebhookEvent {
     pub invoice_id: u64,
     pub amount: u64,
     pub timestamp: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub episode_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payer_pubkey: Option<String>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
