@@ -30,7 +30,7 @@ use kaspa_consensus_core::{
 #[cfg(any(test, feature = "okcp_relay"))]
 use kaspa_consensus_core::Hash;
 use kaspa_rpc_core::api::rpc::RpcApi;
-#[cfg(any(test, feature = "okcp_relay"))]
+#[cfg(feature = "okcp_relay")]
 use kaspa_rpc_core::model::block::RpcBlock;
 use kaspa_wrpc_client::client::KaspaRpcClient;
 #[cfg(any(test, feature = "okcp_relay"))]
@@ -174,7 +174,7 @@ pub fn policy_snapshot() -> PolicySnapshot {
         .into()
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[allow(dead_code)]
 pub fn set_policy_snapshot(snapshot: PolicySnapshot) {
     let mut info = POLICY_INFO.write().expect("policy lock");
     info.min = snapshot.min;
@@ -185,7 +185,7 @@ pub fn set_policy_snapshot(snapshot: PolicySnapshot) {
     info.congestion_threshold = snapshot.congestion_threshold;
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[allow(dead_code)]
 pub fn set_mempool_snapshot(snapshot: MempoolSnapshot) {
     store_metrics(snapshot);
 }
