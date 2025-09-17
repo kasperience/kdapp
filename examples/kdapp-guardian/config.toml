@@ -3,7 +3,7 @@ listen_addr = "127.0.0.1:9650"
 wrpc_url = "wss://node:16110"
 # false = testnet-10, true = mainnet
 mainnet = false
-# Private key file for guardian's ECDSA key; created if missing
+# Guardian key backend (file path or hsm:ENV_VAR for HSM integrations)
 key_path = "guardian.key"
 # HTTP metrics port
 http_port = 9651
