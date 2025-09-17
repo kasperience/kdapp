@@ -1,10 +1,12 @@
 use std::collections::{HashMap, VecDeque};
+
 #[cfg(any(test, feature = "okcp_relay"))]
 use std::fs;
 #[cfg(any(test, feature = "okcp_relay"))]
 use std::io::{self, ErrorKind};
 use std::net::UdpSocket;
 #[cfg(any(test, feature = "okcp_relay"))]
+
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, RwLock};
 use std::thread;
@@ -13,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use once_cell::sync::Lazy;
 use thiserror::Error;
 use tokio::sync::Mutex;
+
 #[cfg(feature = "okcp_relay")]
 use tokio::time::{sleep, Duration};
 
@@ -22,6 +25,7 @@ use axum::http::StatusCode;
 use axum::{routing::get, Json, Router};
 use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
 use kaspa_consensus_core::{
+    hash::Hash,
     network::{NetworkId, NetworkType},
     tx::{TransactionOutpoint, UtxoEntry},
     Hash,
