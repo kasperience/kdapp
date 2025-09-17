@@ -16,7 +16,8 @@ use axum::{
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tokio::net::TcpListener;
-use webhook::{post_event, WebhookError, WebhookEvent};
+use kdapp::proxy::TxStatus;
+use webhook::{post_event, ConfirmationPolicy, WebhookError, WebhookEvent};
 
 #[derive(Clone)]
 struct AppState {
@@ -80,4 +81,23 @@ async fn no_retry_on_4xx() {
         other => panic!("unexpected error: {other:?}"),
     }
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn confirmation_policy_thresholds() {
+    let policy = ConfirmationPolicy::MinConfirmations(3);
+    let low = TxStatus { confirmations: Some(2), finality: Some(false), ..TxStatus::default() };
+    let meets = TxStatus { confirmations: Some(3), finality: Some(false), ..TxStatus::default() };
+    assert!(!policy.is_satisfied_by(Some(&low)));
+    assert!(policy.is_satisfied_by(Some(&meets)));
+    assert!(!policy.is_satisfied_by(None));
+}
+
+#[test]
+fn confirmation_policy_finality() {
+    let policy = ConfirmationPolicy::Finalized;
+    let status = TxStatus { confirmations: Some(5), finality: Some(true), ..TxStatus::default() };
+    let not_final = TxStatus { confirmations: Some(20), finality: Some(false), ..TxStatus::default() };
+    assert!(policy.is_satisfied_by(Some(&status)));
+    assert!(!policy.is_satisfied_by(Some(&not_final)));
 }

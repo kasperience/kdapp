@@ -1,3 +1,5 @@
+use std::env;
+use std::fmt;
 use std::time::Duration;
 
 use hex::encode;
@@ -8,7 +10,55 @@ use serde::Serialize;
 use sha2::Sha256;
 use thiserror::Error;
 
+use kdapp::proxy::TxStatus;
+
 const RETRY_DELAYS: [u64; 3] = [1, 2, 4];
+pub const CONFIRMATION_POLICY_ENV: &str = "MERCHANT_CONFIRMATION_POLICY";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfirmationPolicy {
+    Finalized,
+    MinConfirmations(u64),
+}
+
+impl ConfirmationPolicy {
+    pub fn from_env() -> Self {
+        match env::var(CONFIRMATION_POLICY_ENV) {
+            Ok(value) => Self::from_str(value.trim()).unwrap_or_else(|| ConfirmationPolicy::MinConfirmations(1)),
+            Err(_) => ConfirmationPolicy::MinConfirmations(1),
+        }
+    }
+
+    fn from_str(value: &str) -> Option<Self> {
+        if value.eq_ignore_ascii_case("finalized") || value.eq_ignore_ascii_case("finality") {
+            Some(ConfirmationPolicy::Finalized)
+        } else if value.is_empty() {
+            None
+        } else {
+            value.parse::<u64>().ok().map(ConfirmationPolicy::MinConfirmations)
+        }
+    }
+
+    pub fn is_satisfied_by(&self, status: Option<&TxStatus>) -> bool {
+        let status = match status {
+            Some(status) => status,
+            None => return false,
+        };
+        match self {
+            ConfirmationPolicy::Finalized => status.finality.unwrap_or(false),
+            ConfirmationPolicy::MinConfirmations(threshold) => status.confirmations.unwrap_or(0) >= *threshold,
+        }
+    }
+}
+
+impl fmt::Display for ConfirmationPolicy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConfirmationPolicy::Finalized => write!(f, "finalized"),
+            ConfirmationPolicy::MinConfirmations(n) => write!(f, "{n} confirmations"),
+        }
+    }
+}
 
 #[derive(Serialize)]
 pub struct WebhookEvent {
