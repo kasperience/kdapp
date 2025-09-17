@@ -396,10 +396,21 @@ async fn submit_tx_retry(kaspad: &KaspaRpcClient, tx: &kaspa_consensus_core::tx:
 
 fn main() {
     env_logger::init();
-    let args = Args::parse();
+    let Args {
+        wrpc_url,
+        mainnet,
+        prefix,
+        pattern,
+        disable_tx_output_cache,
+        tx_output_cache_size,
+        command,
+        guardian_addr,
+        guardian_public_key,
+        sled_compact_interval,
+        ..
+    } = Args::parse();
     // Initialize sled only for commands that actually use storage.
-    let needs_db = args
-        .command
+    let needs_db = command
         .as_ref()
         .map(|cmd| {
             matches!(
@@ -421,14 +432,13 @@ fn main() {
         .unwrap_or(true);
     if needs_db {
         storage::init();
-        if args.sled_compact_interval > 0 {
-            storage::start_compaction(args.sled_compact_interval);
+        if sled_compact_interval > 0 {
+            storage::start_compaction(sled_compact_interval);
         }
     }
-    let guardians: Vec<(String, PubKey)> = args
-        .guardian_addr
+    let guardians: Vec<(String, PubKey)> = guardian_addr
         .iter()
-        .zip(args.guardian_public_key.iter())
+        .zip(guardian_public_key.iter())
         .filter_map(|(addr, pk_hex)| parse_public_key(pk_hex).map(|pk| (addr.clone(), pk)))
         .collect();
     for (addr, pk) in &guardians {
@@ -445,7 +455,7 @@ fn main() {
 
     // In-process router for off-chain style delivery
     let router = SimRouter::new(EngineChannel::Local(tx.clone()));
-    match args.command.unwrap_or(CliCmd::Demo) {
+    match command.unwrap_or(CliCmd::Demo) {
         CliCmd::Demo => {
             let (merchant_sk, merchant_pk) = generate_keypair();
             let (customer_sk, customer_pk) = generate_keypair();
@@ -491,24 +501,24 @@ fn main() {
                 None => generate_keypair(),
             };
             log::info!("merchant pubkey: {pk}");
-            let ids = match (args.prefix, args.pattern.as_deref().and_then(parse_pattern)) {
+            let ids = match (prefix, pattern.as_deref().and_then(parse_pattern)) {
                 (Some(pref), Some(pat)) => (pref as PrefixType, pat),
                 _ => program_id::derive_routing_ids(&pk),
             };
             let (prefix, pattern) = ids;
             log::info!("prefix=0x{prefix:08x}, pattern={pattern:?}");
 
-            let cache_config = if args.disable_tx_output_cache {
+            let cache_config = if disable_tx_output_cache {
                 ProxyCacheConfig::disabled()
             } else {
-                ProxyCacheConfig::with_capacity(args.tx_output_cache_size)
+                ProxyCacheConfig::with_capacity(tx_output_cache_size)
             };
             let network =
-                if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+                if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let rt = Runtime::new().expect("runtime");
             let exit = Arc::new(AtomicBool::new(false));
             let engines = std::iter::once((prefix, (pattern, tx.clone()))).collect();
-            let wrpc_url = args.wrpc_url.clone();
+            let wrpc_url = wrpc_url.clone();
             rt.block_on(async move {
                 let kaspad = proxy::connect_client(network, wrpc_url).await.expect("kaspad connect");
                 proxy::run_listener_with_config(kaspad, engines, exit, cache_config).await;
@@ -681,22 +691,22 @@ fn main() {
             });
 
             // Derive routing ids for proxy listener and start it in this process
-            let ids = match (args.prefix, args.pattern.as_deref().and_then(parse_pattern)) {
+            let ids = match (prefix, pattern.as_deref().and_then(parse_pattern)) {
                 (Some(pref), Some(pat)) => (pref as PrefixType, pat),
                 _ => program_id::derive_routing_ids(&pk),
             };
             let (prefix, pattern) = ids;
             log::info!("prefix=0x{prefix:08x}, pattern={pattern:?}");
-            let cache_config = if args.disable_tx_output_cache {
+            let cache_config = if disable_tx_output_cache {
                 ProxyCacheConfig::disabled()
             } else {
-                ProxyCacheConfig::with_capacity(args.tx_output_cache_size)
+                ProxyCacheConfig::with_capacity(tx_output_cache_size)
             };
             let network =
-                if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+                if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let exit = Arc::new(AtomicBool::new(false));
             let engines = std::iter::once((prefix, (pattern, tx.clone()))).collect();
-            let wrpc_url = args.wrpc_url.clone();
+            let wrpc_url = wrpc_url.clone();
             let proxy_handle = std::thread::spawn(move || {
                 let rt = Runtime::new().expect("runtime");
                 rt.block_on(async move {
@@ -735,7 +745,7 @@ fn main() {
                 }
                 None => generate_keypair(),
             };
-            let ids = match (args.prefix, args.pattern.as_deref().and_then(parse_pattern)) {
+            let ids = match (prefix, pattern.as_deref().and_then(parse_pattern)) {
                 (Some(pref), Some(pat)) => (pref as PrefixType, pat),
                 _ => program_id::derive_routing_ids(&m_pk),
             };
@@ -745,13 +755,13 @@ fn main() {
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, m_sk, m_pk);
 
             let network =
-                if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+                if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let rt = Runtime::new().expect("runtime");
             rt.block_on(async {
-                let kaspad = proxy::connect_client(network, args.wrpc_url.clone()).await.expect("kaspad connect");
+                let kaspad = proxy::connect_client(network, wrpc_url.clone()).await.expect("kaspad connect");
                 let kaspa_sk = parse_secret_key(&kaspa_private_key).expect("invalid kaspa private key");
                 let keypair = Keypair::from_secret_key(&secp256k1::Secp256k1::new(), &kaspa_sk);
-                let addr = addr_for_keypair(&keypair, args.mainnet);
+                let addr = addr_for_keypair(&keypair, mainnet);
                 let utxos = utxos_for_address(&kaspad, &addr).await.expect("load utxos");
                 let Some((op, entry)) = utxos.into_iter().max_by_key(|(_, e)| e.amount) else {
                     panic!("no UTXOs for address {addr:?}");
@@ -774,7 +784,7 @@ fn main() {
                 }
                 None => generate_keypair(),
             };
-            let ids = match (args.prefix, args.pattern.as_deref().and_then(parse_pattern)) {
+            let ids = match (prefix, pattern.as_deref().and_then(parse_pattern)) {
                 (Some(pref), Some(pat)) => (pref as PrefixType, pat),
                 _ => program_id::derive_routing_ids(&m_pk),
             };
@@ -784,13 +794,13 @@ fn main() {
             let msg = EpisodeMessage::new_signed_command(episode_id, cmd, m_sk, m_pk);
 
             let network =
-                if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+                if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let rt = Runtime::new().expect("runtime");
             rt.block_on(async {
-                let kaspad = proxy::connect_client(network, args.wrpc_url.clone()).await.expect("kaspad connect");
+                let kaspad = proxy::connect_client(network, wrpc_url.clone()).await.expect("kaspad connect");
                 let kaspa_sk = parse_secret_key(&kaspa_private_key).expect("invalid kaspa private key");
                 let keypair = Keypair::from_secret_key(&secp256k1::Secp256k1::new(), &kaspa_sk);
-                let addr = addr_for_keypair(&keypair, args.mainnet);
+                let addr = addr_for_keypair(&keypair, mainnet);
                 let utxos = utxos_for_address(&kaspad, &addr).await.expect("load utxos");
                 let Some((op, entry)) = utxos.into_iter().max_by_key(|(_, e)| e.amount) else {
                     panic!("no UTXOs for address {addr:?}");
@@ -848,24 +858,24 @@ fn main() {
         }
         CliCmd::Addr { merchant_public_key } => {
             let pk = parse_public_key(&merchant_public_key).expect("invalid public key hex");
-            let addr = addr_for_pubkey(&pk, args.mainnet);
+            let addr = addr_for_pubkey(&pk, mainnet);
             println!("{addr}");
         }
         CliCmd::KaspaAddr { kaspa_private_key } => {
             let sk = parse_secret_key(&kaspa_private_key).expect("invalid private key hex");
             let keypair = Keypair::from_secret_key(&secp256k1::Secp256k1::new(), &sk);
-            let addr = addr_for_keypair(&keypair, args.mainnet);
+            let addr = addr_for_keypair(&keypair, mainnet);
             println!("{addr}");
         }
         CliCmd::Balance { kaspa_private_key } => {
             let sk = parse_secret_key(&kaspa_private_key).expect("invalid private key hex");
             let keypair = Keypair::from_secret_key(&secp256k1::Secp256k1::new(), &sk);
-            let addr = addr_for_keypair(&keypair, args.mainnet);
+            let addr = addr_for_keypair(&keypair, mainnet);
             let network =
-                if args.mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
+                if mainnet { NetworkId::new(NetworkType::Mainnet) } else { NetworkId::with_suffix(NetworkType::Testnet, 10) };
             let rt = Runtime::new().expect("runtime");
             let sum = rt.block_on(async {
-                let kaspad = proxy::connect_client(network, args.wrpc_url.clone()).await.expect("kaspad connect");
+                let kaspad = proxy::connect_client(network, wrpc_url.clone()).await.expect("kaspad connect");
                 let utxos = utxos_for_address(&kaspad, &addr).await.expect("load utxos");
                 utxos.into_iter().map(|(_, e)| e.amount).sum::<u64>()
             });
