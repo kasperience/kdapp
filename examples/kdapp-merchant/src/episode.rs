@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 // Use a relative path so this module works when compiled
 // as part of the crate and when included from tests/fixtures.rs
-use super::storage;
+use super::storage::{self, ConfirmationUpdate};
+use crate::webhook::ConfirmationPolicy;
 
 fn compute_next_run(now: u64, interval: u64) -> u64 {
     #[cfg(test)]
@@ -75,6 +76,8 @@ pub enum MerchantError {
     SubscriptionExists,
     #[error("subscription not found")]
     SubscriptionNotFound,
+    #[error("insufficient confirmations to acknowledge receipt")]
+    InsufficientConfirmations,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -277,6 +280,11 @@ impl Episode for ReceiptEpisode {
                 if inv.status != InvoiceStatus::Paid {
                     return Err(EpisodeError::InvalidCommand(MerchantError::NotFound));
                 }
+                let policy = ConfirmationPolicy::from_env();
+                let confirmation = storage::load_invoice_confirmation(*invoice_id);
+                if !policy.is_satisfied_by(confirmation.as_ref().map(|record| &record.status)) {
+                    return Err(EpisodeError::InvalidCommand(MerchantError::InsufficientConfirmations));
+                }
                 inv.status = InvoiceStatus::Acked;
                 inv.last_update = metadata.accepting_time;
                 storage::put_invoice(inv);
@@ -374,7 +382,7 @@ impl Episode for ReceiptEpisode {
                     inv.status = InvoiceStatus::Open;
                     inv.payer = None;
                     inv.carrier_tx = None;
-                    storage::put_invoice(inv);
+                    let _ = storage::persist_invoice_state(inv, ConfirmationUpdate::Clear);
                     true
                 } else {
                     false
@@ -467,10 +475,12 @@ impl ReceiptEpisode {
 #[cfg(test)]
 mod tests {
     use super::super::storage;
+    use super::super::storage::ConfirmationUpdate;
     use super::*;
     use kaspa_consensus_core::Hash;
     use kdapp::episode::{PayloadMetadata, TxOutputInfo};
     use kdapp::pki::generate_keypair;
+    use kdapp::proxy::TxStatus;
 
     fn md() -> PayloadMetadata {
         PayloadMetadata {
@@ -480,6 +490,23 @@ mod tests {
             tx_id: Hash::default(),
             tx_outputs: None,
             tx_status: None,
+        }
+    }
+
+    struct EnvGuard {
+        key: &'static str,
+    }
+
+    impl EnvGuard {
+        fn set(value: &str) -> Self {
+            std::env::set_var(crate::webhook::CONFIRMATION_POLICY_ENV, value);
+            EnvGuard { key: crate::webhook::CONFIRMATION_POLICY_ENV }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            std::env::remove_var(self.key);
         }
     }
 
@@ -499,6 +526,7 @@ mod tests {
 
     #[test]
     fn pay_and_ack_happy_path() {
+        let _policy = EnvGuard::set("1");
         let (_sk, pk) = generate_keypair();
         let metadata = md();
         storage::init();
@@ -518,8 +546,15 @@ mod tests {
             s
         };
         md_paid.tx_outputs = Some(vec![TxOutputInfo { value: 100, script_version: 0, script_bytes: Some(script) }]);
+        md_paid.tx_status = Some(TxStatus { confirmations: Some(1), finality: Some(false), ..TxStatus::default() });
         let cmd = MerchantCommand::MarkPaid { invoice_id: 1, payer: pk };
         let _rb = ep.execute(&cmd, Some(pk), &md_paid).expect("pay ok");
+        let status = md_paid.tx_status.as_ref().unwrap();
+        storage::persist_invoice_state(
+            ep.invoices.get(&1).unwrap(),
+            ConfirmationUpdate::set(md_paid.tx_id, status, md_paid.accepting_time),
+        )
+        .unwrap();
         assert!(matches!(ep.invoices.get(&1).unwrap().status, InvoiceStatus::Paid));
         // Ack
         let cmd = MerchantCommand::AckReceipt { invoice_id: 1 };

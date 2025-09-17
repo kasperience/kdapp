@@ -10,13 +10,16 @@ use std::thread;
 use std::time::Duration;
 
 use super::episode::{CustomerInfo, Invoice, Subscription};
+use kaspa_consensus_core::Hash;
 use kdapp::pki::PubKey;
+use kdapp::proxy::TxStatus;
 use secp256k1::PublicKey as SecpPublicKey;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 const SCRIPT_TEMPLATES_TREE: &str = "script_templates";
 const SESSION_TOKENS_TREE: &str = "session_tokens";
+const INVOICE_CONFIRMATIONS_TREE: &str = "invoice_confirmations";
 
 pub const SCRIPT_TEMPLATE_WHITELIST: &[&str] = &["merchant_p2pk", "merchant_guardian_multisig", "merchant_taproot"];
 
@@ -64,6 +67,7 @@ pub fn init() {
     let _subscriptions = DB.open_tree("subscriptions").expect("subscriptions tree");
     let _templates = DB.open_tree(SCRIPT_TEMPLATES_TREE).expect("script templates tree");
     let _sessions = DB.open_tree(SESSION_TOKENS_TREE).expect("session tokens tree");
+    let _confirmations = DB.open_tree(INVOICE_CONFIRMATIONS_TREE).expect("invoice confirmations tree");
     #[cfg(test)]
     {
         // Ensure clean state for each test run
@@ -72,7 +76,74 @@ pub fn init() {
         let _ = _subscriptions.clear();
         let _ = _templates.clear();
         let _ = _sessions.clear();
+        let _ = _confirmations.clear();
     }
+}
+
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+pub struct ConfirmationRecord {
+    pub tx_id: [u8; 32],
+    pub status: TxStatus,
+    pub updated_at: u64,
+}
+
+#[derive(Clone, Debug)]
+pub enum ConfirmationUpdate<'a> {
+    Keep,
+    Clear,
+    Set { tx_id: Hash, status: &'a TxStatus, updated_at: u64 },
+}
+
+impl<'a> ConfirmationUpdate<'a> {
+    pub fn set(tx_id: Hash, status: &'a TxStatus, updated_at: u64) -> Self {
+        ConfirmationUpdate::Set { tx_id, status, updated_at }
+    }
+}
+
+enum ConfirmationAction {
+    Set(Vec<u8>),
+    Clear,
+}
+
+fn map_tx_err(err: sled::transaction::TransactionError<sled::Error>) -> sled::Error {
+    match err {
+        sled::transaction::TransactionError::Abort(e) | sled::transaction::TransactionError::Storage(e) => e,
+    }
+}
+
+pub fn persist_invoice_state(invoice: &Invoice, update: ConfirmationUpdate) -> sled::Result<()> {
+    use sled::transaction::Transactional;
+
+    let invoices = DB.open_tree("invoices")?;
+    let confirmations = DB.open_tree(INVOICE_CONFIRMATIONS_TREE)?;
+    let invoice_bytes = borsh::to_vec(invoice).expect("serialize invoice");
+    let action = match update {
+        ConfirmationUpdate::Keep => None,
+        ConfirmationUpdate::Clear => Some(ConfirmationAction::Clear),
+        ConfirmationUpdate::Set { tx_id, status, updated_at } => {
+            let mut tx_bytes = [0u8; 32];
+            tx_bytes.copy_from_slice(tx_id.as_bytes());
+            let record = ConfirmationRecord { tx_id: tx_bytes, status: status.clone(), updated_at };
+            let bytes = borsh::to_vec(&record).expect("serialize confirmation record");
+            Some(ConfirmationAction::Set(bytes))
+        }
+    };
+    let key = invoice.id.to_be_bytes();
+    let res = (&invoices, &confirmations).transaction(move |(inv_tree, conf_tree)| {
+        inv_tree.insert(key, invoice_bytes.clone())?;
+        if let Some(act) = &action {
+            match act {
+                ConfirmationAction::Set(bytes) => {
+                    conf_tree.insert(key, bytes.clone())?;
+                }
+                ConfirmationAction::Clear => {
+                    conf_tree.remove(key)?;
+                }
+            }
+        }
+        Ok(())
+    });
+    res.map_err(map_tx_err)
 }
 
 static FLUSH_WORKER: Lazy<()> = Lazy::new(|| {
@@ -125,15 +196,21 @@ pub fn load_invoices() -> BTreeMap<u64, Invoice> {
 }
 
 pub fn put_invoice(inv: &Invoice) {
-    let tree = DB.open_tree("invoices").expect("invoices tree");
-    let key = inv.id.to_be_bytes();
-    let val = borsh::to_vec(inv).expect("serialize invoice");
-    let _ = tree.insert(key, val);
+    let _ = persist_invoice_state(inv, ConfirmationUpdate::Keep);
 }
 
 pub fn delete_invoice(id: u64) {
-    let tree = DB.open_tree("invoices").expect("invoices tree");
-    let _ = tree.remove(id.to_be_bytes());
+    use sled::transaction::Transactional;
+
+    let invoices = DB.open_tree("invoices").expect("invoices tree");
+    let confirmations = DB.open_tree(INVOICE_CONFIRMATIONS_TREE).expect("invoice confirmations tree");
+    let key = id.to_be_bytes();
+    let res = (&invoices, &confirmations).transaction(|(inv_tree, conf_tree)| {
+        let _ = inv_tree.remove(key)?;
+        let _ = conf_tree.remove(key)?;
+        Ok(())
+    });
+    let _ = res.map_err(map_tx_err);
 }
 
 #[allow(dead_code)]
@@ -196,6 +273,14 @@ pub fn put_subscription(sub: &Subscription) {
 pub fn delete_subscription(id: u64) {
     let tree = DB.open_tree("subscriptions").expect("subscriptions tree");
     let _ = tree.remove(id.to_be_bytes());
+}
+
+pub fn load_invoice_confirmation(id: u64) -> Option<ConfirmationRecord> {
+    let tree = DB.open_tree(INVOICE_CONFIRMATIONS_TREE).expect("invoice confirmations tree");
+    tree.get(id.to_be_bytes())
+        .ok()
+        .flatten()
+        .and_then(|bytes| borsh::from_slice::<ConfirmationRecord>(&bytes).ok())
 }
 
 fn canonical_template_id(id: &str) -> String {

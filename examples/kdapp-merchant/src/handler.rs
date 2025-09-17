@@ -7,7 +7,7 @@ use kdapp::pki::{to_message, verify_signature, PubKey, Sig};
 
 use crate::client_sender;
 use crate::episode::{MerchantCommand, ReceiptEpisode};
-use crate::storage;
+use crate::storage::{self, ConfirmationUpdate};
 use crate::tlv::{hash_state, MsgType, TlvMsg, DEMO_HMAC_KEY, SCRIPT_POLICY_VERSION, TLV_VERSION};
 use kdapp_guardian::{self as guardian};
 
@@ -135,6 +135,35 @@ impl EpisodeEventHandler<ReceiptEpisode> for MerchantEventHandler {
             metadata.accepting_time
         );
         storage::flush();
+
+        let persist = |invoice_id: u64, update: ConfirmationUpdate| {
+            if let Some(inv) = episode.invoices.get(&invoice_id) {
+                if let Err(err) = storage::persist_invoice_state(inv, update) {
+                    log::error!("failed to persist invoice {invoice_id}: {err}");
+                }
+            } else {
+                log::warn!("invoice {invoice_id} missing from episode state while persisting");
+            }
+        };
+
+        match cmd {
+            MerchantCommand::CreateInvoice { invoice_id, .. } => {
+                persist(*invoice_id, ConfirmationUpdate::Clear);
+            }
+            MerchantCommand::MarkPaid { invoice_id, .. } => {
+                let update = metadata
+                    .tx_status
+                    .as_ref()
+                    .map(|status| ConfirmationUpdate::set(metadata.tx_id, status, metadata.accepting_time))
+                    .unwrap_or(ConfirmationUpdate::Keep);
+                persist(*invoice_id, update);
+            }
+            MerchantCommand::AckReceipt { invoice_id } | MerchantCommand::CancelInvoice { invoice_id } => {
+                persist(*invoice_id, ConfirmationUpdate::Clear);
+            }
+            _ => {}
+        }
+
         let force = matches!(cmd, MerchantCommand::AckReceipt { .. });
         emit_checkpoint(episode_id, episode, force);
         if matches!(cmd, MerchantCommand::CancelInvoice { .. }) {
