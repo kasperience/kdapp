@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
@@ -29,6 +29,52 @@ pub struct WatcherRuntimeOverrides {
     pub congestion_threshold: Option<f64>,
 }
 
+const WATCHER_CONFIG_TIMEOUT: Duration = Duration::from_secs(2);
+
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum ConfigOpStatus {
+    Pending,
+    Applied,
+    TimedOut,
+    RolledBack,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+struct ConfigOperation {
+    op_id: u64,
+    requested_at: u64,
+    deadline_at: u64,
+    status: ConfigOpStatus,
+    target_max_fee: Option<u64>,
+    target_congestion_threshold: Option<f64>,
+    previous_max_fee: Option<u64>,
+    previous_congestion_threshold: Option<f64>,
+}
+
+#[derive(Clone)]
+struct ConfigOperationInternal {
+    op: ConfigOperation,
+    deadline: Instant,
+}
+
+#[derive(Default, Clone)]
+struct ConfigOperations {
+    next_id: u64,
+    active: Option<ConfigOperationInternal>,
+    history: Vec<ConfigOperation>,
+}
+
+impl ConfigOperations {
+    fn push_history(&mut self, op: ConfigOperation) {
+        self.history.push(op);
+        if self.history.len() > 10 {
+            let drop = self.history.len() - 10;
+            self.history.drain(0..drop);
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     router: Arc<SimRouter>,
@@ -37,6 +83,7 @@ pub struct AppState {
     merchant_pk: PubKey,
     api_key: String,
     watcher_overrides: Arc<Mutex<WatcherRuntimeOverrides>>,
+    config_ops: Arc<Mutex<ConfigOperations>>,
     webhook_url: Option<String>,
     webhook_secret: Option<Vec<u8>>,
 }
@@ -59,7 +106,17 @@ impl AppState {
             o.max_fee = max_fee;
             o.congestion_threshold = congestion_threshold;
         }
-        Self { router, episode_id, merchant_sk, merchant_pk, api_key, watcher_overrides: overrides, webhook_url, webhook_secret }
+        Self {
+            router,
+            episode_id,
+            merchant_sk,
+            merchant_pk,
+            api_key,
+            watcher_overrides: overrides,
+            config_ops: Arc::new(Mutex::new(ConfigOperations::default())),
+            webhook_url,
+            webhook_secret,
+        }
     }
 }
 
@@ -116,8 +173,8 @@ fn spawn_webhook(state: &AppState, event: WebhookEvent) {
     });
 }
 
-pub async fn serve(bind: String, state: AppState) -> Result<(), Box<dyn std::error::Error>> {
-    let app = Router::new()
+pub fn router(state: AppState) -> Router {
+    Router::new()
         .route("/invoice", post(create_invoice))
         .route("/pay", post(pay_invoice))
         .route("/ack", post(ack_invoice))
@@ -127,13 +184,18 @@ pub async fn serve(bind: String, state: AppState) -> Result<(), Box<dyn std::err
         .route("/subscriptions/{sub_id}/disputes", post(escalate_sub_dispute))
         .route("/invoices", get(list_invoices))
         .route("/subscriptions", get(list_subscriptions))
-        .route("/watcher-config", post(set_watcher_config))
+        .route("/watcher-config", post(set_watcher_config).get(get_watcher_config_status))
+        .route("/watcher-config/{op_id}/rollback", post(rollback_watcher_config))
         .route("/mempool-metrics", get(mempool_metrics))
         .route("/attestations", get(list_attestations))
         .route("/attest", post(submit_attestation))
         .route("/policy/templates", post(upsert_policy_template).get(list_policy_templates))
         .route("/policy/templates/{template_id}", delete(remove_policy_template))
-        .with_state(state);
+        .with_state(state)
+}
+
+pub async fn serve(bind: String, state: AppState) -> Result<(), Box<dyn std::error::Error>> {
+    let app = router(state);
     let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app).await?;
     Ok(())
@@ -516,22 +578,189 @@ async fn list_subscriptions(State(state): State<AppState>, headers: HeaderMap) -
 struct WatcherConfigReq {
     max_fee: Option<u64>,
     congestion_threshold: Option<f64>,
+    #[allow(dead_code)]
+    mode: Option<String>,
+}
+
+#[derive(Serialize)]
+struct WatcherConfigStatus {
+    current_max_fee: Option<u64>,
+    current_congestion_threshold: Option<f64>,
+    pending: Option<ConfigOperation>,
+    history: Vec<ConfigOperation>,
 }
 
 async fn set_watcher_config(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<WatcherConfigReq>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<(StatusCode, Json<ConfigOperation>), StatusCode> {
     authorize(&headers, &state)?;
-    let mut o = state.watcher_overrides.lock().await;
-    if let Some(fee) = req.max_fee {
-        o.max_fee = Some(fee);
+    if req.max_fee.is_none() && req.congestion_threshold.is_none() {
+        return Err(StatusCode::BAD_REQUEST);
     }
-    if let Some(th) = req.congestion_threshold {
-        o.congestion_threshold = Some(th);
+    {
+        let mut ops = state.config_ops.lock().await;
+        if ops.active.is_some() {
+            return Err(StatusCode::CONFLICT);
+        }
+        let mut overrides = state.watcher_overrides.lock().await;
+        let prev_max = overrides.max_fee;
+        let prev_th = overrides.congestion_threshold;
+        if let Some(fee) = req.max_fee {
+            overrides.max_fee = Some(fee);
+        }
+        if let Some(th) = req.congestion_threshold {
+            overrides.congestion_threshold = Some(th);
+        }
+        drop(overrides);
+        let now = SystemTime::now();
+        let deadline_time = now.checked_add(WATCHER_CONFIG_TIMEOUT).unwrap_or(now);
+        let op_id = ops.next_id;
+        ops.next_id = ops.next_id.saturating_add(1);
+        let op = ConfigOperation {
+            op_id,
+            requested_at: unix_seconds(now),
+            deadline_at: unix_seconds(deadline_time),
+            status: ConfigOpStatus::Pending,
+            target_max_fee: req.max_fee,
+            target_congestion_threshold: req.congestion_threshold,
+            previous_max_fee: prev_max,
+            previous_congestion_threshold: prev_th,
+        };
+        let internal = ConfigOperationInternal { op: op.clone(), deadline: Instant::now() + WATCHER_CONFIG_TIMEOUT };
+        ops.active = Some(internal);
+        drop(ops);
+        let monitor_state = state.clone();
+        tokio::spawn(async move {
+            monitor_config_operation(monitor_state, op_id).await;
+        });
+        Ok((StatusCode::ACCEPTED, Json(op)))
     }
-    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_watcher_config_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<WatcherConfigStatus>, StatusCode> {
+    authorize(&headers, &state)?;
+    let overrides = state.watcher_overrides.lock().await.clone();
+    let (pending, history) = {
+        let ops = state.config_ops.lock().await;
+        (ops.active.as_ref().map(|op| op.op.clone()), ops.history.clone())
+    };
+    Ok(Json(WatcherConfigStatus {
+        current_max_fee: overrides.max_fee,
+        current_congestion_threshold: overrides.congestion_threshold,
+        pending,
+        history,
+    }))
+}
+
+async fn rollback_watcher_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(op_id): Path<u64>,
+) -> Result<Json<ConfigOperation>, StatusCode> {
+    authorize(&headers, &state)?;
+    let (prev_max, prev_th, mut op) = {
+        let mut ops = state.config_ops.lock().await;
+        let active = ops.active.take().ok_or(StatusCode::NOT_FOUND)?;
+        if active.op.op_id != op_id {
+            ops.active = Some(active);
+            return Err(StatusCode::NOT_FOUND);
+        }
+        if active.op.status != ConfigOpStatus::TimedOut {
+            ops.active = Some(active);
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        let prev_max = active.op.previous_max_fee;
+        let prev_th = active.op.previous_congestion_threshold;
+        (prev_max, prev_th, active.op)
+    };
+    {
+        let mut overrides = state.watcher_overrides.lock().await;
+        overrides.max_fee = prev_max;
+        overrides.congestion_threshold = prev_th;
+    }
+    op.status = ConfigOpStatus::RolledBack;
+    {
+        let mut ops = state.config_ops.lock().await;
+        ops.push_history(op.clone());
+    }
+    Ok(Json(op))
+}
+
+async fn monitor_config_operation(state: AppState, op_id: u64) {
+    loop {
+        let (deadline, target_max, target_th, status) = {
+            let ops = state.config_ops.lock().await;
+            let Some(active) = ops.active.as_ref() else { return; };
+            if active.op.op_id != op_id {
+                return;
+            }
+            (active.deadline, active.op.target_max_fee, active.op.target_congestion_threshold, active.op.status)
+        };
+        match status {
+            ConfigOpStatus::Pending => {
+                if config_operation_applied(target_max, target_th) {
+                    let mut ops = state.config_ops.lock().await;
+                    if let Some(mut active) = ops.active.take() {
+                        if active.op.op_id == op_id && active.op.status == ConfigOpStatus::Pending {
+                            active.op.status = ConfigOpStatus::Applied;
+                            ops.push_history(active.op);
+                        } else {
+                            ops.active = Some(active);
+                        }
+                    }
+                    return;
+                }
+                if Instant::now() >= deadline {
+                    let mut ops = state.config_ops.lock().await;
+                    if let Some(active) = ops.active.as_mut() {
+                        if active.op.op_id == op_id && active.op.status == ConfigOpStatus::Pending {
+                            active.op.status = ConfigOpStatus::TimedOut;
+                        }
+                    }
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+            ConfigOpStatus::TimedOut => return,
+            ConfigOpStatus::Applied | ConfigOpStatus::RolledBack => {
+                let mut ops = state.config_ops.lock().await;
+                if let Some(active) = ops.active.take() {
+                    if active.op.op_id == op_id {
+                        ops.push_history(active.op);
+                    } else {
+                        ops.active = Some(active);
+                    }
+                }
+                return;
+            }
+        }
+    }
+}
+
+fn config_operation_applied(target_max: Option<u64>, target_threshold: Option<f64>) -> bool {
+    let metrics_ok = if let Some(target) = target_max {
+        watcher::get_metrics().map_or(false, |snap| snap.max_fee == target)
+    } else {
+        true
+    };
+    if !metrics_ok {
+        return false;
+    }
+    if let Some(threshold) = target_threshold {
+        let snapshot = watcher::policy_snapshot();
+        (snapshot.congestion_threshold - threshold).abs() < f64::EPSILON
+    } else {
+        true
+    }
+}
+
+fn unix_seconds(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
 #[derive(Serialize)]

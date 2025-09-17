@@ -367,6 +367,21 @@ async fn run_app<B: Backend>(
                         let mut a = app.lock().await;
                         a.open_watcher_config();
                     }
+                    Action::WatcherRollback => {
+                        let id = {
+                            let a = app.lock().await;
+                            a.timed_out_config_id()
+                        };
+                        if let Some(op_id) = id {
+                            let app2 = app.clone();
+                            tokio::spawn(async move {
+                                App::rollback_watcher_config_task(app2, op_id).await;
+                            });
+                        } else {
+                            let mut a = app.lock().await;
+                            a.set_status("no timed out watcher config".into(), Color::Yellow);
+                        }
+                    }
                     Action::ChargeSub => {
                         let id = {
                             let a = app.lock().await;

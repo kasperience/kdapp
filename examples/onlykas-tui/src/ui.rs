@@ -1,5 +1,5 @@
 use crate::{
-    app::{ApiKeyModal, App, Focus, ListMode, WatcherConfigModal, WatcherField},
+    app::{ApiKeyModal, App, ConfigOpStatus, Focus, ListMode, WatcherConfigModal, WatcherField},
     logo,
     models::{invoice_to_string, subscription_to_string},
 };
@@ -155,6 +155,9 @@ fn render_actions(f: &mut Frame, app: &App, area: Rect) {
         Line::raw("left/right: change focus"),
         Line::raw("up/down: move selection"),
     ]);
+    if app.timed_out_config_id().is_some() {
+        items.push(Line::raw("x: rollback watcher config"));
+    }
     f.render_widget(Paragraph::new(items).block(block), area);
 }
 
@@ -176,23 +179,41 @@ fn render_items(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_watcher(f: &mut Frame, app: &App, area: Rect) {
     let block = panel_block("Watcher", app.focus == Focus::Watcher);
-    let text = if let Some(obj) = app.watcher.as_object() {
+    let mut lines = Vec::new();
+    if let Some(obj) = app.watcher.as_object() {
         if let Some(err) = obj.get("error").and_then(|v| v.as_str()) {
-            err.to_string()
+            lines.push(err.to_string());
         } else if let (Some(base), Some(cong)) =
             (obj.get("est_base_fee").and_then(|v| v.as_u64()), obj.get("congestion_ratio").and_then(|v| v.as_f64()))
         {
             let min = obj.get("min").and_then(|v| v.as_u64()).unwrap_or(0);
             let max = obj.get("max").and_then(|v| v.as_u64()).unwrap_or(0);
             let policy = obj.get("policy").and_then(|v| v.as_str()).unwrap_or("");
-            format!("est_base_fee: {base}\ncongestion_ratio: {cong:.2}\nmin: {min} max: {max}\npolicy: {policy}",)
-        } else {
-            "metrics unavailable".to_string()
+            lines.push(format!("est_base_fee: {base}"));
+            lines.push(format!("congestion_ratio: {cong:.2}"));
+            lines.push(format!("min: {min} max: {max}"));
+            if let Some(th) = obj.get("congestion_threshold").and_then(|v| v.as_f64()) {
+                lines.push(format!("threshold: {th:.2}"));
+            }
+            lines.push(format!("policy: {policy}"));
         }
-    } else {
-        "metrics unavailable".to_string()
-    };
-    f.render_widget(Paragraph::new(text).block(block), area);
+    }
+    if lines.is_empty() {
+        lines.push("metrics unavailable".to_string());
+    }
+    if let Some(max) = app.watcher_state.current_max_fee {
+        lines.push(format!("override max_fee: {max}"));
+    }
+    if let Some(th) = app.watcher_state.current_congestion_threshold {
+        lines.push(format!("override threshold: {th:.2}"));
+    }
+    if let Some(op) = app.watcher_state.pending.as_ref() {
+        lines.push(format!("config #{}, status: {}", op.id, config_status_label(op.status)));
+    } else if let Some(last) = app.watcher_state.history.last() {
+        lines.push(format!("last config #{}, status: {}", last.id, config_status_label(last.status)));
+    }
+    let paragraph = Paragraph::new(lines.join("\n")).block(block);
+    f.render_widget(paragraph, area);
 }
 
 fn render_guardian(f: &mut Frame, app: &App, area: Rect) {
@@ -261,4 +282,13 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn config_status_label(status: ConfigOpStatus) -> &'static str {
+    match status {
+        ConfigOpStatus::Pending => "pending",
+        ConfigOpStatus::Applied => "applied",
+        ConfigOpStatus::TimedOut => "timed out",
+        ConfigOpStatus::RolledBack => "rolled back",
+    }
 }
