@@ -33,6 +33,7 @@ hex = "0.4"
 ctrlc = "3.4"
 
 [dev-dependencies]
+tempfile = "3.10"
 
 [features]
 okcp_relay = []
