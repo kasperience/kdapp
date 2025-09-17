@@ -44,6 +44,7 @@ pub async fn start_episode(state: Arc<ServerState>, participants: Vec<String>) -
         accepting_time: 0,
         tx_id: Hash::default(),
         tx_outputs: None,
+        tx_status: None,
     };
 
     // Create the episode message
@@ -56,7 +57,7 @@ pub async fn start_episode(state: Arc<ServerState>, participants: Vec<String>) -
         accepting_hash: Hash::default(),
         accepting_daa: 0,
         accepting_time: 0,
-        associated_txs: vec![(Hash::default(), borsh::to_vec(&episode_message).unwrap(), None)],
+        associated_txs: vec![(Hash::default(), borsh::to_vec(&episode_message).unwrap(), None, None)],
     };
 
     // Send the message to the engine
@@ -189,7 +190,7 @@ pub async fn execute_command(
         accepting_hash: Hash::default(),
         accepting_daa: 0,
         accepting_time: 0,
-        associated_txs: vec![(Hash::default(), borsh::to_vec(&signed).unwrap(), None)],
+        associated_txs: vec![(Hash::default(), borsh::to_vec(&signed).unwrap(), None, None)],
     };
 
     // Send the message to the engine

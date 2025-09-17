@@ -314,6 +314,7 @@ mod tests {
             accepting_time: 1234567890,
             tx_id: 1u64.into(),
             tx_outputs: None,
+            tx_status: None,
         };
 
         let episode = CommentEpisode::initialize(vec![p1, p2], &metadata);
@@ -333,6 +334,7 @@ mod tests {
             accepting_time: 1234567890,
             tx_id: 1u64.into(),
             tx_outputs: None,
+            tx_status: None,
         };
 
         let mut episode = CommentEpisode::initialize(vec![p1], &metadata);
@@ -372,6 +374,7 @@ mod tests {
             accepting_time: 1234567890,
             tx_id: 1u64.into(),
             tx_outputs: None,
+            tx_status: None,
         };
 
         let mut episode = CommentEpisode::initialize(vec![p1], &metadata);
@@ -397,6 +400,7 @@ mod tests {
             accepting_time: 1234567890,
             tx_id: 1u64.into(),
             tx_outputs: None,
+            tx_status: None,
         };
 
         let mut episode = CommentEpisode::initialize(vec![p1], &metadata);

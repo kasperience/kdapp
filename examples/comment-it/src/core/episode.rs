@@ -382,8 +382,14 @@ mod tests {
     #[test]
     fn test_auth_challenge_flow() {
         let ((_s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
-        let metadata =
-            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 0, tx_id: 1u64.into(), tx_outputs: None };
+        let metadata = PayloadMetadata {
+            accepting_hash: 0u64.into(),
+            accepting_daa: 0,
+            accepting_time: 0,
+            tx_id: 1u64.into(),
+            tx_outputs: None,
+            tx_status: None,
+        };
 
         let mut auth = AuthWithCommentsEpisode::initialize(vec![p1], &metadata);
 
@@ -401,8 +407,14 @@ mod tests {
     #[test]
     fn test_rate_limiting() {
         let ((_s1, p1), (_s2, _p2)) = (generate_keypair(), generate_keypair());
-        let metadata =
-            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 0, tx_id: 1u64.into(), tx_outputs: None };
+        let metadata = PayloadMetadata {
+            accepting_hash: 0u64.into(),
+            accepting_daa: 0,
+            accepting_time: 0,
+            tx_id: 1u64.into(),
+            tx_outputs: None,
+            tx_status: None,
+        };
 
         let mut auth = AuthWithCommentsEpisode::initialize(vec![p1], &metadata);
 
@@ -433,6 +445,7 @@ mod tests {
             accepting_time: 1234567890,
             tx_id: 1u64.into(),
             tx_outputs: None,
+            tx_status: None,
         };
 
         let mut auth = AuthWithCommentsEpisode::initialize(vec![p1], &metadata);

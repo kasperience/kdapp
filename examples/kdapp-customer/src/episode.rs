@@ -243,6 +243,7 @@ mod tests {
             accepting_time: 0,
             tx_id: Hash::default(),
             tx_outputs: None,
+            tx_status: None,
         }
     }
 

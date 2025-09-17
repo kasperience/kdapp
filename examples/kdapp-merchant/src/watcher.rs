@@ -305,7 +305,7 @@ pub async fn relay_checkpoints(
                                 accepting_hash,
                                 accepting_daa,
                                 accepting_time,
-                                associated_txs: vec![(tx_id, payload.to_vec(), None::<Vec<TxOutputInfo>>)],
+                                associated_txs: vec![(tx_id, payload.to_vec(), None::<Vec<TxOutputInfo>>, None)],
                             };
                             let _ = sender.send(event);
                         }

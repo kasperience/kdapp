@@ -341,7 +341,7 @@ impl AuthHttpPeer {
                 accepting_hash,
                 accepting_daa,
                 accepting_time,
-                associated_txs: vec![(KaspaHash::from_bytes([0u8; 32]), payload, None)],
+                associated_txs: vec![(KaspaHash::from_bytes([0u8; 32]), payload, None, None)],
             };
             let _ = sender.send(msg);
             count += 1;

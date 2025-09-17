@@ -1,8 +1,10 @@
 //! Contains methods for creating a Kaspa wrpc client as well as listener logic for following
 //! accepted txs by id pattern and prefix and sending them to corresponding engines.
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use kaspa_consensus_core::{network::NetworkId, Hash};
 use kaspa_rpc_core::api::rpc::RpcApi;
+use kaspa_rpc_core::model::tx::RpcAcceptedTransactionIds;
 use kaspa_rpc_core::RpcNetworkType;
 use kaspa_wrpc_client::client::ConnectOptions;
 use kaspa_wrpc_client::error::Error;
@@ -14,6 +16,7 @@ use log::{debug, info, warn};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
@@ -28,6 +31,7 @@ use crate::{
     engine::EngineMsg as Msg,
     generator::{check_pattern, Payload},
 };
+use serde_json::Value;
 
 pub fn connect_options() -> ConnectOptions {
     ConnectOptions {
@@ -73,6 +77,67 @@ pub async fn connect_client(network_id: NetworkId, rpc_url: Option<String>) -> R
 }
 
 pub type EngineMap = HashMap<PrefixType, (PatternType, Sender<Msg>)>;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct TxStatus {
+    pub acceptance_height: Option<u64>,
+    pub confirmations: Option<u64>,
+    pub finality: Option<bool>,
+}
+
+impl TxStatus {
+    fn is_empty(&self) -> bool {
+        self.acceptance_height.is_none() && self.confirmations.is_none() && self.finality.is_none()
+    }
+
+    fn from_json(value: &Value) -> Option<Self> {
+        if value.is_null() {
+            return None;
+        }
+
+        let mut status = TxStatus::default();
+
+        status.acceptance_height = value
+            .get("acceptanceHeight")
+            .and_then(Value::as_u64)
+            .or_else(|| {
+                value
+                    .get("acceptanceData")
+                    .and_then(|data| data.get("acceptanceHeight").and_then(Value::as_u64))
+                    .or_else(|| {
+                        value
+                            .get("acceptance_data")
+                            .and_then(|data| data.get("acceptanceHeight").and_then(Value::as_u64))
+                    })
+            });
+
+        status.confirmations = value.get("confirmations").and_then(Value::as_u64);
+
+        if let Some(finality_val) = value.get("finality") {
+            status.finality = finality_val
+                .as_bool()
+                .or_else(|| finality_val.as_str().and_then(Self::parse_bool_like));
+        }
+
+        if status.finality.is_none() {
+            status.finality = value.get("isFinal").and_then(Value::as_bool);
+        }
+
+        if status.is_empty() {
+            None
+        } else {
+            Some(status)
+        }
+    }
+
+    fn parse_bool_like(s: &str) -> Option<bool> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "true" | "final" | "finalized" => Some(true),
+            "false" | "nonfinal" | "non-final" | "pending" => Some(false),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ProxyCacheConfig {
@@ -129,6 +194,35 @@ impl TxOutputCache {
             producer()
         }
     }
+}
+
+fn collect_tx_statuses(entry: &RpcAcceptedTransactionIds) -> HashMap<Hash, TxStatus> {
+    let mut statuses = HashMap::new();
+
+    if let Ok(value) = serde_json::to_value(entry) {
+        if let Some(transactions) = value.get("acceptedTransactions").and_then(Value::as_array) {
+            for transaction in transactions {
+                let Some(tx_id_hex) = transaction.get("transactionId").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Ok(tx_id) = Hash::from_str(tx_id_hex) else {
+                    debug!("Failed to parse transaction id from status payload: {tx_id_hex}");
+                    continue;
+                };
+                let status_value = transaction
+                    .get("transactionStatus")
+                    .or_else(|| transaction.get("status"))
+                    .or_else(|| transaction.get("transaction_status"));
+                if let Some(status_value) = status_value {
+                    if let Some(status) = TxStatus::from_json(status_value) {
+                        statuses.insert(tx_id, status);
+                    }
+                }
+            }
+        }
+    }
+
+    statuses
 }
 
 pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signal: Arc<AtomicBool>) {
@@ -215,6 +309,7 @@ pub async fn run_listener_with_config(
         // Iterate new chain blocks
         for ncb in vcb.accepted_transaction_ids {
             let accepting_hash = ncb.accepting_block_hash;
+            let status_map = collect_tx_statuses(&ncb);
 
             // Required txs kept in original acceptance order. Skip the first which is always a coinbase tx
             let required_txs: Vec<Hash> = ncb
@@ -228,6 +323,8 @@ pub async fn run_listener_with_config(
             // Track the required payloads and outputs
             let mut required_payloads: HashMap<Hash, Option<Vec<u8>>> = required_txs.iter().map(|&id| (id, None)).collect();
             let mut required_outputs: HashMap<Hash, Option<Vec<TxOutputInfo>>> = required_txs.iter().map(|&id| (id, None)).collect();
+            let mut required_statuses: HashMap<Hash, Option<TxStatus>> =
+                required_txs.iter().map(|&id| (id, status_map.get(&id).cloned())).collect();
             let mut required_num = required_payloads.len();
 
             if required_num == 0 {
@@ -336,7 +433,8 @@ pub async fn run_listener_with_config(
                                             consumed_txs += 1;
                                             // Also fetch corresponding outputs
                                             let outputs = required_outputs.remove(&id).and_then(|o| o);
-                                            return Some((id, Payload::strip_header(payload), outputs));
+                                            let status = required_statuses.remove(&id).and_then(|s| s);
+                                            return Some((id, Payload::strip_header(payload), outputs, status));
                                         }
                                     }
                                 }
@@ -346,7 +444,7 @@ pub async fn run_listener_with_config(
                         None
                     })
                     .collect();
-                for (tx_id, _payload, _outs) in associated_txs.iter() {
+                for (tx_id, _payload, _outs, _status) in associated_txs.iter() {
                     info!("received episode tx: {tx_id}");
                 }
                 if !associated_txs.is_empty() {
@@ -380,10 +478,38 @@ pub async fn run_listener_with_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn hash_from_byte(byte: u8) -> Hash {
         Hash::from_bytes([byte; 32])
+    }
+
+    #[test]
+    fn tx_status_from_json_handles_known_fields() {
+        let value = json!({
+            "acceptanceHeight": 42,
+            "confirmations": 7,
+            "finality": true
+        });
+        let status = TxStatus::from_json(&value).expect("status");
+        assert_eq!(status.acceptance_height, Some(42));
+        assert_eq!(status.confirmations, Some(7));
+        assert_eq!(status.finality, Some(true));
+    }
+
+    #[test]
+    fn tx_status_from_json_ignores_unknown_fields() {
+        let value = json!({
+            "acceptanceData": { "acceptanceHeight": 13, "extra": "ignored" },
+            "confirmations": 2,
+            "isFinal": false,
+            "newField": "future"
+        });
+        let status = TxStatus::from_json(&value).expect("status");
+        assert_eq!(status.acceptance_height, Some(13));
+        assert_eq!(status.confirmations, Some(2));
+        assert_eq!(status.finality, Some(false));
     }
 
     #[test]

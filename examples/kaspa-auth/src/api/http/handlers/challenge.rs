@@ -28,6 +28,7 @@ pub async fn request_challenge(
                 accepting_time: 0,
                 tx_id: episode_id.into(),
                 tx_outputs: None,
+                tx_status: None,
             };
             match episode.execute(&challenge_cmd, episode.owner, &metadata) {
                 Ok(_) => {
