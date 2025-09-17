@@ -9,6 +9,7 @@ use std::{
     fs,
     net::UdpSocket,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 use thiserror::Error;
@@ -16,6 +17,31 @@ use thiserror::Error;
 pub mod keys;
 pub mod metrics;
 pub mod service;
+pub mod handshake_db;
+
+static HANDSHAKE_STORE: OnceLock<Mutex<Option<Arc<handshake_db::HandshakeStore>>>> = OnceLock::new();
+
+fn handshake_store_slot() -> &'static Mutex<Option<Arc<handshake_db::HandshakeStore>>> {
+    HANDSHAKE_STORE.get_or_init(|| Mutex::new(None))
+}
+
+pub fn set_handshake_store(store: Arc<handshake_db::HandshakeStore>) {
+    let mut slot = handshake_store_slot().lock().unwrap();
+    *slot = Some(store);
+}
+
+pub fn handshake_store() -> Option<Arc<handshake_db::HandshakeStore>> {
+    HANDSHAKE_STORE
+        .get()
+        .and_then(|slot| slot.lock().unwrap().as_ref().map(Arc::clone))
+}
+
+pub fn clear_handshake_store() {
+    if let Some(slot) = HANDSHAKE_STORE.get() {
+        let mut guard = slot.lock().unwrap();
+        guard.take();
+    }
+}
 
 pub const DEMO_HMAC_KEY: &[u8] = b"kdapp-demo-secret";
 pub const TLV_VERSION: u8 = 2;
@@ -360,6 +386,11 @@ pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Optio
                     SCRIPT_POLICY_VERSION
                 );
             }
+            if let Some(store) = handshake_store() {
+                if let Err(err) = store.record_handshake(*merchant, *guardian) {
+                    warn!("guardian: failed to persist handshake: {err}");
+                }
+            }
         }
     }
     metrics::inc_valid();
@@ -382,7 +413,7 @@ pub fn receive(sock: &UdpSocket, state: &mut GuardianState, key: &[u8]) -> Optio
 mod tests {
     use super::*;
     use kdapp::pki::generate_keypair;
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::{Arc, Mutex, OnceLock};
 
     // Serialize tests within this crate to avoid races on global metrics.
     fn test_guard() -> std::sync::MutexGuard<'static, ()> {
@@ -406,6 +437,38 @@ mod tests {
         handshake(&addr.to_string(), pk_m, pk_g, DEMO_HMAC_KEY);
         handle.join().unwrap();
         assert_eq!(metrics::snapshot(), (1, 0));
+    }
+
+    #[test]
+    fn handshake_persists_record() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let _g = test_guard();
+        metrics::reset();
+        let path = std::env::temp_dir().join(format!(
+            "guardian_handshake_store_{}.db",
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let store = Arc::new(handshake_db::HandshakeStore::open(&path).expect("handshake store"));
+        set_handshake_store(store.clone());
+        let (_sk_g, pk_g) = generate_keypair();
+        let (_sk_m, pk_m) = generate_keypair();
+        let server = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let addr = server.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            let mut state = GuardianState::default();
+            let _ = receive(&server, &mut state, DEMO_HMAC_KEY);
+        });
+        handshake(&addr.to_string(), pk_m, pk_g, DEMO_HMAC_KEY);
+        handle.join().unwrap();
+        let records = store.load_all().expect("records");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].merchant, pk_m);
+        assert_eq!(records[0].guardian, pk_g);
+        assert!(records[0].last_seen > 0);
+        clear_handshake_store();
+        drop(store);
+        let _ = std::fs::remove_dir_all(path);
     }
 
     #[test]
