@@ -57,6 +57,7 @@ impl RefreshScheduler {
         self.pending.swap(false, Ordering::AcqRel)
     }
 
+    #[allow(dead_code)]
     pub fn request_refresh(&self) {
         if !self.pending.swap(true, Ordering::AcqRel) {
             self.notify.notify_one();
@@ -76,10 +77,14 @@ impl RefreshScheduler {
                 self.refresh_now(app.clone()).await;
                 continue;
             }
-            let mut sleep = tokio::time::sleep(self.next_delay());
+            let sleep = tokio::time::sleep(self.next_delay());
+            tokio::pin!(sleep);
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+
             tokio::select! {
                 _ = &mut sleep => {},
-                _ = self.notify.notified() => {
+                _ = &mut notified => {
                     continue;
                 }
             }
@@ -87,6 +92,7 @@ impl RefreshScheduler {
         }
     }
 
+    #[allow(dead_code)]
     pub fn last_refresh(&self) -> Option<Instant> {
         *self.last_refresh.lock().unwrap()
     }

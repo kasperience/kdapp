@@ -6,7 +6,6 @@ use std::fs;
 use std::io::{self, ErrorKind};
 use std::net::UdpSocket;
 #[cfg(any(test, feature = "okcp_relay"))]
-
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, RwLock};
 use std::thread;
@@ -175,6 +174,7 @@ pub fn policy_snapshot() -> PolicySnapshot {
         .into()
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn set_policy_snapshot(snapshot: PolicySnapshot) {
     let mut info = POLICY_INFO.write().expect("policy lock");
     info.min = snapshot.min;
@@ -185,6 +185,7 @@ pub fn set_policy_snapshot(snapshot: PolicySnapshot) {
     info.congestion_threshold = snapshot.congestion_threshold;
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn set_mempool_snapshot(snapshot: MempoolSnapshot) {
     store_metrics(snapshot);
 }
@@ -468,12 +469,14 @@ fn batch_from_notification_block(block: kaspa_consensus_core::block::Block, prog
     let accepting_daa = block.header.daa_score;
     let accepting_time = block.header.timestamp;
     let mut checkpoints = Vec::new();
-    for tx in block.transactions {
-        if let Some(payload) = tx.payload() {
-            if let Some(rec) = decode_okcp(payload) {
-                if rec.program_id == program_id {
-                    checkpoints.push((tx.id(), payload.to_vec()));
-                }
+    for tx in block.transactions.iter() {
+        if tx.payload.is_empty() {
+            continue;
+        }
+        let payload = &tx.payload;
+        if let Some(rec) = decode_okcp(payload) {
+            if rec.program_id == program_id {
+                checkpoints.push((tx.id(), payload.clone()));
             }
         }
     }

@@ -1216,13 +1216,21 @@ dependencies = [
 name = "examples-tests"
 version = "0.1.0"
 dependencies = [
+ "axum 0.8.4",
  "borsh",
+ "http-body-util",
+ "hyper",
+ "kaspa-consensus-core",
  "kdapp",
  "kdapp-guardian",
  "kdapp-merchant",
  "log",
  "secp256k1",
+ "serde",
+ "serde_json",
  "tempfile",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
@@ -3141,8 +3149,8 @@ dependencies = [
  "crossterm",
  "hex",
  "hmac",
+ "rand 0.8.5",
  "ratatui",
- "rand",
  "reqwest",
  "serde",
  "serde_json",

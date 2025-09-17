@@ -1,6 +1,3 @@
-#[path = "../src/webhook.rs"]
-mod webhook;
-
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -17,7 +14,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tokio::net::TcpListener;
 use kdapp::proxy::TxStatus;
-use webhook::{post_event, ConfirmationPolicy, WebhookError, WebhookEvent};
+use kdapp_merchant::webhook::{self, post_event, ConfirmationPolicy, WebhookError, WebhookEvent};
 
 #[derive(Clone)]
 struct AppState {

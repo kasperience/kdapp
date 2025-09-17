@@ -744,7 +744,7 @@ async fn monitor_config_operation(state: AppState, op_id: u64) {
 
 fn config_operation_applied(target_max: Option<u64>, target_threshold: Option<f64>) -> bool {
     let metrics_ok = if let Some(target) = target_max {
-        watcher::get_metrics().map_or(false, |snap| snap.max_fee == target)
+        watcher::get_metrics().is_some_and(|snap| snap.max_fee == target)
     } else {
         true
     };

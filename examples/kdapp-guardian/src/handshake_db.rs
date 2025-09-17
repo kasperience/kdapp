@@ -34,6 +34,7 @@ pub struct HandshakeRecord {
     pub last_seen: u64,
 }
 
+#[derive(Debug)]
 pub struct HandshakeStore {
     db: sled::Db,
     tree: sled::Tree,

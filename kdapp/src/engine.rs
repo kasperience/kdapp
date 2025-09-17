@@ -82,13 +82,15 @@ impl<G: Episode> EpisodeMessage<G> {
     }
 }
 
+type AssociatedTx = (Hash, Vec<u8>, Option<Vec<TxOutputInfo>>, Option<TxStatus>);
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub enum EngineMsg {
     BlkAccepted {
         accepting_hash: Hash,
         accepting_daa: u64,
         accepting_time: u64,
-        associated_txs: Vec<(Hash, Vec<u8>, Option<Vec<TxOutputInfo>>, Option<TxStatus>)>,
+        associated_txs: Vec<AssociatedTx>,
     },
     BlkReverted {
         accepting_hash: Hash,

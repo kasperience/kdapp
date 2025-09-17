@@ -4,7 +4,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use kaspa_consensus_core::{network::NetworkId, Hash};
 use kaspa_rpc_core::api::rpc::RpcApi;
-use kaspa_rpc_core::model::tx::RpcAcceptedTransactionIds;
 use kaspa_rpc_core::RpcNetworkType;
 use kaspa_wrpc_client::client::ConnectOptions;
 use kaspa_wrpc_client::error::Error;
@@ -86,6 +85,7 @@ pub struct TxStatus {
 
 const FINALITY_CONFIRMATION_THRESHOLD: u64 = 10;
 
+#[cfg_attr(not(test), allow(dead_code))]
 impl TxStatus {
     fn is_empty(&self) -> bool {
         self.acceptance_height.is_none() && self.confirmations.is_none() && self.finality.is_none()
@@ -96,9 +96,7 @@ impl TxStatus {
             return None;
         }
 
-        let mut status = TxStatus::default();
-
-        status.acceptance_height = value
+        let acceptance_height = value
             .get("acceptanceHeight")
             .and_then(Value::as_u64)
             .or_else(|| {
@@ -112,17 +110,19 @@ impl TxStatus {
                     })
             });
 
-        status.confirmations = value.get("confirmations").and_then(Value::as_u64);
+        let confirmations = value.get("confirmations").and_then(Value::as_u64);
 
-        if let Some(finality_val) = value.get("finality") {
-            status.finality = finality_val
+        let mut finality = value.get("finality").and_then(|finality_val| {
+            finality_val
                 .as_bool()
-                .or_else(|| finality_val.as_str().and_then(Self::parse_bool_like));
+                .or_else(|| finality_val.as_str().and_then(Self::parse_bool_like))
+        });
+
+        if finality.is_none() {
+            finality = value.get("isFinal").and_then(Value::as_bool);
         }
 
-        if status.finality.is_none() {
-            status.finality = value.get("isFinal").and_then(Value::as_bool);
-        }
+        let status = TxStatus { acceptance_height, confirmations, finality };
 
         if status.is_empty() {
             None
@@ -203,16 +203,14 @@ fn derive_block_status(
     is_chain_block: bool,
     virtual_daa_score: u64,
 ) -> TxStatus {
-    let mut status = TxStatus::default();
-    status.acceptance_height = Some(block_blue_score);
-
     let confirmations = virtual_daa_score
         .saturating_sub(block_daa_score)
         .saturating_add(1);
-    status.confirmations = Some(confirmations);
-    status.finality = Some(is_chain_block && confirmations >= FINALITY_CONFIRMATION_THRESHOLD);
-
-    status
+    TxStatus {
+        acceptance_height: Some(block_blue_score),
+        confirmations: Some(confirmations),
+        finality: Some(is_chain_block && confirmations >= FINALITY_CONFIRMATION_THRESHOLD),
+    }
 }
 
 pub async fn run_listener(kaspad: KaspaRpcClient, engines: EngineMap, exit_signal: Arc<AtomicBool>) {

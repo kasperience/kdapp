@@ -1,10 +1,7 @@
-#[path = "../src/episode.rs"]
-pub mod episode;
-#[path = "../src/script.rs"]
-pub mod script;
+pub use kdapp_merchant::episode;
+pub use kdapp_merchant::script;
 #[allow(dead_code)]
-#[path = "../src/storage.rs"]
-pub mod storage;
+pub use kdapp_merchant::storage;
 
 use episode::{CustomerInfo, MerchantCommand, ReceiptEpisode};
 use kaspa_consensus_core::Hash;

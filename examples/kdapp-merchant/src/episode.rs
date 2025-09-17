@@ -481,6 +481,7 @@ mod tests {
     use kdapp::episode::{PayloadMetadata, TxOutputInfo};
     use kdapp::pki::generate_keypair;
     use kdapp::proxy::TxStatus;
+    use crate::webhook;
 
     fn md() -> PayloadMetadata {
         PayloadMetadata {
@@ -499,8 +500,8 @@ mod tests {
 
     impl EnvGuard {
         fn set(value: &str) -> Self {
-            std::env::set_var(crate::webhook::CONFIRMATION_POLICY_ENV, value);
-            EnvGuard { key: crate::webhook::CONFIRMATION_POLICY_ENV }
+            std::env::set_var(webhook::CONFIRMATION_POLICY_ENV, value);
+            EnvGuard { key: webhook::CONFIRMATION_POLICY_ENV }
         }
     }
 

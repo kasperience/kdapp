@@ -4,7 +4,6 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use borsh::BorshSerialize;
 use kaspa_consensus_core::Hash;
 use kdapp::engine::{Engine, EngineMsg, EpisodeMessage};
 use kdapp::episode::{EpisodeEventHandler, EpisodeId, PayloadMetadata, TxOutputInfo};
@@ -196,7 +195,7 @@ fn invoice_payment_reorg_resets_confirmations() {
     let initial_record = storage::load_invoice_confirmation(invoice_id).expect("initial confirmation");
     assert_eq!(initial_record.status.confirmations, Some(3));
     let invoices = storage::load_invoices();
-    assert_eq!(invoices.get(&invoice_id).map(|inv| inv.status), Some(InvoiceStatus::Paid));
+    assert_eq!(invoices.get(&invoice_id).map(|inv| inv.status.clone()), Some(InvoiceStatus::Paid));
     assert_eq!(events.lock().unwrap().len(), 1);
 
     // Reorg removes the paying block
@@ -206,7 +205,7 @@ fn invoice_payment_reorg_resets_confirmations() {
     storage::flush();
     assert!(storage::load_invoice_confirmation(invoice_id).is_none());
     let invoices = storage::load_invoices();
-    assert_eq!(invoices.get(&invoice_id).map(|inv| inv.status), Some(InvoiceStatus::Open));
+    assert_eq!(invoices.get(&invoice_id).map(|inv| inv.status.clone()), Some(InvoiceStatus::Open));
 
     // Re-accept payment on new branch with fewer confirmations
     let mut status_low = TxStatus::default();
@@ -226,7 +225,7 @@ fn invoice_payment_reorg_resets_confirmations() {
     let record_after = storage::load_invoice_confirmation(invoice_id).expect("post-reorg confirmation");
     assert_eq!(record_after.status.confirmations, Some(1));
     let invoices = storage::load_invoices();
-    assert_eq!(invoices.get(&invoice_id).map(|inv| inv.status), Some(InvoiceStatus::Paid));
+    assert_eq!(invoices.get(&invoice_id).map(|inv| inv.status.clone()), Some(InvoiceStatus::Paid));
 
     let events = events.lock().unwrap();
     assert_eq!(events.len(), 2);

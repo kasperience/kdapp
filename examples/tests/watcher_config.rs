@@ -5,7 +5,7 @@ use std::time::Duration;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
-use hyper::body::to_bytes;
+use http_body_util::BodyExt;
 use kdapp::pki::generate_keypair;
 use kdapp_merchant::server::{self, AppState};
 use kdapp_merchant::sim_router::{EngineChannel, SimRouter};
@@ -58,7 +58,7 @@ fn test_state() -> AppState {
     )
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(rename_all = "snake_case")]
 enum TestStatus {
     Pending,
@@ -100,7 +100,12 @@ async fn post_config(router: &Router, body: Value) -> (StatusCode, OperationResp
         .await
         .expect("watcher config response");
     let status = response.status();
-    let bytes = to_bytes(response.into_body()).await.expect("body bytes");
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body bytes")
+        .to_bytes();
     let op = serde_json::from_slice::<OperationResp>(&bytes).expect("operation json");
     (status, op)
 }
@@ -117,7 +122,12 @@ async fn get_state(router: &Router) -> ConfigStateResp {
         .await
         .expect("watcher state response");
     assert_eq!(response.status(), StatusCode::OK);
-    let bytes = to_bytes(response.into_body()).await.expect("body bytes");
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body bytes")
+        .to_bytes();
     serde_json::from_slice::<ConfigStateResp>(&bytes).expect("state json")
 }
 
