@@ -195,7 +195,9 @@ async fn watcher_config_times_out_without_metrics() {
     assert_eq!(pending.status, TestStatus::TimedOut);
     assert_eq!(pending.op_id, op.op_id);
     assert!(pending.target_congestion_threshold.is_none());
-    assert!(state.current_congestion_threshold.is_none());
+
+    assert_eq!(state.current_congestion_threshold, Some(1.0));
+
 }
 
 #[tokio::test]
