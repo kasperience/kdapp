@@ -1,4 +1,4 @@
-use std::sync::{mpsc, Mutex, OnceLock};
+use std::sync::{mpsc, OnceLock};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,10 +13,11 @@ use kdapp_merchant::watcher::{self, MempoolSnapshot, PolicySnapshot, MIN_FEE};
 use serde::Deserialize;
 use serde_json::Value;
 use tower::ServiceExt;
+use tokio::sync::Mutex;
 
-fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+async fn test_guard() -> tokio::sync::MutexGuard<'static, ()> {
     static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
-    GUARD.get_or_init(|| Mutex::new(())).lock().unwrap()
+    GUARD.get_or_init(|| Mutex::new(())).lock().await
 }
 
 fn init_policy(max_fee: u64, threshold: f64) {
@@ -147,7 +148,7 @@ async fn post_rollback(router: &Router, op_id: u64) -> StatusCode {
 
 #[tokio::test]
 async fn watcher_config_applied_on_success() {
-    let _g = test_guard();
+    let _g = test_guard().await;
     init_policy(MIN_FEE, 1.0);
     let state = test_state();
     let router = router_with_state(state);
@@ -173,11 +174,13 @@ async fn watcher_config_applied_on_success() {
     let last = state.history.last().expect("history entry");
     assert_eq!(last.status, TestStatus::Applied);
     assert_eq!(last.target_max_fee, Some(desired_fee));
+    assert_eq!(last.target_congestion_threshold, Some(desired_threshold));
+    assert_eq!(state.current_congestion_threshold, Some(desired_threshold));
 }
 
 #[tokio::test]
 async fn watcher_config_times_out_without_metrics() {
-    let _g = test_guard();
+    let _g = test_guard().await;
     init_policy(MIN_FEE, 1.0);
     let router = router_with_state(test_state());
 
@@ -191,11 +194,13 @@ async fn watcher_config_times_out_without_metrics() {
     let pending = state.pending.expect("pending op");
     assert_eq!(pending.status, TestStatus::TimedOut);
     assert_eq!(pending.op_id, op.op_id);
+    assert!(pending.target_congestion_threshold.is_none());
+    assert!(state.current_congestion_threshold.is_none());
 }
 
 #[tokio::test]
 async fn watcher_config_manual_revert_clears_timeout() {
-    let _g = test_guard();
+    let _g = test_guard().await;
     init_policy(MIN_FEE, 1.0);
     let router = router_with_state(test_state());
 
@@ -210,6 +215,10 @@ async fn watcher_config_manual_revert_clears_timeout() {
     let state = get_state(&router).await;
     assert_eq!(state.pending.as_ref().map(|p| p.status.clone()), Some(TestStatus::TimedOut));
     assert_eq!(state.pending.as_ref().map(|p| p.op_id), Some(op.op_id));
+    assert_eq!(
+        state.pending.as_ref().and_then(|p| p.target_congestion_threshold),
+        Some(0.2)
+    );
 
     let rollback_status = post_rollback(&router, op.op_id).await;
     assert_eq!(rollback_status, StatusCode::OK);
@@ -219,4 +228,5 @@ async fn watcher_config_manual_revert_clears_timeout() {
     let last = state.history.last().expect("history entry");
     assert_eq!(last.status, TestStatus::RolledBack);
     assert!(state.current_max_fee.is_none());
+    assert!(state.current_congestion_threshold.is_none());
 }

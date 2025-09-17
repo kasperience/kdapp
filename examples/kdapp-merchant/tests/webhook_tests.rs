@@ -14,7 +14,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tokio::net::TcpListener;
 use kdapp::proxy::TxStatus;
-use kdapp_merchant::webhook::{self, post_event, ConfirmationPolicy, WebhookError, WebhookEvent};
+use kdapp_merchant::webhook::{post_event, ConfirmationPolicy, WebhookError, WebhookEvent};
 
 #[derive(Clone)]
 struct AppState {
@@ -55,7 +55,15 @@ async fn retries_on_5xx() {
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app.into_make_service()).await.unwrap() });
 
-    let event = WebhookEvent { event: "paid".into(), invoice_id: 1, amount: 100, timestamp: 1 };
+    let event = WebhookEvent {
+        event: "paid".into(),
+        invoice_id: 1,
+        amount: 100,
+        timestamp: 1,
+        episode_id: None,
+        memo: None,
+        payer_pubkey: None,
+    };
     let url = format!("http://{addr}");
     post_event(&url, b"topsecret", &event).await.unwrap();
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
@@ -70,7 +78,15 @@ async fn no_retry_on_4xx() {
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app.into_make_service()).await.unwrap() });
 
-    let event = WebhookEvent { event: "paid".into(), invoice_id: 1, amount: 100, timestamp: 1 };
+    let event = WebhookEvent {
+        event: "paid".into(),
+        invoice_id: 1,
+        amount: 100,
+        timestamp: 1,
+        episode_id: None,
+        memo: None,
+        payer_pubkey: None,
+    };
     let url = format!("http://{addr}");
     let err = post_event(&url, b"topsecret", &event).await.unwrap_err();
     match err {
