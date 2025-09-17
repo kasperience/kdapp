@@ -15,3 +15,4 @@ hmac = "0.12"
 sha2 = "0.10"
 axum = { version = "0.7", features = ["macros", "json"] }
 tokio-util = "0.7"
+rand = "0.8"

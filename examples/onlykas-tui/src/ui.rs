@@ -3,11 +3,94 @@ use crate::{
     logo,
     models::{invoice_to_string, subscription_to_string},
 };
+use rand::Rng;
 use ratatui::{
     prelude::*,
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::{Duration, Instant},
+};
+use tokio::sync::{Mutex as AsyncMutex, Notify};
+
+pub struct RefreshScheduler {
+    interval: Duration,
+    jitter: Duration,
+    notify: Notify,
+    pending: AtomicBool,
+    refresh_lock: AsyncMutex<()>,
+    last_refresh: Mutex<Option<Instant>>,
+}
+
+impl RefreshScheduler {
+    pub fn new(interval: Duration, jitter: Duration) -> Self {
+        Self {
+            interval,
+            jitter,
+            notify: Notify::new(),
+            pending: AtomicBool::new(false),
+            refresh_lock: AsyncMutex::new(()),
+            last_refresh: Mutex::new(None),
+        }
+    }
+
+    fn next_delay(&self) -> Duration {
+        if self.interval.is_zero() {
+            return Duration::ZERO;
+        }
+        let jitter_ms = self.jitter.as_millis().min(u128::from(u64::MAX)) as u64;
+        let extra = if jitter_ms == 0 {
+            Duration::ZERO
+        } else {
+            let ms = rand::thread_rng().gen_range(0..=jitter_ms);
+            Duration::from_millis(ms)
+        };
+        self.interval.saturating_add(extra)
+    }
+
+    fn consume_pending(&self) -> bool {
+        self.pending.swap(false, Ordering::AcqRel)
+    }
+
+    pub fn request_refresh(&self) {
+        if !self.pending.swap(true, Ordering::AcqRel) {
+            self.notify.notify_one();
+        }
+    }
+
+    pub async fn refresh_now(&self, app: Arc<AsyncMutex<App>>) {
+        let _guard = self.refresh_lock.lock().await;
+        App::refresh_task(app.clone()).await;
+        let mut last = self.last_refresh.lock().unwrap();
+        *last = Some(Instant::now());
+    }
+
+    pub async fn run(self: Arc<Self>, app: Arc<AsyncMutex<App>>) {
+        loop {
+            if self.consume_pending() {
+                self.refresh_now(app.clone()).await;
+                continue;
+            }
+            let mut sleep = tokio::time::sleep(self.next_delay());
+            tokio::select! {
+                _ = &mut sleep => {},
+                _ = self.notify.notified() => {
+                    continue;
+                }
+            }
+            self.refresh_now(app.clone()).await;
+        }
+    }
+
+    pub fn last_refresh(&self) -> Option<Instant> {
+        *self.last_refresh.lock().unwrap()
+    }
+}
 
 pub fn draw(f: &mut Frame, app: &App) {
     let size = f.size();

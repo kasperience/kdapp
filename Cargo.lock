@@ -3142,6 +3142,7 @@ dependencies = [
  "hex",
  "hmac",
  "ratatui",
+ "rand",
  "reqwest",
  "serde",
  "serde_json",

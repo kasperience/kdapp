@@ -100,6 +100,8 @@ Notes:
 - `--api-key` API key string; must match merchant `--api-key` (required)
 - `--webhook-port` Bind port for the local TUI webhook (optional; default random)
 - `--mock-l1` Enable simulated L1 for quick demos
+- `--refresh-interval-ms` Base interval (milliseconds) for background refresh polling (optional; default 1000)
+- `--refresh-jitter-ms` Maximum random jitter (milliseconds) added to each refresh interval (optional; default 500)
 
 ## Key Bindings & Panels
 ### Keys
