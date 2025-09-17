@@ -1219,8 +1219,10 @@ dependencies = [
  "borsh",
  "kdapp",
  "kdapp-guardian",
+ "kdapp-merchant",
  "log",
  "secp256k1",
+ "tempfile",
 ]
 
 [[package]]
@@ -2560,11 +2562,11 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "ripemd",
- "sled",
  "secp256k1",
  "serde",
  "serde_json",
  "sha2",
+ "sled",
  "thiserror 1.0.69",
  "tokio",
  "toml",

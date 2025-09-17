@@ -102,13 +102,15 @@ fn ensure_schema(db: &sled::Db) -> Result<(), HandshakeStoreError> {
             }
             if version < HANDSHAKE_SCHEMA_VERSION {
                 run_migrations(db, version)?;
-                meta.insert(SCHEMA_KEY, HANDSHAKE_SCHEMA_VERSION.to_le_bytes())?;
+                let version_bytes = HANDSHAKE_SCHEMA_VERSION.to_le_bytes();
+                meta.insert(SCHEMA_KEY, version_bytes.as_slice())?;
                 db.flush()?;
             }
         }
         None => {
             run_migrations(db, 0)?;
-            meta.insert(SCHEMA_KEY, HANDSHAKE_SCHEMA_VERSION.to_le_bytes())?;
+            let version_bytes = HANDSHAKE_SCHEMA_VERSION.to_le_bytes();
+            meta.insert(SCHEMA_KEY, version_bytes.as_slice())?;
             db.flush()?;
         }
     }
@@ -187,10 +189,11 @@ mod tests {
         {
             let db = sled::Config::new().path(&path).open().expect("future db");
             let meta = db.open_tree(META_TREE).expect("meta tree");
+            let version_bytes = (HANDSHAKE_SCHEMA_VERSION + 1).to_le_bytes();
             meta
                 .insert(
                     SCHEMA_KEY,
-                    (HANDSHAKE_SCHEMA_VERSION + 1).to_le_bytes(),
+                    version_bytes.as_slice(),
                 )
                 .expect("insert meta");
             db.flush().expect("flush future");
