@@ -60,13 +60,14 @@ pub struct MempoolSnapshot {
     pub max_fee: u64,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone)]
 struct PolicyInfo {
     min: u64,
     max: u64,
     policy: String,
     selected_fee: u64,
     deferred: bool,
+    congestion_threshold: f64,
 }
 
 pub trait FeePolicy: Send + Sync + 'static {
@@ -133,8 +134,60 @@ pub static WATCHER_OVERRIDES: Lazy<Arc<Mutex<WatcherRuntimeOverrides>>> =
 
 pub static MEMPOOL_METRICS: Lazy<RwLock<Option<MempoolSnapshot>>> = Lazy::new(|| RwLock::new(None));
 static POLICY_INFO: Lazy<RwLock<PolicyInfo>> = Lazy::new(|| {
-    RwLock::new(PolicyInfo { min: MIN_FEE, max: MIN_FEE, policy: "static".to_string(), selected_fee: MIN_FEE, deferred: false })
+    RwLock::new(PolicyInfo {
+        min: MIN_FEE,
+        max: MIN_FEE,
+        policy: "static".to_string(),
+        selected_fee: MIN_FEE,
+        deferred: false,
+        congestion_threshold: 1.0,
+    })
 });
+
+#[derive(Clone, Serialize, Default)]
+pub struct PolicySnapshot {
+    pub min: u64,
+    pub max: u64,
+    pub policy: String,
+    pub selected_fee: u64,
+    pub deferred: bool,
+    pub congestion_threshold: f64,
+}
+
+impl From<PolicyInfo> for PolicySnapshot {
+    fn from(info: PolicyInfo) -> Self {
+        Self {
+            min: info.min,
+            max: info.max,
+            policy: info.policy,
+            selected_fee: info.selected_fee,
+            deferred: info.deferred,
+            congestion_threshold: info.congestion_threshold,
+        }
+    }
+}
+
+pub fn policy_snapshot() -> PolicySnapshot {
+    POLICY_INFO
+        .read()
+        .expect("policy lock")
+        .clone()
+        .into()
+}
+
+pub fn set_policy_snapshot(snapshot: PolicySnapshot) {
+    let mut info = POLICY_INFO.write().expect("policy lock");
+    info.min = snapshot.min;
+    info.max = snapshot.max;
+    info.policy = snapshot.policy;
+    info.selected_fee = snapshot.selected_fee;
+    info.deferred = snapshot.deferred;
+    info.congestion_threshold = snapshot.congestion_threshold;
+}
+
+pub fn set_mempool_snapshot(snapshot: MempoolSnapshot) {
+    store_metrics(snapshot);
+}
 
 #[derive(Clone, serde::Serialize, Default)]
 pub struct AttestationSummary {
@@ -234,6 +287,7 @@ struct WatcherMetrics {
     policy: String,
     selected_fee: u64,
     deferred: bool,
+    congestion_threshold: f64,
 }
 
 async fn get_mempool_metrics() -> Result<Json<WatcherMetrics>, StatusCode> {
@@ -247,6 +301,7 @@ async fn get_mempool_metrics() -> Result<Json<WatcherMetrics>, StatusCode> {
             policy: p.policy,
             selected_fee: p.selected_fee,
             deferred: p.deferred,
+            congestion_threshold: p.congestion_threshold,
         }))
     } else {
         Err(StatusCode::SERVICE_UNAVAILABLE)
@@ -668,10 +723,12 @@ pub fn run(
             FeePolicyKind::Static(p) => {
                 info.min = p.fee;
                 info.max = p.fee;
+                info.congestion_threshold = 1.0;
             }
             FeePolicyKind::Congestion(p) => {
                 info.min = p.min_fee;
                 info.max = p.max_fee;
+                info.congestion_threshold = p.defer_threshold;
             }
         }
         info.policy = policy.name().to_string();
@@ -801,6 +858,7 @@ pub fn run(
             info.policy = policy.name().to_string();
             info.selected_fee = fee;
             info.deferred = defer;
+            info.congestion_threshold = defer_thr_now;
         }
         if defer {
             warn!("congestion high; deferring anchor (ratio {:.2})", snapshot.congestion_ratio);

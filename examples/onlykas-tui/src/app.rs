@@ -1,6 +1,7 @@
 use crate::models::{GuardianMetrics, Invoice, Mempool, Subscription, WebhookEvent};
 use ratatui::style::Color;
 use reqwest::Client;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
     collections::VecDeque,
@@ -44,6 +45,36 @@ impl WatcherMode {
 pub enum WatcherField {
     MaxFee,
     CongestionThreshold,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigOpStatus {
+    Pending,
+    Applied,
+    TimedOut,
+    RolledBack,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct WatcherConfigOperation {
+    #[serde(rename = "op_id")]
+    pub id: u64,
+    pub requested_at: u64,
+    pub deadline_at: u64,
+    pub status: ConfigOpStatus,
+    pub target_max_fee: Option<u64>,
+    pub target_congestion_threshold: Option<f64>,
+    pub previous_max_fee: Option<u64>,
+    pub previous_congestion_threshold: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct WatcherConfigState {
+    pub current_max_fee: Option<u64>,
+    pub current_congestion_threshold: Option<f64>,
+    pub pending: Option<WatcherConfigOperation>,
+    pub history: Vec<WatcherConfigOperation>,
 }
 
 pub struct WatcherConfigModal {
@@ -126,7 +157,9 @@ pub struct App {
     pub status: Option<StatusMessage>,
     pub watcher_config: Option<WatcherConfigModal>,
     pub api_key_modal: Option<ApiKeyModal>,
+    pub watcher_state: WatcherConfigState,
     client: Client,
+    last_config_op: Option<WatcherConfigOperation>,
 }
 
 impl App {
@@ -154,7 +187,9 @@ impl App {
             status: None,
             watcher_config: None,
             api_key_modal: None,
+            watcher_state: WatcherConfigState::default(),
             client: Client::new(),
+            last_config_op: None,
         }
     }
 
@@ -201,6 +236,16 @@ impl App {
                 if resp.status().is_success() {
                     if let Ok(data) = resp.json::<Vec<Subscription>>().await {
                         self.subscriptions = data;
+                    }
+                } else if resp.status().as_u16() == 401 {
+                    self.set_status("Unauthorized: set API key".into(), Color::Yellow);
+                    self.require_api_key_prompt();
+                }
+            }
+            if let Ok(resp) = self.get("/watcher-config").send().await {
+                if resp.status().is_success() {
+                    if let Ok(state) = resp.json::<WatcherConfigState>().await {
+                        self.apply_config_state(state);
                     }
                 } else if resp.status().as_u16() == 401 {
                     self.set_status("Unauthorized: set API key".into(), Color::Yellow);
@@ -323,6 +368,37 @@ impl App {
         self.status = Some(StatusMessage { msg, color, time: Instant::now() });
     }
 
+    fn apply_config_state(&mut self, state: WatcherConfigState) {
+        let current = state.pending.clone().or_else(|| state.history.last().cloned());
+        let changed = current
+            .as_ref()
+            .map(|op| (op.id, op.status))
+            != self.last_config_op.as_ref().map(|op| (op.id, op.status));
+        if changed {
+            if let Some(op) = &current {
+                match op.status {
+                    ConfigOpStatus::Pending => {
+                        self.set_status(format!("watcher config update #{} pending", op.id), Color::Yellow);
+                    }
+                    ConfigOpStatus::TimedOut => {
+                        self.set_status(
+                            format!("watcher config update #{} timed out — press x to rollback", op.id),
+                            Color::Yellow,
+                        );
+                    }
+                    ConfigOpStatus::Applied => {
+                        self.set_status(format!("watcher config update #{} applied", op.id), Color::Green);
+                    }
+                    ConfigOpStatus::RolledBack => {
+                        self.set_status(format!("watcher config update #{} rolled back", op.id), Color::Yellow);
+                    }
+                }
+            }
+        }
+        self.last_config_op = current;
+        self.watcher_state = state;
+    }
+
     pub fn selected_invoice_id(&self) -> Option<u64> {
         if let ListMode::Invoices = self.list_mode {
             self.invoices
@@ -339,6 +415,15 @@ impl App {
         } else {
             None
         }
+    }
+
+    pub fn timed_out_config_id(&self) -> Option<u64> {
+        self
+            .watcher_state
+            .pending
+            .as_ref()
+            .filter(|op| op.status == ConfigOpStatus::TimedOut)
+            .map(|op| op.id)
     }
 
     #[allow(dead_code)]
@@ -505,12 +590,24 @@ impl App {
             });
             match self.post("/watcher-config").json(&body).send().await {
                 Ok(resp) if resp.status().is_success() => {
-                    self.set_status("Watcher config updated".into(), Color::Green);
-                    self.refresh().await;
+                    match resp.json::<WatcherConfigOperation>().await {
+                        Ok(op) => {
+                            self.watcher_state.pending = Some(op.clone());
+                            self.last_config_op = Some(op.clone());
+                            self.set_status(format!("watcher config update #{} pending", op.id), Color::Yellow);
+                            self.refresh().await;
+                        }
+                        Err(e) => {
+                            self.set_status(format!("Watcher config queued but parse failed: {e}"), Color::Yellow);
+                        }
+                    }
                 }
                 Ok(resp) if resp.status().as_u16() == 401 => {
                     self.set_status("Unauthorized: set API key".into(), Color::Red);
                     self.require_api_key_prompt();
+                }
+                Ok(resp) if resp.status().as_u16() == 409 => {
+                    self.set_status("Watcher config already pending".into(), Color::Yellow);
                 }
                 Ok(resp) => {
                     self.set_status(format!("Error: {}", resp.status()), Color::Red);
@@ -576,6 +673,12 @@ impl App {
                 if let Ok(data) = resp.json::<Mempool>().await {
                     let mut a = app.lock().await;
                     a.watcher = data;
+                }
+            }
+            if let Ok(resp) = header_api(client.get(format!("{merchant_url}/watcher-config")), &api_key).send().await {
+                if let Ok(state) = resp.json::<WatcherConfigState>().await {
+                    let mut a = app.lock().await;
+                    a.apply_config_state(state);
                 }
             }
         }
@@ -818,6 +921,41 @@ impl App {
         App::refresh_task(app.clone()).await;
     }
 
+    pub async fn rollback_watcher_config_task(app: Arc<AsyncMutex<App>>, op_id: u64) {
+        let (client, merchant_url, api_key) = {
+            let a = app.lock().await;
+            (a.client.clone(), a.merchant_url.clone(), a.api_key.clone())
+        };
+        match header_api(client.post(format!("{merchant_url}/watcher-config/{op_id}/rollback")), &api_key).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.json::<WatcherConfigOperation>().await {
+                    Ok(op) => {
+                        let mut a = app.lock().await;
+                        a.set_status(format!("watcher config update #{} rolled back", op.id), Color::Yellow);
+                    }
+                    Err(e) => {
+                        let mut a = app.lock().await;
+                        a.set_status(format!("Watcher rollback parse failed: {e}"), Color::Yellow);
+                    }
+                }
+            }
+            Ok(resp) if resp.status().as_u16() == 401 => {
+                let mut a = app.lock().await;
+                a.set_status("Unauthorized: set API key".into(), Color::Red);
+                a.require_api_key_prompt();
+            }
+            Ok(resp) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {}", resp.status()), Color::Red);
+            }
+            Err(e) => {
+                let mut a = app.lock().await;
+                a.set_status(format!("Error: {e}"), Color::Red);
+            }
+        }
+        App::refresh_task(app.clone()).await;
+    }
+
     #[allow(dead_code)]
     pub async fn submit_watcher_config_task(app: Arc<AsyncMutex<App>>, mode: WatcherMode, max_fee: u64, threshold: f32) {
         let (client, merchant_url, api_key) = {
@@ -830,10 +968,16 @@ impl App {
             "congestion_threshold": threshold,
         });
         match header_api(client.post(format!("{merchant_url}/watcher-config")), &api_key).json(&body).send().await {
-            Ok(resp) if resp.status().is_success() => {
-                let mut a = app.lock().await;
-                a.set_status("Watcher config updated".into(), Color::Green);
-            }
+            Ok(resp) if resp.status().is_success() => match resp.json::<WatcherConfigOperation>().await {
+                Ok(op) => {
+                    let mut a = app.lock().await;
+                    a.set_status(format!("watcher config update #{} pending", op.id), Color::Yellow);
+                }
+                Err(e) => {
+                    let mut a = app.lock().await;
+                    a.set_status(format!("Watcher config queued but parse failed: {e}"), Color::Yellow);
+                }
+            },
             Ok(resp) => {
                 let mut a = app.lock().await;
                 a.set_status(format!("Error: {}", resp.status()), Color::Red);
