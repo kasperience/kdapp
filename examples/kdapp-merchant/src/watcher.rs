@@ -27,8 +27,9 @@ use kaspa_addresses::{Address, Prefix as AddrPrefix, Version as AddrVersion};
 use kaspa_consensus_core::{
     network::{NetworkId, NetworkType},
     tx::{TransactionOutpoint, UtxoEntry},
-    Hash,
 };
+#[cfg(any(test, feature = "okcp_relay"))]
+use kaspa_consensus_core::Hash;
 use kaspa_rpc_core::api::rpc::RpcApi;
 #[cfg(any(test, feature = "okcp_relay"))]
 use kaspa_rpc_core::model::block::RpcBlock;

@@ -7,6 +7,7 @@ mod script;
 mod server;
 mod sim_router;
 mod storage;
+mod webhook;
 mod tap;
 mod tcp_router;
 mod tlv;

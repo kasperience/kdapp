@@ -122,7 +122,7 @@ pub fn persist_invoice_state(invoice: &Invoice, update: ConfirmationUpdate) -> s
         ConfirmationUpdate::Clear => Some(ConfirmationAction::Clear),
         ConfirmationUpdate::Set { tx_id, status, updated_at } => {
             let mut tx_bytes = [0u8; 32];
-            tx_bytes.copy_from_slice(tx_id.as_bytes());
+            tx_bytes.copy_from_slice(&tx_id.as_bytes());
             let record = ConfirmationRecord { tx_id: tx_bytes, status: status.clone(), updated_at };
             let bytes = borsh::to_vec(&record).expect("serialize confirmation record");
             Some(ConfirmationAction::Set(bytes))
@@ -130,14 +130,14 @@ pub fn persist_invoice_state(invoice: &Invoice, update: ConfirmationUpdate) -> s
     };
     let key = invoice.id.to_be_bytes();
     let res = (&invoices, &confirmations).transaction(move |(inv_tree, conf_tree)| {
-        inv_tree.insert(key, invoice_bytes.clone())?;
+        inv_tree.insert(key.to_vec(), invoice_bytes.clone())?;
         if let Some(act) = &action {
             match act {
                 ConfirmationAction::Set(bytes) => {
-                    conf_tree.insert(key, bytes.clone())?;
+                    conf_tree.insert(key.to_vec(), bytes.clone())?;
                 }
                 ConfirmationAction::Clear => {
-                    conf_tree.remove(key)?;
+                    conf_tree.remove(key.to_vec())?;
                 }
             }
         }
@@ -205,9 +205,9 @@ pub fn delete_invoice(id: u64) {
     let invoices = DB.open_tree("invoices").expect("invoices tree");
     let confirmations = DB.open_tree(INVOICE_CONFIRMATIONS_TREE).expect("invoice confirmations tree");
     let key = id.to_be_bytes();
-    let res = (&invoices, &confirmations).transaction(|(inv_tree, conf_tree)| {
-        let _ = inv_tree.remove(key)?;
-        let _ = conf_tree.remove(key)?;
+    let res = (&invoices, &confirmations).transaction(move |(inv_tree, conf_tree)| {
+        let _ = inv_tree.remove(key.to_vec())?;
+        let _ = conf_tree.remove(key.to_vec())?;
         Ok(())
     });
     let _ = res.map_err(map_tx_err);
