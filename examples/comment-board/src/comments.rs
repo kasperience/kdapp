@@ -390,6 +390,7 @@ mod tests {
             accepting_time: 1000,
             tx_id: 1u64.into(),
             tx_outputs: None,
+            tx_status: None,
         };
 
         let mut board = CommentBoard::initialize(vec![pk1, pk2], &metadata);
@@ -413,6 +414,7 @@ mod tests {
             accepting_time: 1000,
             tx_id: 1u64.into(),
             tx_outputs: None,
+            tx_status: None,
         };
 
         let mut board = CommentBoard::initialize(vec![pk1, pk2], &metadata);
@@ -453,6 +455,7 @@ mod tests {
             accepting_time: 1000,
             tx_id: 1u64.into(),
             tx_outputs: None,
+            tx_status: None,
         };
 
         let mut board = CommentBoard::initialize(vec![pk1, pk2], &metadata);

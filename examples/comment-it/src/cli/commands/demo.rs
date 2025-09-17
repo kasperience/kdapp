@@ -25,6 +25,7 @@ pub fn test_episode_logic(participant_count: usize) -> Result<(), Box<dyn Error>
         accepting_time: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
         tx_id: 1u64.into(),
         tx_outputs: None,
+        tx_status: None,
     };
 
     // Initialize episode
@@ -109,6 +110,7 @@ pub fn run_interactive_demo() -> Result<(), Box<dyn Error>> {
         accepting_time: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
         tx_id: 1u64.into(),
         tx_outputs: None,
+        tx_status: None,
     };
 
     // Initialize episode with both participants

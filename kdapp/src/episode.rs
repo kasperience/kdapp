@@ -1,6 +1,6 @@
 //! Defines the external injection points an Episode developer would need to implement
 
-use crate::pki::PubKey;
+use crate::{pki::PubKey, proxy::TxStatus};
 use borsh::{BorshDeserialize, BorshSerialize};
 use kaspa_consensus_core::Hash;
 use std::error::Error;
@@ -38,6 +38,7 @@ pub struct PayloadMetadata {
     pub tx_id: Hash,
     // Optional carrier transaction context (selected fields only)
     pub tx_outputs: Option<Vec<TxOutputInfo>>,
+    pub tx_status: Option<TxStatus>,
 }
 
 pub type EpisodeId = u32;

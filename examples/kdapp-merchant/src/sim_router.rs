@@ -41,7 +41,7 @@ impl SimRouter {
             accepting_hash,
             accepting_daa: 0,
             accepting_time: now,
-            associated_txs: vec![(tx_id, payload, None::<Vec<TxOutputInfo>>)],
+            associated_txs: vec![(tx_id, payload, None::<Vec<TxOutputInfo>>, None)],
         };
         self.sender.send(event)
     }

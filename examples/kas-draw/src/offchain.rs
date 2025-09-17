@@ -174,7 +174,7 @@ impl OffchainRouter {
                     accepting_hash,
                     accepting_daa: msg.seq,
                     accepting_time: now_secs,
-                    associated_txs: vec![(tx_id, payload, None::<Vec<TxOutputInfo>>)],
+                    associated_txs: vec![(tx_id, payload, None::<Vec<TxOutputInfo>>, None)],
                 };
                 if let Err(e) = self.sender.send(event) {
                     warn!("router: failed forwarding to engine: {e}");

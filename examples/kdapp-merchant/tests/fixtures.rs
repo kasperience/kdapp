@@ -35,6 +35,7 @@ pub fn setup() -> TestContext {
         accepting_time: 1,
         tx_id: Hash::default(),
         tx_outputs: None,
+        tx_status: None,
     };
 
     let mut episode = ReceiptEpisode::initialize(vec![merchant_pk], &metadata);

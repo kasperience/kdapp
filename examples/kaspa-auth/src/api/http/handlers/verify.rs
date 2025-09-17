@@ -62,6 +62,7 @@ pub async fn verify_auth(State(state): State<PeerState>, Json(req): Json<VerifyR
                 accepting_time: 0,
                 tx_id: episode_id.into(),
                 tx_outputs: None,
+                tx_status: None,
             };
             // Execute the authentication command in memory
             let _ = episode.execute(

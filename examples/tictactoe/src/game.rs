@@ -249,7 +249,14 @@ mod tests {
     fn test_ttt_rollback() {
         let ((_s1, p1), (_s2, p2)) = (generate_keypair(), generate_keypair());
         let metadata =
-            PayloadMetadata { accepting_hash: 0u64.into(), accepting_daa: 0, accepting_time: 0, tx_id: 1u64.into(), tx_outputs: None };
+            PayloadMetadata {
+                accepting_hash: 0u64.into(),
+                accepting_daa: 0,
+                accepting_time: 0,
+                tx_id: 1u64.into(),
+                tx_outputs: None,
+                tx_status: None,
+            };
         let mut game = TicTacToe::initialize(vec![p1, p2], &metadata);
         let rollback = game.execute(&TTTMove { row: 0, col: 0 }, Some(p1), &metadata).unwrap();
         game.rollback(rollback);
@@ -332,7 +339,7 @@ mod tests {
                 accepting_hash: 1u64.into(),
                 accepting_daa: 0,
                 accepting_time: 0,
-                associated_txs: vec![(2u64.into(), payload, None)],
+                associated_txs: vec![(2u64.into(), payload, None, None)],
             })
             .unwrap();
 
@@ -347,7 +354,7 @@ mod tests {
                 accepting_hash: 3u64.into(),
                 accepting_daa: 1,
                 accepting_time: 1,
-                associated_txs: vec![(4u64.into(), payload, None)],
+                associated_txs: vec![(4u64.into(), payload, None, None)],
             })
             .unwrap();
 
@@ -359,7 +366,7 @@ mod tests {
                 accepting_hash: 5u64.into(),
                 accepting_daa: 2,
                 accepting_time: 2,
-                associated_txs: vec![(4u64.into(), payload, None)],
+                associated_txs: vec![(4u64.into(), payload, None, None)],
             })
             .unwrap();
 
