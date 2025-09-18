@@ -1,0 +1,17 @@
+[package]
+name = "integration-tests"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+kdapp = { workspace = true }
+borsh = { workspace = true }
+kaspa-addresses = { workspace = true }
+kaspa-consensus-core = { workspace = true }
+kaspa-txscript = { workspace = true }
+secp256k1 = { workspace = true }
+rand = { workspace = true }

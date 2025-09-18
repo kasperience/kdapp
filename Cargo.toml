@@ -15,6 +15,7 @@ members = [
     "examples/kdapp-guardian",
     "examples/tests",
     "examples/onlykas-tui",
+    "integration-tests",
 ]
 
 
