@@ -31,6 +31,54 @@ This creates a clear data flow:
 
 -----
 
+## Feature Flags
+
+Optional components are guarded behind Cargo feature flags so default builds stay
+lightweight. Pass `--features <name>` (and, when noted, `--no-default-features`)
+to opt into additional capabilities.
+
+### `kdapp` (core library)
+
+- `tx-script-bytes`: instructs the proxy to attach raw script bytes for every
+  observed transaction output. Enable it when your episode needs to validate
+  script policies:
+
+  ```bash
+  cargo build -p kdapp --features tx-script-bytes
+  ```
+
+### `comment-board` example
+
+- `advanced`: unlocks moderation workflows and richer command variants used in
+  the accompanying docs. The default binary remains focused on the base chat
+  flow:
+
+  ```bash
+  cargo run -p comment-board --features advanced -- --help
+  ```
+
+### `kdapp-merchant` example
+
+- `okcp_relay`: compiles the experimental OKCP relay that anchors UDP watcher
+  checkpoints on-chain. Leave it disabled unless you are running the full
+  merchant relay stack:
+
+  ```bash
+  cargo build -p kdapp-merchant --features okcp_relay
+  ```
+
+### `kdapp-indexer` example
+
+- `mem-store` (default): keeps state in memory for fast demos.
+- `rocksdb-store`: persists indexer data across restarts. Disable the default
+  feature when switching storage backends:
+
+  ```bash
+  cargo run -p kdapp-indexer --no-default-features --features rocksdb-store
+  ```
+
+-----
+
 ## Getting Started: Running the Tic-Tac-Toe Example
 
 This repository includes a fully functional Tic-Tac-Toe example that demonstrates how two players can execute a complete game on the Kaspa network.

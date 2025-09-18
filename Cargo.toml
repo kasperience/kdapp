@@ -18,6 +18,14 @@ members = [
     "integration-tests",
 ]
 
+# Workspace feature flags live in each crate manifest. See the README's
+# "Feature flags" section for how to enable the optional capabilities summarized
+# below:
+# - `kdapp`: expose raw transaction script bytes via `tx-script-bytes`.
+# - `comment-board`: unlock extended moderation commands with `advanced`.
+# - `kdapp-merchant`: start the optional OKCP relay via `okcp_relay`.
+# - `kdapp-indexer`: choose `mem-store` (default) or `rocksdb-store` backends.
+
 
 [workspace.package]
 version = "0.0.1"
