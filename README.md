@@ -132,6 +132,7 @@ Tic‑Tac‑Toe, merchant/customer flows, and more live under `examples/`.
   - Version negotiation: every TLV handshake now includes a `script_policy_version`. Routers echo their supported
     value in the ACK so the customer CLI can warn if it is older—upgrade your client if you see the warning to
     avoid policy mismatches during payment flows.
+  - Flow diagrams: see [`docs/payment_flows.md`](docs/payment_flows.md) for the happy path and error handling sequence charts.
 
 Explore `examples/kaspa-auth` and `examples/comment-board` for richer flows and docs.
 
