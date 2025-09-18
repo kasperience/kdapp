@@ -36,4 +36,8 @@ ctrlc = "3.4"
 tempfile = "3.10"
 
 [features]
+# Keep optional services disabled unless the operator explicitly opts in.
+default = []
+# Enable to compile the experimental OKCP relay which anchors UDP checkpoints
+# on-chain. Requires additional infrastructure and is off by default.
 okcp_relay = []

@@ -21,6 +21,11 @@ bincode = "1.3"
 rocksdb = { version = "0.22", optional = true }
 
 [features]
+# Default to the lightweight in-memory backend so the indexer can run without
+# additional services.
 default = ["mem-store"]
+# Retain recent episode state in process memory only; ideal for demos/tests.
 mem-store = []
+# Swap the storage layer for RocksDB to persist data across restarts. Requires
+# disabling defaults (`--no-default-features`) when selected.
 rocksdb-store = ["rocksdb"]

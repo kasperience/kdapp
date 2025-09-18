@@ -37,7 +37,10 @@ serde.workspace = true
 serde_json.workspace = true
 
 [features]
+# Keep defaults empty so depending applications do not pay the cost of collecting
+# extra transaction metadata unless explicitly requested.
 default = []
-# When enabled, proxy will populate TxOutputInfo.script_bytes with raw script bytes from outputs,
-# allowing episodes to verify on-chain script policy. Safe to disable by default.
+# When enabled, proxy will populate TxOutputInfo.script_bytes with raw script
+# bytes from outputs, allowing episodes to verify on-chain script policy. Safe
+# to disable by default.
 tx-script-bytes = []

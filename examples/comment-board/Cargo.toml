@@ -33,6 +33,9 @@ clap.workspace = true
 smallvec = "1.11"
 
 [features]
+# Default build keeps the entry point lightweight; opt into extras via
+# explicit feature flags described below.
+default = []
 # Gate advanced command variants and moderation features to keep the
 # example entry point manageable by default.
 advanced = []
