@@ -1,0 +1,21 @@
+[package]
+name = "integration-tests"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[lib]
+name = "integration_tests"
+path = "src/lib.rs"
+
+[dependencies]
+borsh.workspace = true
+itertools.workspace = true
+kdapp.workspace = true
+kaspa-addresses.workspace = true
+kaspa-consensus-core.workspace = true
+kaspa-txscript.workspace = true
+rand.workspace = true
+secp256k1.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+workflow-rpc.workspace = true
